@@ -2,6 +2,18 @@
 
 import { ExternalLink, Headphones } from "lucide-react";
 
+// Mantido para compatibilidade com o hook LiveKit legado ainda presente no projeto.
+export interface VoiceParticipant {
+  id: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  isSpeaking?: boolean;
+  isMuted?: boolean;
+  isCameraOn?: boolean;
+  isSharingScreen?: boolean;
+  videoStreamElementId?: string;
+}
+
 interface VoiceRoomProps {
   channelName: string;
   roomId: string;
