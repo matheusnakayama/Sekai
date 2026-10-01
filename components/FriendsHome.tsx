@@ -18,6 +18,18 @@ type Friendship = { id: string; sender_id: string; receiver_id: string; status: 
 type ServerInvite = { id: string; sender_id: string; server_id: string; server_name: string; channel_id: string | null; status: "pending" | "accepted"; sender?: Profile };
 type DirectMessage = { id: string; sender_id: string; receiver_id: string; content: string; created_at: string };
 
+function explainDatabaseError(error: { code?: string; message: string }, feature: "friends" | "messages") {
+  const migration = feature === "friends" ? "db/social_invites_migration.sql" : "db/direct_messages_migration.sql";
+  if (["42P01", "PGRST205", "PGRST200"].includes(error.code ?? "")) {
+    return `A tabela ou relação necessária não foi encontrada. Execute ${migration} no SQL Editor do Supabase. Detalhe: ${error.message}`;
+  }
+  if (error.code === "42501") {
+    return `O Supabase bloqueou a operação por uma policy de segurança (RLS). Execute novamente ${migration} e confira se está usando a sessão autenticada correta. Detalhe: ${error.message}`;
+  }
+  if (error.code === "23505") return "Já existe uma solicitação de amizade ou vocês já são amigos.";
+  return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
+}
+
 export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
@@ -42,7 +54,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
         .select("id,sender_id,server_id,server_name,channel_id,status,sender:profiles!friend_server_invites_sender_id_fkey(id,username,display_name,avatar_url,status)")
         .eq("receiver_id", currentUserId).eq("status", "pending").order("created_at", { ascending: false }),
     ]);
-    if (error) { setMessage("Ative a migração de amizades no Supabase para usar esta área."); return; }
+    if (error) { setMessage(explainDatabaseError(error, "friends")); return; }
     setRequests((data ?? []) as unknown as Friendship[]);
     setServerInvites((inviteRows ?? []) as unknown as ServerInvite[]);
   }, [currentUserId, supabase]);
@@ -80,16 +92,16 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
 
   const loadDm = useCallback(async () => {
     if (!selectedFriend) { setDmMessages([]); return; }
-    const { data, error } = await supabase.from("direct_messages").select("id,sender_id,receiver_id,content,created_at")
+    const { data, error } = await supabase.from("sekai_direct_messages").select("id,sender_id,receiver_id,content,created_at")
       .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${selectedFriend.id}),and(sender_id.eq.${selectedFriend.id},receiver_id.eq.${currentUserId})`)
       .order("created_at", { ascending: true }).limit(100);
-    if (error) { setMessage("Ative a migração de mensagens diretas no Supabase para usar conversas."); return; }
+    if (error) { setMessage(explainDatabaseError(error, "messages")); return; }
     setDmMessages((data ?? []) as DirectMessage[]);
   }, [currentUserId, selectedFriend, supabase]);
   useEffect(() => { void loadDm(); }, [loadDm]);
   useEffect(() => {
     if (!selectedFriend) return;
-    const channel = supabase.channel(`dm:${currentUserId}:${selectedFriend.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (event) => {
+    const channel = supabase.channel(`sekai-dm:${currentUserId}:${selectedFriend.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "sekai_direct_messages" }, (event) => {
       const row = event.new as DirectMessage;
       if ((row.sender_id === currentUserId && row.receiver_id === selectedFriend.id) || (row.sender_id === selectedFriend.id && row.receiver_id === currentUserId)) {
         setDmMessages((prev) => prev.some((message) => message.id === row.id) ? prev : [...prev, row]);
@@ -102,8 +114,9 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     event.preventDefault();
     const content = dmDraft.trim();
     if (!selectedFriend || !content) return;
-    const { data, error } = await supabase.from("direct_messages").insert({ sender_id: currentUserId, receiver_id: selectedFriend.id, content }).select("id,sender_id,receiver_id,content,created_at").single();
-    if (error) { setMessage("Não foi possível enviar. Confira a migração de mensagens diretas."); return; }
+    setMessage("");
+    const { data, error } = await supabase.from("sekai_direct_messages").insert({ sender_id: currentUserId, receiver_id: selectedFriend.id, content }).select("id,sender_id,receiver_id,content,created_at").single();
+    if (error) { setMessage(explainDatabaseError(error, "messages")); return; }
     if (data) setDmMessages((prev) => [...prev, data as DirectMessage]);
     setDmDraft("");
   }
@@ -114,11 +127,12 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     event.preventDefault(); setMessage(""); setBusy(true);
     const name = username.trim().replace(/^@/, "");
     const { data: profile, error: lookupError } = await supabase.from("profiles").select("id").eq("username", name).maybeSingle();
-    if (lookupError || !profile) { setMessage("Não encontramos esse nome de usuário."); setBusy(false); return; }
+    if (lookupError) { setMessage(`Falha ao consultar o perfil${lookupError.code ? ` (${lookupError.code})` : ""}: ${lookupError.message}`); setBusy(false); return; }
+    if (!profile) { setMessage("Não encontramos esse nome de usuário."); setBusy(false); return; }
     if (profile.id === currentUserId) { setMessage("Você não pode adicionar a si mesmo."); setBusy(false); return; }
     const { error } = await supabase.from("friendships").insert({ sender_id: currentUserId, receiver_id: profile.id, status: "pending" });
     setBusy(false);
-    if (error) { setMessage(error.code === "23505" ? "Já existe uma solicitação para esse usuário." : "Não foi possível enviar a solicitação. Confira a migração do Supabase."); return; }
+    if (error) { setMessage(explainDatabaseError(error, "friends")); return; }
     setUsername(""); setMessage("Solicitação enviada."); await loadFriends();
   }
 
@@ -162,7 +176,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       <div className="min-h-0 flex-1 overflow-y-auto px-2">{friendProfiles.map((profile) => <button key={profile.id} onClick={() => setSelectedFriend(profile)} className={`flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition ${selectedFriend?.id === profile.id ? "bg-discord-bg-modifier-hover" : "hover:bg-discord-bg-modifier-hover/60"}`}><div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-discord-bg-dark">{profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-sm text-white">{(profile.display_name || profile.username)[0]?.toUpperCase()}</span>}<Circle size={11} className={`absolute bottom-0 right-0 fill-current ${profile.status === "online" ? "text-emerald-400" : "text-gray-500"}`}/></div><span className="truncate text-sm font-medium text-discord-text-normal">{profile.display_name || profile.username}</span></button>)}</div>
     </aside>
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {selectedFriend ? <><header className="flex h-14 shrink-0 items-center gap-3 border-b border-black/20 px-5 shadow-sm"><button className="md:hidden" onClick={() => setSelectedFriend(null)}><ArrowLeft size={18}/></button><FriendIdentity profile={selectedFriend}/><span className="hidden text-xs text-discord-text-muted sm:block">Mensagem direta</span></header><div className="flex flex-1 flex-col justify-end overflow-y-auto p-5"><div className="mb-5 border-b border-black/20 pb-5"><FriendIdentity profile={selectedFriend}/><p className="mt-2 text-sm text-discord-text-muted">Esta é sua conversa com {selectedFriend.display_name || selectedFriend.username}.</p></div><div className="space-y-3">{dmMessages.map((message) => <div key={message.id} className={`flex ${message.sender_id === currentUserId ? "justify-end" : "justify-start"}`}><div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${message.sender_id === currentUserId ? "bg-discord-brand text-white" : "bg-discord-bg-secondary text-discord-text-normal"}`}><p className="whitespace-pre-wrap break-words">{message.content}</p><time className="mt-1 block text-right text-[10px] opacity-60">{new Date(message.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time></div></div>)}</div></div><form onSubmit={sendDirectMessage} className="m-4 flex items-center gap-3 rounded-xl bg-discord-bg-secondary px-4 py-3 shadow-lg"><input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} placeholder={`Enviar mensagem para @${selectedFriend.username}`} className="min-w-0 flex-1 bg-transparent text-sm text-discord-text-normal outline-none"/><button aria-label="Enviar mensagem" disabled={!dmDraft.trim()} className="text-discord-brand disabled:opacity-40"><Send size={18}/></button></form></> : <><header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/20 px-5 shadow-sm"><Users className="h-5 w-5 text-discord-text-muted"/><span className="font-semibold text-discord-header-primary">Amigos</span></header><div className="flex-1 overflow-y-auto p-5 md:p-8"><div className="mx-auto w-full max-w-4xl">
+      {selectedFriend ? <><header className="flex h-14 shrink-0 items-center gap-3 border-b border-black/20 px-5 shadow-sm"><button className="md:hidden" onClick={() => setSelectedFriend(null)}><ArrowLeft size={18}/></button><FriendIdentity profile={selectedFriend}/><span className="hidden text-xs text-discord-text-muted sm:block">Mensagem direta</span></header><div className="flex flex-1 flex-col justify-end overflow-y-auto p-5"><div className="mb-5 border-b border-black/20 pb-5"><FriendIdentity profile={selectedFriend}/><p className="mt-2 text-sm text-discord-text-muted">Esta é sua conversa com {selectedFriend.display_name || selectedFriend.username}.</p></div><div className="space-y-3">{dmMessages.map((message) => <div key={message.id} className={`flex ${message.sender_id === currentUserId ? "justify-end" : "justify-start"}`}><div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${message.sender_id === currentUserId ? "bg-discord-brand text-white" : "bg-discord-bg-secondary text-discord-text-normal"}`}><p className="whitespace-pre-wrap break-words">{message.content}</p><time className="mt-1 block text-right text-[10px] opacity-60">{new Date(message.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time></div></div>)}</div></div><form onSubmit={sendDirectMessage} className="m-4 flex items-center gap-3 rounded-xl bg-discord-bg-secondary px-4 py-3 shadow-lg"><input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} placeholder={`Enviar mensagem para @${selectedFriend.username}`} className="min-w-0 flex-1 bg-transparent text-sm text-discord-text-normal outline-none"/><button aria-label="Enviar mensagem" disabled={!dmDraft.trim()} className="text-discord-brand disabled:opacity-40"><Send size={18}/></button></form>{message && <p role="alert" className="mx-4 -mt-2 mb-4 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}</> : <><header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/20 px-5 shadow-sm"><Users className="h-5 w-5 text-discord-text-muted"/><span className="font-semibold text-discord-header-primary">Amigos</span></header><div className="flex-1 overflow-y-auto p-5 md:p-8"><div className="mx-auto w-full max-w-4xl">
       {tab === "pending" ? <section className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-secondary p-5 shadow-xl"><h1 className="text-xl font-bold text-discord-header-primary">Solicitações de amizade</h1><p className="mt-1 text-sm text-discord-text-muted">Aceite pedidos para iniciar uma conversa direta.</p>{incoming.length ? <div className="mt-4 space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-discord-bg-primary/60 p-3"><FriendIdentity profile={item.sender}/><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded-lg bg-discord-brand px-3 py-2 text-sm text-white"><Check size={16}/>Aceitar</button></div>)}</div> : <p className="mt-5 rounded-xl bg-discord-bg-primary/50 p-5 text-sm text-discord-text-muted">Nenhuma solicitação no momento.</p>}</section> : <>
       <section className="rounded-lg bg-discord-bg-secondary p-5">
         <h1 className="text-xl font-bold text-discord-header-primary">Adicione amigos</h1>
