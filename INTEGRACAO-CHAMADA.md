@@ -18,3 +18,13 @@ Para retransmitir chamadas em redes restritivas, também configure `METERED_APP_
 Para enviar imagens no chat da chamada, conecte um Vercel Blob Store ao projeto. A Vercel fornece `BLOB_STORE_ID` e `BLOB_WEBHOOK_PUBLIC_KEY`.
 
 Depois de mudar variáveis, faça um novo deploy. Ative **Enable client events** no app Pusher Channels.
+
+## Amizades e convites para voz
+
+Execute `db/social_invites_migration.sql` uma vez no SQL Editor do mesmo projeto Supabase. Ela cria as solicitações de amizade, convites diretos de servidor, policies RLS e as funções para aceitar links/convites. A área **Amigos** fica no botão Início (ícone S) da barra de servidores. Pesquise pelo nome de usuário, aceite solicitações recebidas e use **Convidar**; o amigo recebe o convite dentro do Sekai e pode aceitá-lo na área Amigos. Um link também é copiado para compartilhar fora do site. Os convites levam ao canal de voz quando o servidor tem um.
+
+A chamada continua usando a infraestrutura de presença e sinalização Pusher já integrada. Cada canal de voz usa seu próprio ID como sala, então os membros que entram no mesmo canal ficam na mesma chamada. Não é necessário adicionar variáveis de ambiente para esses recursos: mantenha as variáveis Supabase e Pusher listadas acima, com `PUSHER_SECRET` apenas no servidor.
+
+## Temas
+
+O seletor de cores inclui 26 opções (o tema Azul original e 25 alternativas), salva a escolha no navegador e aplica os temas adicionais sem exigir alterações na configuração da Vercel.
