@@ -1,0 +1,577 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Temas (gerado) ===== */
+:root, html[data-theme="azul"] {
+  --brand-50: 241 244 255;
+  --brand-100: 227 232 254;
+  --brand-200: 204 213 253;
+  --brand-300: 176 190 252;
+  --brand-400: 142 162 251;
+  --brand-500: 122 139 248;
+  --brand-600: 106 118 245;
+  --brand-700: 70 80 223;
+  --brand-800: 56 64 184;
+  --brand-900: 42 49 111;
+  --surface: 16 18 24;
+  --surface-soft: 24 27 35;
+  --surface-card: 28 32 42;
+  --surface-border: 50 55 70;
+  --d-darkest: 30 31 34;
+  --d-dark: 43 45 49;
+  --d-primary: 49 51 56;
+  --d-secondary: 56 58 64;
+  --d-hover: 53 55 60;
+  --d-floating: 17 18 20;
+  --d-brand: 88 101 242;
+  --d-brand-hover: 70 80 223;
+  --g1: #8ea2fb;
+  --g2: #7a8bf8;
+  --g3: #6a76f5;
+  --g4: #5865f2;
+  --g5: #4650df;
+  --g6: #3840b8;
+  --g7: #2a316f;
+  --gw1: rgb(142 162 251 / 0.30);
+  --gw2: rgb(122 139 248 / 0.30);
+  --gw3: rgb(106 118 245 / 0.30);
+  --gw4: rgb(88 101 242 / 0.30);
+  --gw5: rgb(70 80 223 / 0.30);
+  --gw6: rgb(56 64 184 / 0.30);
+  --gw7: rgb(42 49 111 / 0.30);
+}
+
+html[data-theme="roxo"] {
+  --brand-50: 247 240 255;
+  --brand-100: 239 224 254;
+  --brand-200: 227 200 254;
+  --brand-300: 211 169 253;
+  --brand-400: 192 132 252;
+  --brand-500: 168 85 247;
+  --brand-600: 147 51 234;
+  --brand-700: 107 33 168;
+  --brand-800: 88 28 135;
+  --brand-900: 59 7 100;
+  --surface: 19 16 23;
+  --surface-soft: 27 22 32;
+  --surface-card: 35 28 41;
+  --surface-border: 61 49 71;
+  --d-darkest: 25 20 29;
+  --d-dark: 34 27 39;
+  --d-primary: 40 32 47;
+  --d-secondary: 48 39 56;
+  --d-hover: 44 36 51;
+  --d-floating: 15 13 18;
+  --d-brand: 126 34 206;
+  --d-brand-hover: 107 33 168;
+  --g1: #c084fc;
+  --g2: #a855f7;
+  --g3: #9333ea;
+  --g4: #7e22ce;
+  --g5: #6b21a8;
+  --g6: #581c87;
+  --g7: #3b0764;
+  --gw1: rgb(192 132 252 / 0.30);
+  --gw2: rgb(168 85 247 / 0.30);
+  --gw3: rgb(147 51 234 / 0.30);
+  --gw4: rgb(126 34 206 / 0.30);
+  --gw5: rgb(107 33 168 / 0.30);
+  --gw6: rgb(88 28 135 / 0.30);
+  --gw7: rgb(59 7 100 / 0.30);
+}
+
+html[data-theme="rosa"] {
+  --brand-50: 254 238 246;
+  --brand-100: 252 220 237;
+  --brand-200: 250 192 222;
+  --brand-300: 247 156 204;
+  --brand-400: 244 114 182;
+  --brand-500: 236 72 153;
+  --brand-600: 219 39 119;
+  --brand-700: 157 23 77;
+  --brand-800: 131 24 67;
+  --brand-900: 80 7 36;
+  --surface: 23 16 19;
+  --surface-soft: 32 22 26;
+  --surface-card: 41 28 33;
+  --surface-border: 71 49 58;
+  --d-darkest: 29 20 23;
+  --d-dark: 39 27 32;
+  --d-primary: 47 32 38;
+  --d-secondary: 56 39 46;
+  --d-hover: 51 36 42;
+  --d-floating: 18 13 15;
+  --d-brand: 190 24 93;
+  --d-brand-hover: 157 23 77;
+  --g1: #f472b6;
+  --g2: #ec4899;
+  --g3: #db2777;
+  --g4: #be185d;
+  --g5: #9d174d;
+  --g6: #831843;
+  --g7: #500724;
+  --gw1: rgb(244 114 182 / 0.30);
+  --gw2: rgb(236 72 153 / 0.30);
+  --gw3: rgb(219 39 119 / 0.30);
+  --gw4: rgb(190 24 93 / 0.30);
+  --gw5: rgb(157 23 77 / 0.30);
+  --gw6: rgb(131 24 67 / 0.30);
+  --gw7: rgb(80 7 36 / 0.30);
+}
+
+html[data-theme="verde"] {
+  --brand-50: 233 251 240;
+  --brand-100: 210 247 223;
+  --brand-200: 174 240 198;
+  --brand-300: 128 232 166;
+  --brand-400: 74 222 128;
+  --brand-500: 34 197 94;
+  --brand-600: 22 163 74;
+  --brand-700: 22 101 52;
+  --brand-800: 20 83 45;
+  --brand-900: 5 46 22;
+  --surface: 16 23 18;
+  --surface-soft: 22 32 26;
+  --surface-card: 28 41 33;
+  --surface-border: 49 71 57;
+  --d-darkest: 20 29 23;
+  --d-dark: 27 39 32;
+  --d-primary: 32 47 38;
+  --d-secondary: 39 56 45;
+  --d-hover: 36 51 41;
+  --d-floating: 13 18 15;
+  --d-brand: 21 128 61;
+  --d-brand-hover: 22 101 52;
+  --g1: #4ade80;
+  --g2: #22c55e;
+  --g3: #16a34a;
+  --g4: #15803d;
+  --g5: #166534;
+  --g6: #14532d;
+  --g7: #052e16;
+  --gw1: rgb(74 222 128 / 0.30);
+  --gw2: rgb(34 197 94 / 0.30);
+  --gw3: rgb(22 163 74 / 0.30);
+  --gw4: rgb(21 128 61 / 0.30);
+  --gw5: rgb(22 101 52 / 0.30);
+  --gw6: rgb(20 83 45 / 0.30);
+  --gw7: rgb(5 46 22 / 0.30);
+}
+
+html[data-theme="ambar"] {
+  --brand-50: 254 243 226;
+  --brand-100: 252 231 194;
+  --brand-200: 250 211 145;
+  --brand-300: 248 187 84;
+  --brand-400: 245 158 11;
+  --brand-500: 224 138 11;
+  --brand-600: 217 119 6;
+  --brand-700: 180 83 9;
+  --brand-800: 146 64 14;
+  --brand-900: 120 53 15;
+  --surface: 23 19 16;
+  --surface-soft: 32 26 22;
+  --surface-card: 41 34 28;
+  --surface-border: 71 59 49;
+  --d-darkest: 29 24 20;
+  --d-dark: 39 33 27;
+  --d-primary: 47 39 32;
+  --d-secondary: 56 47 39;
+  --d-hover: 51 43 36;
+  --d-floating: 18 15 13;
+  --d-brand: 194 97 12;
+  --d-brand-hover: 180 83 9;
+  --g1: #f59e0b;
+  --g2: #e08a0b;
+  --g3: #d97706;
+  --g4: #c2610c;
+  --g5: #b45309;
+  --g6: #92400e;
+  --g7: #78350f;
+  --gw1: rgb(245 158 11 / 0.30);
+  --gw2: rgb(224 138 11 / 0.30);
+  --gw3: rgb(217 119 6 / 0.30);
+  --gw4: rgb(194 97 12 / 0.30);
+  --gw5: rgb(180 83 9 / 0.30);
+  --gw6: rgb(146 64 14 / 0.30);
+  --gw7: rgb(120 53 15 / 0.30);
+}
+
+html[data-theme="ciano"] {
+  --brand-50: 228 250 253;
+  --brand-100: 200 244 251;
+  --brand-200: 156 235 247;
+  --brand-300: 100 224 243;
+  --brand-400: 34 211 238;
+  --brand-500: 6 182 212;
+  --brand-600: 8 145 178;
+  --brand-700: 21 94 117;
+  --brand-800: 22 78 99;
+  --brand-900: 8 51 68;
+  --surface: 16 21 23;
+  --surface-soft: 22 30 32;
+  --surface-card: 28 38 41;
+  --surface-border: 49 66 71;
+  --d-darkest: 20 27 29;
+  --d-dark: 27 37 39;
+  --d-primary: 32 44 47;
+  --d-secondary: 39 52 56;
+  --d-hover: 36 48 51;
+  --d-floating: 13 17 18;
+  --d-brand: 14 116 144;
+  --d-brand-hover: 21 94 117;
+  --g1: #22d3ee;
+  --g2: #06b6d4;
+  --g3: #0891b2;
+  --g4: #0e7490;
+  --g5: #155e75;
+  --g6: #164e63;
+  --g7: #083344;
+  --gw1: rgb(34 211 238 / 0.30);
+  --gw2: rgb(6 182 212 / 0.30);
+  --gw3: rgb(8 145 178 / 0.30);
+  --gw4: rgb(14 116 144 / 0.30);
+  --gw5: rgb(21 94 117 / 0.30);
+  --gw6: rgb(22 78 99 / 0.30);
+  --gw7: rgb(8 51 68 / 0.30);
+}
+
+html[data-theme="rubi"] {
+  --brand-50: 254 238 238;
+  --brand-100: 253 220 220;
+  --brand-200: 252 191 191;
+  --brand-300: 250 156 156;
+  --brand-400: 248 113 113;
+  --brand-500: 239 68 68;
+  --brand-600: 220 38 38;
+  --brand-700: 153 27 27;
+  --brand-800: 127 29 29;
+  --brand-900: 69 10 10;
+  --surface: 23 16 16;
+  --surface-soft: 32 22 22;
+  --surface-card: 41 28 28;
+  --surface-border: 71 49 49;
+  --d-darkest: 29 20 20;
+  --d-dark: 39 27 27;
+  --d-primary: 47 32 32;
+  --d-secondary: 56 39 39;
+  --d-hover: 51 36 36;
+  --d-floating: 18 13 13;
+  --d-brand: 185 28 28;
+  --d-brand-hover: 153 27 27;
+  --g1: #f87171;
+  --g2: #ef4444;
+  --g3: #dc2626;
+  --g4: #b91c1c;
+  --g5: #991b1b;
+  --g6: #7f1d1d;
+  --g7: #450a0a;
+  --gw1: rgb(248 113 113 / 0.30);
+  --gw2: rgb(239 68 68 / 0.30);
+  --gw3: rgb(220 38 38 / 0.30);
+  --gw4: rgb(185 28 28 / 0.30);
+  --gw5: rgb(153 27 27 / 0.30);
+  --gw6: rgb(127 29 29 / 0.30);
+  --gw7: rgb(69 10 10 / 0.30);
+}
+
+html[data-theme="preto"] {
+  --brand-50: 252 252 252;
+  --brand-100: 248 248 249;
+  --brand-200: 243 243 244;
+  --brand-300: 236 236 238;
+  --brand-400: 228 228 231;
+  --brand-500: 161 161 170;
+  --brand-600: 113 113 122;
+  --brand-700: 63 63 70;
+  --brand-800: 39 39 42;
+  --brand-900: 24 24 27;
+  --surface: 8 8 8;
+  --surface-soft: 14 14 14;
+  --surface-card: 22 22 22;
+  --surface-border: 46 46 46;
+  --d-darkest: 5 5 5;
+  --d-dark: 11 11 11;
+  --d-primary: 18 18 18;
+  --d-secondary: 26 26 26;
+  --d-hover: 22 22 22;
+  --d-floating: 3 3 3;
+  --d-brand: 82 82 91;
+  --d-brand-hover: 63 63 70;
+  --g1: #e4e4e7;
+  --g2: #a1a1aa;
+  --g3: #71717a;
+  --g4: #52525b;
+  --g5: #3f3f46;
+  --g6: #27272a;
+  --g7: #18181b;
+  --gw1: rgb(228 228 231 / 0.30);
+  --gw2: rgb(161 161 170 / 0.30);
+  --gw3: rgb(113 113 122 / 0.30);
+  --gw4: rgb(82 82 91 / 0.30);
+  --gw5: rgb(63 63 70 / 0.30);
+  --gw6: rgb(39 39 42 / 0.30);
+  --gw7: rgb(24 24 27 / 0.30);
+}
+
+html[data-theme="menta"] {
+  --brand-50: 238 252 246;
+  --brand-100: 219 249 237;
+  --brand-200: 190 244 223;
+  --brand-300: 154 238 205;
+  --brand-400: 110 231 183;
+  --brand-500: 52 211 153;
+  --brand-600: 45 212 191;
+  --brand-700: 13 148 136;
+  --brand-800: 15 118 110;
+  --brand-900: 19 78 74;
+  --surface: 16 23 22;
+  --surface-soft: 22 32 31;
+  --surface-card: 28 41 39;
+  --surface-border: 49 71 68;
+  --d-darkest: 20 29 28;
+  --d-dark: 27 39 38;
+  --d-primary: 32 47 45;
+  --d-secondary: 39 56 54;
+  --d-hover: 36 51 49;
+  --d-floating: 13 18 17;
+  --d-brand: 20 184 166;
+  --d-brand-hover: 13 148 136;
+  --g1: #6ee7b7;
+  --g2: #34d399;
+  --g3: #2dd4bf;
+  --g4: #14b8a6;
+  --g5: #0d9488;
+  --g6: #0f766e;
+  --g7: #134e4a;
+  --gw1: rgb(110 231 183 / 0.30);
+  --gw2: rgb(52 211 153 / 0.30);
+  --gw3: rgb(45 212 191 / 0.30);
+  --gw4: rgb(20 184 166 / 0.30);
+  --gw5: rgb(13 148 136 / 0.30);
+  --gw6: rgb(15 118 110 / 0.30);
+  --gw7: rgb(19 78 74 / 0.30);
+}
+
+html[data-theme="por-do-sol"] {
+  --brand-50: 255 242 232;
+  --brand-100: 254 228 206;
+  --brand-200: 253 206 167;
+  --brand-300: 252 179 118;
+  --brand-400: 251 146 60;
+  --brand-500: 249 115 22;
+  --brand-600: 239 68 68;
+  --brand-700: 190 18 60;
+  --brand-800: 157 23 77;
+  --brand-900: 112 26 117;
+  --surface: 23 16 17;
+  --surface-soft: 32 22 24;
+  --surface-card: 41 28 31;
+  --surface-border: 71 49 54;
+  --d-darkest: 29 20 22;
+  --d-dark: 39 27 30;
+  --d-primary: 47 32 36;
+  --d-secondary: 56 39 42;
+  --d-hover: 51 36 39;
+  --d-floating: 18 13 14;
+  --d-brand: 225 29 72;
+  --d-brand-hover: 190 18 60;
+  --g1: #fb923c;
+  --g2: #f97316;
+  --g3: #ef4444;
+  --g4: #e11d48;
+  --g5: #be123c;
+  --g6: #9d174d;
+  --g7: #701a75;
+  --gw1: rgb(251 146 60 / 0.30);
+  --gw2: rgb(249 115 22 / 0.30);
+  --gw3: rgb(239 68 68 / 0.30);
+  --gw4: rgb(225 29 72 / 0.30);
+  --gw5: rgb(190 18 60 / 0.30);
+  --gw6: rgb(157 23 77 / 0.30);
+  --gw7: rgb(112 26 117 / 0.30);
+}
+
+html[data-theme="oceano"] {
+  --brand-50: 231 247 254;
+  --brand-100: 205 238 253;
+  --brand-200: 165 225 252;
+  --brand-300: 116 209 250;
+  --brand-400: 56 189 248;
+  --brand-500: 14 165 233;
+  --brand-600: 2 132 199;
+  --brand-700: 29 78 216;
+  --brand-800: 30 64 175;
+  --brand-900: 30 58 138;
+  --surface: 16 20 23;
+  --surface-soft: 22 28 32;
+  --surface-card: 28 36 41;
+  --surface-border: 49 63 71;
+  --d-darkest: 20 25 29;
+  --d-dark: 27 35 39;
+  --d-primary: 32 42 47;
+  --d-secondary: 39 50 56;
+  --d-hover: 36 46 51;
+  --d-floating: 13 16 18;
+  --d-brand: 3 105 161;
+  --d-brand-hover: 29 78 216;
+  --g1: #38bdf8;
+  --g2: #0ea5e9;
+  --g3: #0284c7;
+  --g4: #0369a1;
+  --g5: #1d4ed8;
+  --g6: #1e40af;
+  --g7: #1e3a8a;
+  --gw1: rgb(56 189 248 / 0.30);
+  --gw2: rgb(14 165 233 / 0.30);
+  --gw3: rgb(2 132 199 / 0.30);
+  --gw4: rgb(3 105 161 / 0.30);
+  --gw5: rgb(29 78 216 / 0.30);
+  --gw6: rgb(30 64 175 / 0.30);
+  --gw7: rgb(30 58 138 / 0.30);
+}
+
+html[data-theme="candy"] {
+  --brand-50: 254 238 246;
+  --brand-100: 252 220 237;
+  --brand-200: 250 192 222;
+  --brand-300: 247 156 204;
+  --brand-400: 244 114 182;
+  --brand-500: 236 72 153;
+  --brand-600: 217 70 239;
+  --brand-700: 139 92 246;
+  --brand-800: 99 102 241;
+  --brand-900: 59 130 246;
+  --surface: 19 16 23;
+  --surface-soft: 27 22 32;
+  --surface-card: 35 28 41;
+  --surface-border: 60 49 71;
+  --d-darkest: 24 20 29;
+  --d-dark: 33 27 39;
+  --d-primary: 40 32 47;
+  --d-secondary: 47 39 56;
+  --d-hover: 44 36 51;
+  --d-floating: 15 13 18;
+  --d-brand: 168 85 247;
+  --d-brand-hover: 139 92 246;
+  --g1: #f472b6;
+  --g2: #ec4899;
+  --g3: #d946ef;
+  --g4: #a855f7;
+  --g5: #8b5cf6;
+  --g6: #6366f1;
+  --g7: #3b82f6;
+  --gw1: rgb(244 114 182 / 0.30);
+  --gw2: rgb(236 72 153 / 0.30);
+  --gw3: rgb(217 70 239 / 0.30);
+  --gw4: rgb(168 85 247 / 0.30);
+  --gw5: rgb(139 92 246 / 0.30);
+  --gw6: rgb(99 102 241 / 0.30);
+  --gw7: rgb(59 130 246 / 0.30);
+}
+
+html[data-theme="grafite"] {
+  --brand-50: 242 244 246;
+  --brand-100: 228 232 237;
+  --brand-200: 207 214 223;
+  --brand-300: 180 191 205;
+  --brand-400: 148 163 184;
+  --brand-500: 100 116 139;
+  --brand-600: 86 101 121;
+  --brand-700: 51 65 85;
+  --brand-800: 30 41 59;
+  --brand-900: 15 23 42;
+  --surface: 17 19 21;
+  --surface-soft: 24 26 30;
+  --surface-card: 30 34 39;
+  --surface-border: 53 59 67;
+  --d-darkest: 21 24 27;
+  --d-dark: 29 32 37;
+  --d-primary: 35 39 44;
+  --d-secondary: 42 46 53;
+  --d-hover: 38 42 49;
+  --d-floating: 13 15 17;
+  --d-brand: 71 85 105;
+  --d-brand-hover: 51 65 85;
+  --g1: #94a3b8;
+  --g2: #64748b;
+  --g3: #566579;
+  --g4: #475569;
+  --g5: #334155;
+  --g6: #1e293b;
+  --g7: #0f172a;
+  --gw1: rgb(148 163 184 / 0.30);
+  --gw2: rgb(100 116 139 / 0.30);
+  --gw3: rgb(86 101 121 / 0.30);
+  --gw4: rgb(71 85 105 / 0.30);
+  --gw5: rgb(51 65 85 / 0.30);
+  --gw6: rgb(30 41 59 / 0.30);
+  --gw7: rgb(15 23 42 / 0.30);
+}
+
+/* Gradiente de 7 cores do tema ativo (usa as variáveis --g1 … --g7) */
+.bg-theme-gradient {
+  background-image: linear-gradient(135deg, var(--g1), var(--g2), var(--g3), var(--g4), var(--g5), var(--g6), var(--g7));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+/* Versão translúcida, para destacar áreas sem perder a leitura do conteúdo */
+.bg-theme-wash {
+  background-image: linear-gradient(135deg, var(--gw1), var(--gw2), var(--gw3), var(--gw4), var(--gw5), var(--gw6), var(--gw7));
+}
+
+/* Fundo da tela de chamada: cor do tema + gradiente de 7 cores */
+.call-bg {
+  background-color: rgb(var(--surface));
+  background-image: linear-gradient(135deg, var(--gw1), var(--gw2), var(--gw3), var(--gw4), var(--gw5), var(--gw6), var(--gw7));
+}
+
+/* A chamada agora vive dentro do Sekai: ocupa a área principal, não a janela inteira */
+.call-host main {
+  min-height: 100%;
+}
+
+@layer base {
+  body {
+    @apply bg-discord-bg-primary text-discord-text-normal antialiased;
+    font-family: "gg sans", "Whitney", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  /* Scrollbar fina e escura, igual ao Discord */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #1a1b1e transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: #1a1b1e;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* Indicador de status (online/idle/dnd/offline) com "anel" recortado no avatar */
+  .status-dot {
+    @apply absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-[3px] border-discord-bg-dark;
+  }
+
+  .status-online { @apply bg-discord-online; }
+  .status-idle { @apply bg-discord-idle; }
+  .status-dnd { @apply bg-discord-dnd; }
+  .status-offline { @apply bg-discord-offline; }
+
+  /* Avatar com anel verde pulsante quando o membro está falando na call */
+  .avatar-speaking {
+    @apply ring-2 ring-discord-online animate-speaking rounded-full;
+  }
+}
