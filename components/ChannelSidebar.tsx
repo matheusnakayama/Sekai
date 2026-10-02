@@ -94,15 +94,15 @@ export function ChannelSidebar({
       </button>
 
       {/* Lista de canais */}
-      <div className="flex-1 space-y-3 overflow-y-auto px-2 py-3">
+      <div className="flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
         {categories.map((category) => {
           const isCollapsed = collapsed[category];
           const categoryChannels = channels.filter((c) => c.categoryName === category);
           const categoryId = categoryChannels[0]?.categoryId ?? null;
 
           return (
-            <div key={category}>
-              <div className="group flex items-center justify-between px-1">
+            <div key={category} className="border-b border-white/[0.07] pb-2.5 last:border-b-0">
+              <div className="group flex items-center justify-between rounded-md bg-black/[0.08] px-1 py-1">
                 <button
                   onClick={() =>
                     setCollapsed((prev) => ({ ...prev, [category]: !prev[category] }))
