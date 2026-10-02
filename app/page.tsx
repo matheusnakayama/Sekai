@@ -111,12 +111,29 @@ export default function Home() {
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
+  const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
+  const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
   const [showCreateServer, setShowCreateServer] = useState(false);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase.channel(`sekai-dm-notifications:${currentUserId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "sekai_direct_messages", filter: `receiver_id=eq.${currentUserId}` }, async (event) => {
+        const row = event.new as { sender_id: string; content: string; attachment_url: string | null };
+        const { data: profile } = await supabase.from("profiles").select("id,username,display_name,avatar_url").eq("id", row.sender_id).maybeSingle();
+        const name = profile?.display_name || profile?.username || "Nova mensagem";
+        setDmUnreadByUser((previous) => ({ ...previous, [row.sender_id]: (previous[row.sender_id] || 0) + 1 }));
+        setDmToast({ userId: row.sender_id, name, avatarUrl: profile?.avatar_url ?? null, content: row.content || (row.attachment_url ? "Enviou uma imagem" : "Nova mensagem"), image: !!row.attachment_url });
+        window.setTimeout(() => setDmToast((current) => current?.userId === row.sender_id ? null : current), 7000);
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [currentUserId, supabase]);
 
   async function loadMyProfile() {
     if (!currentUserId) return;
@@ -486,7 +503,7 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
-  async function handleSend(content: string) {
+  async function handleSend(content: string, attachmentUrl?: string | null) {
     if (content.startsWith("/")) {
       const result = await executeSlashCommand(content, {
         serverId: activeServerId,
@@ -503,7 +520,16 @@ export default function Home() {
       if (!result.ok) console.warn(result.message);
       return;
     }
-    sendMessage(content);
+    await sendMessage(content, attachmentUrl);
+  }
+
+  async function uploadChannelImage(file: File): Promise<string> {
+    if (!currentUserId || !activeChannelId) throw new Error("Selecione um canal de texto antes de enviar uma imagem.");
+    const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+    const path = `channels/${activeChannelId}/${currentUserId}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from("chat-images").upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw new Error(`Falha ao enviar a imagem: ${error.message}`);
+    return supabase.storage.from("chat-images").getPublicUrl(path).data.publicUrl;
   }
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
@@ -633,6 +659,8 @@ export default function Home() {
           servers={servers}
           openUserId={directMessageUserId}
           onDirectMessageOpened={() => setDirectMessageUserId(null)}
+          unreadByUser={dmUnreadByUser}
+          onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onJoined={(serverId, channelId) => {
             if (channelId) setInviteVoiceChannelId(channelId);
             setActiveServerId(serverId);
@@ -654,6 +682,7 @@ export default function Home() {
           messages={messages}
           slashCommands={SLASH_COMMANDS}
           onSendMessage={handleSend}
+          onUploadFile={uploadChannelImage}
           onToggleReaction={toggleReaction}
           currentUserId={currentUserId}
           onEditMessage={editMessage}
@@ -670,6 +699,10 @@ export default function Home() {
         onKickMember={handleKickMember}
         onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
       />}
+      {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
+        <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
+        <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Nova mensagem direta</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
+      </button>}
       </div>
     </div>
   );
