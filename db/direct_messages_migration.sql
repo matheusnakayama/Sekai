@@ -8,6 +8,10 @@ create table if not exists public.sekai_direct_messages (
   created_at timestamptz not null default now(),
   constraint sekai_direct_messages_not_self check (sender_id <> receiver_id)
 );
+alter table public.sekai_direct_messages add column if not exists attachment_url text;
+alter table public.sekai_direct_messages drop constraint if exists sekai_direct_messages_content_check;
+alter table public.sekai_direct_messages add constraint sekai_direct_messages_content_check
+  check (length(content) between 1 and 4000 or (length(content) = 0 and attachment_url is not null));
 create index if not exists sekai_direct_messages_pair_created on public.sekai_direct_messages
   (least(sender_id, receiver_id), greatest(sender_id, receiver_id), created_at);
 alter table public.sekai_direct_messages enable row level security;
@@ -35,3 +39,29 @@ do $$ begin
   alter publication supabase_realtime add table public.sekai_direct_messages;
 exception when duplicate_object then null;
 end $$;
+
+-- Imagens dos chats (servidor e DM), em bucket público para exibir os anexos.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('chat-images', 'chat-images', true, 5242880, array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict (id) do update set public = true, file_size_limit = 5242880,
+  allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif'];
+drop policy if exists sekai_chat_images_read on storage.objects;
+create policy sekai_chat_images_read on storage.objects for select to public using (bucket_id = 'chat-images');
+drop policy if exists sekai_chat_images_upload on storage.objects;
+create policy sekai_chat_images_upload on storage.objects for insert to authenticated with check (
+  bucket_id = 'chat-images' and (storage.foldername(name))[3] = auth.uid()::text and (
+    ((storage.foldername(name))[1] = 'channels' and exists (
+      select 1 from public.channels c join public.members m on m.server_id = c.server_id
+      where c.id::text = (storage.foldername(name))[2] and m.user_id = auth.uid()
+    )) or
+    ((storage.foldername(name))[1] = 'dm' and exists (
+      select 1 from public.profiles other_profile
+      where other_profile.id::text = (storage.foldername(name))[2]
+        and (exists (select 1 from public.friendships f where f.status = 'accepted' and
+          ((f.sender_id = auth.uid() and f.receiver_id = other_profile.id) or
+           (f.receiver_id = auth.uid() and f.sender_id = other_profile.id)))
+          or exists (select 1 from public.members a join public.members b using (server_id)
+            where a.user_id = auth.uid() and b.user_id = other_profile.id))
+    ))
+  )
+);
