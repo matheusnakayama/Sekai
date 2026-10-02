@@ -499,8 +499,18 @@ export default function Home() {
   }
 
   async function handleSubmitJoinServer(rawCode: string) {
-    // Aceita o código puro ou um link de convite (usa o último trecho do endereço).
-    const code = rawCode.split("?")[0].replace(/\/+$/, "").split("/").pop()?.trim() ?? "";
+    // Aceita o código puro ou um link completo, preservando o parâmetro ?invite=.
+    let code = rawCode.trim();
+    try {
+      const url = new URL(code, window.location.origin);
+      code = url.searchParams.get("invite") || url.searchParams.get("code") || code;
+      if (code === rawCode.trim() && url.pathname !== "/") {
+        code = url.pathname.replace(/\/+$/, "").split("/").pop() || code;
+      }
+    } catch {
+      // Entrada não é URL; é tratada como código direto abaixo.
+    }
+    code = code.trim();
     if (!code) throw new Error("Cole um código de convite.");
 
     const { data: serverId, error } = await supabase.rpc("redeem_invite", { p_code: code });
