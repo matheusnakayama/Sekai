@@ -30,6 +30,7 @@ interface ServerSettingsModalProps {
   };
   onClose: () => void;
   onChanged: () => void;
+  onDeleted: () => void;
 }
 
 export function ServerSettingsModal({
@@ -40,6 +41,7 @@ export function ServerSettingsModal({
   perms,
   onClose,
   onChanged,
+  onDeleted,
 }: ServerSettingsModalProps) {
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("geral");
@@ -87,6 +89,8 @@ export function ServerSettingsModal({
               serverName={serverName}
               canEdit={isOwner || perms.manageGuild}
               onChanged={onChanged}
+              isOwner={isOwner}
+              onDeleted={onDeleted}
             />
           )}
           {tab === "cargos" && (
@@ -124,16 +128,21 @@ function GeralTab({
   serverName,
   canEdit,
   onChanged,
+  isOwner,
+  onDeleted,
 }: {
   serverId: string;
   serverName: string;
   canEdit: boolean;
   onChanged: () => void;
+  isOwner: boolean;
+  onDeleted: () => void;
 }) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [name, setName] = useState(serverName);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -155,6 +164,35 @@ function GeralTab({
     await supabase.from("servers").update({ name: name.trim() }).eq("id", serverId);
     setSaving(false);
     onChanged();
+  }
+
+  async function handleDeleteServer() {
+    const confirmed = await dialogs.confirm({
+      title: "Excluir servidor",
+      message: `Excluir “${serverName}” e todos os seus canais, mensagens e membros? Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir servidor",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    setDeleting(true);
+    const { data, error } = await supabase
+      .from("servers")
+      .delete()
+      .eq("id", serverId)
+      .select("id")
+      .maybeSingle();
+    setDeleting(false);
+
+    if (error || !data) {
+      await dialogs.notify({
+        title: "Não foi possível excluir o servidor",
+        message: error?.message || "Confirme se você é o dono do servidor e se a policy servers_delete_owner está habilitada no Supabase.",
+      });
+      return;
+    }
+
+    onDeleted();
   }
 
   return (
@@ -192,6 +230,24 @@ function GeralTab({
         <p className="mt-2 text-xs text-discord-text-muted">
           Você não tem permissão para editar as informações do servidor.
         </p>
+      )}
+
+      {isOwner && (
+        <section className="mt-8 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+          <h3 className="font-semibold text-red-300">Zona de perigo</h3>
+          <p className="mt-1 text-sm text-discord-text-muted">
+            Excluir o servidor remove também os canais e os dados relacionados.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleDeleteServer()}
+            disabled={deleting}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            {deleting ? "Excluindo…" : "Excluir servidor"}
+          </button>
+        </section>
       )}
     </div>
   );
