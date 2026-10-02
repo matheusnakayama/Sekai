@@ -38,9 +38,13 @@ begin
 
   select id into v_role_id from public.roles where server_id = v_server_id and is_default limit 1;
   if v_role_id is null then raise exception 'Servidor sem cargo padrão'; end if;
-  insert into public.members (server_id, user_id, role_id)
-  values (v_server_id, auth.uid(), v_role_id)
+  insert into public.members (server_id, user_id)
+  values (v_server_id, auth.uid())
   on conflict (server_id, user_id) do nothing;
+  -- Cargos são associados pela tabela de junção neste schema.
+  insert into public.member_roles (server_id, user_id, role_id)
+  values (v_server_id, auth.uid(), v_role_id)
+  on conflict do nothing;
   if v_is_new_invite then
     update public.invites set uses = uses + 1 where code = v_invite.code;
   end if;
