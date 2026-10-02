@@ -603,3 +603,49 @@ html[data-theme="grafite"] {
     @apply ring-2 ring-discord-online animate-speaking rounded-full;
   }
 }
+
+/* Preferências pessoais aplicadas pelo painel de configurações do usuário. */
+html[data-font-scale="large"] {
+  font-size: 110%;
+}
+
+html[data-density="compact"] .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.65rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.65rem * var(--tw-space-y-reverse));
+}
+
+html[data-density="compact"] .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.45rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.45rem * var(--tw-space-y-reverse));
+}
+
+html[data-density="compact"] .gap-4 { gap: 0.65rem; }
+html[data-density="compact"] .gap-3 { gap: 0.5rem; }
+html[data-density="compact"] .p-4 { padding: 0.75rem; }
+html[data-density="compact"] .p-5 { padding: 0.9rem; }
+
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+.profile-card-enter {
+  animation: profile-card-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.settings-backdrop-enter { animation: settings-fade-in 150ms ease-out both; }
+.settings-window-enter { animation: settings-window-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes profile-card-in {
+  from { opacity: 0; transform: translateY(7px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes settings-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes settings-window-in { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: translateY(0) scale(1); } }

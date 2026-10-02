@@ -7,7 +7,12 @@ import { useState } from "react";
 export interface MemberItem {
   id: string;
   displayName: string;
+  username?: string | null;
+  pronouns?: string | null;
+  bio?: string | null;
+  customStatus?: string | null;
   avatarUrl?: string | null;
+  bannerUrl?: string | null;
   status: "online" | "idle" | "dnd" | "offline";
   roleName: string;
   roleColor?: string; // hex, ex: "#f23f43" para Admin
@@ -65,10 +70,12 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         </div>
       )}
       {selected && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
-        <section role="dialog" aria-modal="true" aria-label={`Perfil de ${selected.displayName}`} className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
-          <div className="h-20 bg-theme-gradient"/><button onClick={() => setSelected(null)} aria-label="Fechar perfil" className="float-right -mt-16 mr-3 rounded-full bg-black/30 p-2 text-white/80 hover:bg-black/50"><X size={18}/></button>
-          <div className="relative -mt-10 px-5"><div className="h-20 w-20 overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand">{selected.avatarUrl ? <img src={selected.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-2xl font-bold text-white">{selected.displayName[0]?.toUpperCase()}</span>}</div>
-            <div className="mt-3 rounded-xl bg-discord-bg-primary p-4"><h2 className="text-lg font-bold text-discord-header-primary">{selected.displayName}</h2><p className="text-xs text-discord-text-muted">{selected.roleName}</p>
+        <section role="dialog" aria-modal="true" aria-label={`Perfil de ${selected.displayName}`} className="profile-card-enter w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
+          <div className="relative h-28 bg-theme-gradient bg-cover bg-center" style={selected.bannerUrl ? { backgroundImage: `linear-gradient(90deg,rgba(0,0,0,.1),rgba(0,0,0,.1)),url("${selected.bannerUrl}")` } : undefined}><button onClick={() => setSelected(null)} aria-label="Fechar perfil" className="absolute right-3 top-3 rounded-full bg-black/35 p-2 text-white/80 transition hover:bg-black/60"><X size={18}/></button></div>
+          <div className="relative -mt-10 px-5"><div className="h-20 w-20 overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{selected.avatarUrl ? <img src={selected.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-2xl font-bold text-white">{selected.displayName[0]?.toUpperCase()}</span>}</div>
+            <div className="mt-3 rounded-xl bg-discord-bg-primary p-4"><h2 className="text-lg font-bold text-discord-header-primary">{selected.displayName}</h2><div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-discord-text-muted"><span>@{selected.username || selected.id.slice(0, 8)}</span>{selected.pronouns && <><span>·</span><span>{selected.pronouns}</span></>}</div><p className="mt-2 text-xs font-medium text-discord-text-muted">{selected.roleName}</p>
+              {selected.customStatus && <p className="mt-3 rounded-lg bg-discord-bg-secondary px-3 py-2 text-sm text-discord-text-normal">{selected.customStatus}</p>}
+              {selected.bio && <div className="mt-3 border-t border-white/5 pt-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Sobre mim</p><p className="whitespace-pre-wrap break-words text-sm leading-5 text-discord-text-normal">{selected.bio}</p></div>}
               {!selected.id || selected.id === currentUserId ? null : <div className="mt-4 grid gap-2">
                 <button onClick={() => { onMessageMember?.(selected); setSelected(null); }} className="flex items-center gap-2 rounded-lg bg-discord-brand px-3 py-2.5 text-sm font-semibold text-white hover:brightness-110"><MessageCircle size={16}/>Enviar mensagem direta</button>
                 <button onClick={() => { onAddFriend(selected.id); setSelected(null); }} className="flex items-center gap-2 rounded-lg bg-discord-bg-secondary px-3 py-2.5 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover"><UserPlus size={16}/>Adicionar amigo</button>

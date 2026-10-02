@@ -119,7 +119,7 @@ export default function Home() {
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -140,22 +140,46 @@ export default function Home() {
     if (!currentUserId) return;
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, username, bio, custom_status, avatar_url")
+      .select("display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, status")
       .eq("id", currentUserId)
       .single();
     if (data) {
       setMyProfile({
         displayName: data.display_name || data.username,
+        username: data.username,
+        pronouns: data.pronouns,
         bio: data.bio,
         customStatus: data.custom_status,
         avatarUrl: data.avatar_url,
+        bannerUrl: data.banner_url,
+        presence: data.status,
       });
     }
+  }
+
+  async function handlePresenceChange(presence: "online" | "idle" | "dnd" | "offline") {
+    if (!currentUserId) return;
+    const { error } = await supabase.from("profiles").update({ status: presence }).eq("id", currentUserId);
+    if (error) return;
+    setMyProfile((profile) => profile ? { ...profile, presence } : profile);
+    await loadChannelsAndMembers();
   }
 
   useEffect(() => {
     loadMyProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(`sekai-preferences:${currentUserId}`) || "{}");
+      document.documentElement.dataset.density = saved.density === "compact" ? "compact" : "comfortable";
+      document.documentElement.dataset.fontScale = saved.fontScale === "large" ? "large" : "normal";
+      document.documentElement.dataset.reducedMotion = String(saved.reducedMotion === true);
+    } catch {
+      // As preferências locais padrão já estão aplicadas pelo CSS.
+    }
   }, [currentUserId]);
 
   useEffect(() => {
@@ -315,7 +339,7 @@ export default function Home() {
     // Membros + cargos (um membro pode ter vários cargos agora)
     const { data: memberRows } = await supabase
       .from("members")
-      .select("user_id, profiles(display_name, username, avatar_url, status)")
+      .select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, status)")
       .eq("server_id", activeServerId);
 
     const { data: memberRoleRows } = await supabase
@@ -335,8 +359,13 @@ export default function Home() {
       const topRole = [...roles].sort((a, b) => b.position - a.position)[0];
       return {
         id: m.user_id,
-        displayName: m.profiles?.display_name || m.profiles?.username || "Usuário",
-        avatarUrl: m.profiles?.avatar_url,
+        displayName: m.nickname || m.profiles?.display_name || m.profiles?.username || "Usuário",
+        username: m.profiles?.username,
+        pronouns: m.profiles?.pronouns,
+        bio: m.profiles?.bio,
+        customStatus: m.profiles?.custom_status,
+        avatarUrl: m.avatar_url || m.profiles?.avatar_url,
+        bannerUrl: m.banner_url || m.profiles?.banner_url,
         status: m.profiles?.status ?? "offline",
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
@@ -483,11 +512,12 @@ export default function Home() {
     if (error) throw new Error(error.message);
 
     if (data && iconFile) {
-      const ext = iconFile.name.split(".").pop();
+      const extension = iconFile.name.split(".").pop()?.toLowerCase();
+      const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
       const path = `${data.id}/icon-${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("server-icons")
-        .upload(path, iconFile, { upsert: true });
+        .upload(path, iconFile, { upsert: true, contentType: iconFile.type });
       if (!uploadError) {
         const iconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
         await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", data.id);
@@ -553,7 +583,7 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null) {
-    if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content.trim())) {
+    if (content.startsWith("/")) {
       const result = await executeSlashCommand(content, {
         serverId: activeServerId,
         channelId: activeChannelId,
@@ -626,9 +656,16 @@ export default function Home() {
         voiceMembersByChannel={voiceMembersByChannel}
         onDisconnectVoice={disconnectVoice}
         currentUser={{
+          userId: currentUserId,
+          username: myProfile?.username,
           displayName: currentMember?.displayName ?? "Você",
-          avatarUrl: currentMember?.avatarUrl,
+          avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl,
+          bannerUrl: currentMember?.bannerUrl ?? myProfile?.bannerUrl,
+          bio: myProfile?.bio,
+          customStatus: myProfile?.customStatus,
+          presence: myProfile?.presence ?? "online",
         }}
+        onPresenceChange={handlePresenceChange}
       /> : null}
 
       {showCreateServer && (
@@ -650,10 +687,11 @@ export default function Home() {
         />
       )}
 
-      {showUserSettings && currentUserId && myProfile && (
+      {showUserSettings && currentUserId && (
         <UserSettingsModal
           userId={currentUserId}
-          initial={myProfile}
+          serverId={activeServerId}
+          initial={myProfile ?? { displayName: currentMember?.displayName ?? "Você", username: currentMember?.username ?? "" }}
           onClose={() => setShowUserSettings(false)}
           onSaved={() => {
             loadMyProfile();

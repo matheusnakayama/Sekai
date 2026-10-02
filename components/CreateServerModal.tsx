@@ -22,6 +22,10 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
   function handleIconPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.currentTarget.value = "";
+    if (!file.type.startsWith("image/")) { setError("Escolha um arquivo de imagem."); return; }
+    if (file.size > 8 * 1024 * 1024) { setError("O ícone deve ter no máximo 8 MB."); return; }
+    setError("");
     setIconFile(file);
     setIconPreview(URL.createObjectURL(file));
   }
@@ -103,8 +107,9 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
               </div>
               <label className="cursor-pointer rounded bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">
                 Enviar ícone
-                <input type="file" accept="image/*" className="hidden" onChange={handleIconPick} />
+                <input type="file" accept="image/gif,image/*" className="hidden" onChange={handleIconPick} />
               </label>
+              <span className="text-xs text-discord-text-muted">GIF animado, PNG ou JPG · até 8 MB</span>
             </div>
 
             <label className="mb-1 block text-xs font-semibold uppercase text-discord-text-muted">

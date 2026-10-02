@@ -147,15 +147,20 @@ function GeralTab({
   async function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const ext = file.name.split(".").pop();
+    e.currentTarget.value = "";
+    if (!file.type.startsWith("image/")) { await dialogs.notify({ title: "Arquivo inválido", message: "Escolha um arquivo de imagem." }); return; }
+    if (file.size > 8 * 1024 * 1024) { await dialogs.notify({ title: "Imagem muito grande", message: "O ícone deve ter no máximo 8 MB." }); return; }
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
     const path = `${serverId}/icon-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("server-icons").upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from("server-icons").upload(path, file, { upsert: true, contentType: file.type });
     if (error) {
       await dialogs.notify({ title: "Falha no upload", message: error.message });
       return;
     }
     const iconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
-    await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", serverId);
+    const { error: updateError } = await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", serverId);
+    if (updateError) { await dialogs.notify({ title: "Falha ao salvar ícone", message: updateError.message }); return; }
     onChanged();
   }
 
@@ -201,7 +206,7 @@ function GeralTab({
         Ícone do servidor
       </label>
       <label className={cn("mb-4 inline-block", canEdit && "cursor-pointer")}>
-        <input type="file" accept="image/*" className="hidden" disabled={!canEdit} onChange={handleIconUpload} />
+        <input type="file" accept="image/gif,image/*" className="hidden" disabled={!canEdit} onChange={handleIconUpload} />
         <span className="rounded bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">
           Enviar imagem
         </span>
