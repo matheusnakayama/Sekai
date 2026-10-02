@@ -590,7 +590,8 @@ html[data-theme="grafite"] {
 @layer components {
   /* Indicador de status (online/idle/dnd/offline) com "anel" recortado no avatar */
   .status-dot {
-    @apply absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-[3px] border-discord-bg-dark;
+    @apply absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-dark;
+    box-sizing: border-box;
   }
 
   .status-online { @apply bg-discord-online; }
@@ -639,8 +640,82 @@ html[data-reduced-motion="true"] *::after {
   animation: profile-card-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.settings-backdrop-enter { animation: settings-fade-in 150ms ease-out both; }
-.settings-window-enter { animation: settings-window-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.profile-footer-subline { isolation: isolate; }
+.profile-footer-status,
+.profile-footer-username {
+  transition: opacity 170ms ease, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.profile-footer-status { opacity: 1; transform: translateY(0); }
+.profile-footer-username { opacity: 0; transform: translateY(5px); }
+.profile-footer:hover .profile-footer-status,
+.profile-footer:focus-within .profile-footer-status { opacity: 0; transform: translateY(-5px); }
+.profile-footer:hover .profile-footer-username,
+.profile-footer:focus-within .profile-footer-username { opacity: 1; transform: translateY(0); }
+.profile-footer-name { transition: color 160ms ease; }
+.profile-footer-name:hover { background: rgb(255 255 255 / 4%); }
+.profile-footer:hover .profile-footer-name p:first-child,
+.profile-footer:focus-within .profile-footer-name p:first-child { color: var(--discord-header-primary, #f2f3f5); }
+.profile-footer-actions button {
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), color 160ms ease, background-color 160ms ease;
+}
+.profile-footer-actions button:hover { transform: translateY(-1px); }
+.profile-footer-actions button:active { transform: scale(0.94); }
+.profile-footer-actions button:focus-visible,
+.profile-footer-name:focus-visible,
+.profile-footer > button:first-of-type:focus-visible {
+  outline: 2px solid rgb(var(--d-brand) / 0.75);
+  outline-offset: 2px;
+}
+
+.settings-backdrop-enter { animation: settings-fade-in 180ms ease-out both; }
+.settings-window-enter {
+  animation: settings-window-in 260ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+  transform-origin: 50% 44%;
+}
+.settings-section-enter { animation: settings-section-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.settings-profile-tab { position: relative; }
+.settings-profile-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: rgb(var(--d-brand) / 1);
+  content: "";
+  transform: scaleX(0.35);
+  opacity: 0;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease;
+}
+.settings-profile-tab[aria-pressed="true"]::after { transform: scaleX(1); opacity: 1; }
+.settings-profile-preview { transition: border-color 180ms ease, box-shadow 220ms ease; }
+.settings-profile-preview:hover { border-color: rgb(255 255 255 / 16%); box-shadow: 0 16px 40px rgb(0 0 0 / 18%); }
+
+.settings-window-enter button:not(:disabled) {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.settings-window-enter button:not(:disabled):hover { transform: translateY(-1px); }
+.settings-window-enter button:not(:disabled):active { transform: scale(0.985); }
+.settings-window-enter button:focus-visible,
+.settings-window-enter .settings-upload-control:focus-within {
+  outline: 2px solid rgb(88 101 242 / 75%);
+  outline-offset: 2px;
+}
+.settings-window-enter .settings-upload-control {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 180ms ease, box-shadow 180ms ease;
+}
+.settings-window-enter .settings-upload-control:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 20px rgb(0 0 0 / 18%);
+}
+.settings-window-enter .settings-upload-control:active { transform: scale(0.985); }
+.settings-window-enter input,
+.settings-window-enter textarea,
+.settings-window-enter select {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
 
 @keyframes profile-card-in {
   from { opacity: 0; transform: translateY(7px) scale(0.985); }
@@ -648,4 +723,23 @@ html[data-reduced-motion="true"] *::after {
 }
 
 @keyframes settings-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes settings-window-in { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes settings-window-in { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes settings-section-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-card-enter,
+  .settings-backdrop-enter,
+  .settings-window-enter,
+  .settings-section-enter,
+  .settings-profile-tab::after,
+  .settings-profile-preview,
+  .settings-window-enter button,
+  .settings-window-enter .settings-upload-control,
+  .profile-footer,
+  .profile-footer-status,
+  .profile-footer-username,
+  .profile-footer-actions button {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

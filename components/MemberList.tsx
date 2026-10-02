@@ -2,7 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { UserPlus, MessageCircle, UserMinus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface MemberItem {
   id: string;
@@ -36,6 +37,35 @@ const STATUS_CLASS: Record<MemberItem["status"], string> = {
 
 export function MemberList({ members, currentUserId, onAddFriend, canKick = false, onKickMember, onMessageMember }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
+  const [profilePosition, setProfilePosition] = useState({ left: 12, top: 12 });
+  const profileRef = useRef<HTMLElement>(null);
+
+  function openProfile(member: MemberItem, trigger: HTMLButtonElement) {
+    const bounds = trigger.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 24);
+    const estimatedHeight = Math.min(560, window.innerHeight - 24);
+    setProfilePosition({
+      left: Math.max(12, Math.min(bounds.left - width - 12, window.innerWidth - width - 12)),
+      top: Math.max(12, Math.min(bounds.top - 42, window.innerHeight - estimatedHeight - 12)),
+    });
+    setSelected(member);
+  }
+
+  useEffect(() => {
+    if (!selected) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!profileRef.current?.contains(event.target as Node)) setSelected(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [selected]);
   // Offline fica sempre por último; dentro dos online, agrupa por cargo
   const online = members.filter((m) => m.status !== "offline");
   const offline = members.filter((m) => m.status === "offline");
@@ -43,6 +73,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
   const groupsOnline = groupByRole(online);
 
   return (
+    <>
     <div className="h-full w-60 space-y-4 overflow-y-auto bg-discord-bg-dark px-2 py-4">
       {groupsOnline.map(([roleName, roleMembers]) => (
         <div key={roleName}>
@@ -51,7 +82,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </p>
           <div className="mt-1 space-y-0.5">
             {roleMembers.map((m) => (
-              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={setSelected} />
+              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} />
             ))}
           </div>
         </div>
@@ -64,15 +95,15 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </p>
           <div className="mt-1 space-y-0.5 opacity-50">
             {offline.map((m) => (
-              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={setSelected} />
+              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} />
             ))}
           </div>
         </div>
       )}
-      {selected && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
-        <section role="dialog" aria-modal="true" aria-label={`Perfil de ${selected.displayName}`} className="profile-card-enter w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
+    </div>
+      {selected && createPortal(<section ref={profileRef} role="dialog" aria-label={`Perfil de ${selected.displayName}`} style={{ left: profilePosition.left, top: profilePosition.top }} className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
           <div className="relative h-28 bg-theme-gradient bg-cover bg-center" style={selected.bannerUrl ? { backgroundImage: `linear-gradient(90deg,rgba(0,0,0,.1),rgba(0,0,0,.1)),url("${selected.bannerUrl}")` } : undefined}><button onClick={() => setSelected(null)} aria-label="Fechar perfil" className="absolute right-3 top-3 rounded-full bg-black/35 p-2 text-white/80 transition hover:bg-black/60"><X size={18}/></button></div>
-          <div className="relative -mt-10 px-5"><div className="h-20 w-20 overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{selected.avatarUrl ? <img src={selected.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-2xl font-bold text-white">{selected.displayName[0]?.toUpperCase()}</span>}</div>
+          <div className="relative -mt-10 px-5"><div className="relative h-20 w-20"><div className="h-full w-full overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{selected.avatarUrl ? <img src={selected.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-2xl font-bold text-white">{selected.displayName[0]?.toUpperCase()}</span>}</div><span className={cn("status-dot", STATUS_CLASS[selected.status])}/></div>
             <div className="mt-3 rounded-xl bg-discord-bg-primary p-4"><h2 className="text-lg font-bold text-discord-header-primary">{selected.displayName}</h2><div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-discord-text-muted"><span>@{selected.username || selected.id.slice(0, 8)}</span>{selected.pronouns && <><span>·</span><span>{selected.pronouns}</span></>}</div><p className="mt-2 text-xs font-medium text-discord-text-muted">{selected.roleName}</p>
               {selected.customStatus && <p className="mt-3 rounded-lg bg-discord-bg-secondary px-3 py-2 text-sm text-discord-text-normal">{selected.customStatus}</p>}
               {selected.bio && <div className="mt-3 border-t border-white/5 pt-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Sobre mim</p><p className="whitespace-pre-wrap break-words text-sm leading-5 text-discord-text-normal">{selected.bio}</p></div>}
@@ -83,9 +114,8 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
               </div>}
             </div>
           </div><div className="h-5"/>
-        </section>
-      </div>}
-    </div>
+        </section>, document.body)}
+    </>
   );
 }
 
@@ -99,10 +129,11 @@ function groupByRole(members: MemberItem[]): [string, MemberItem[]][] {
   return Array.from(map.entries());
 }
 
-function MemberRow({ member, isSelf, onSelect }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem) => void }) {
+function MemberRow({ member, isSelf, onSelect }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void }) {
   return (
-    <button type="button" onClick={() => onSelect(member)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-discord-bg-modifier-hover">
-      <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-discord-brand">
+    <button type="button" onClick={(event) => onSelect(member, event.currentTarget)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-discord-bg-modifier-hover">
+      <div className="relative h-8 w-8 shrink-0">
+       <div className="h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -111,6 +142,7 @@ function MemberRow({ member, isSelf, onSelect }: { member: MemberItem; isSelf: b
             {member.displayName[0]?.toUpperCase()}
           </div>
         )}
+        </div>
         <span className={cn("status-dot", STATUS_CLASS[member.status])} />
       </div>
 

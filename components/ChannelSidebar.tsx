@@ -251,7 +251,7 @@ export function ChannelSidebar({
       )}
 
       {/* Painel do usuário */}
-      <div ref={profileMenuRef} className="relative flex h-[52px] items-center gap-2 bg-discord-bg-darkest px-2">
+      <div ref={profileMenuRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
         {profileMenuOpen && <div className="profile-card-enter absolute bottom-[calc(100%+10px)] left-2 z-[150] w-[min(300px,80vw)] overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
           <div className="relative h-24 bg-theme-gradient bg-cover bg-center" style={currentUser.bannerUrl ? { backgroundImage: `linear-gradient(90deg,rgba(0,0,0,.15),rgba(0,0,0,.15)),url("${currentUser.bannerUrl}")` } : undefined}/>
           <div className="relative px-4 pb-4"><div className="-mt-9 flex items-end justify-between"><div className="h-[68px] w-[68px] overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{currentUser.avatarUrl ? <img src={currentUser.avatarUrl} alt="" className="h-full w-full object-cover"/> : <div className="grid h-full place-items-center text-xl font-bold text-white">{currentUser.displayName[0]?.toUpperCase()}</div>}</div><button onClick={() => { setProfileMenuOpen(false); onOpenSettings?.(); }} className="mb-1 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:brightness-125">Editar perfil</button></div>
@@ -262,59 +262,67 @@ export function ChannelSidebar({
             <button onClick={async () => { try { await navigator.clipboard.writeText(currentUser.userId); setUserIdCopied(true); window.setTimeout(() => setUserIdCopied(false), 1500); } catch { /* A API de clipboard pode estar bloqueada pelo navegador. */ } }} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal">{userIdCopied ? <Check size={14}/> : <Copy size={14}/>} {userIdCopied ? "ID copiado" : "Copiar ID do usuário"}</button>
           </div>
         </div>}
-        <button onClick={() => { setProfileMenuOpen((value) => !value); setPresenceMenuOpen(false); }} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand">
-          {currentUser.avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={currentUser.avatarUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
-              {currentUser.displayName[0]?.toUpperCase()}
-            </div>
-          )}
-          <span className={`status-dot ${currentUser.presence === "online" ? "status-online" : currentUser.presence === "idle" ? "status-idle" : currentUser.presence === "dnd" ? "status-dnd" : "status-offline"}`} />
+        <button onClick={() => { setProfileMenuOpen((value) => !value); setPresenceMenuOpen(false); }} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className="relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand">
+          <span className="absolute inset-0 overflow-hidden rounded-full">
+            {currentUser.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={currentUser.avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
+                {currentUser.displayName[0]?.toUpperCase()}
+              </span>
+            )}
+          </span>
+          <span className={`status-dot border-discord-bg-darkest ${currentUser.presence === "online" ? "status-online" : currentUser.presence === "idle" ? "status-idle" : currentUser.presence === "dnd" ? "status-dnd" : "status-offline"}`} />
         </button>
 
-        <button onClick={() => setProfileMenuOpen((value) => !value)} className="min-w-0 flex-1 text-left">
+        <button onClick={() => setProfileMenuOpen((value) => !value)} aria-expanded={profileMenuOpen} className="profile-footer-name min-w-0 flex-1 rounded-md py-1 text-left">
           <p className="truncate text-sm font-semibold text-discord-header-primary">
             {currentUser.displayName}
           </p>
-          <p className="truncate text-xs text-discord-text-muted">
-            {currentUser.customStatus || presenceLabel}
+          <p className="profile-footer-subline relative h-4 truncate text-xs text-discord-text-muted">
+            <span className="profile-footer-status absolute inset-0 truncate">{currentUser.customStatus || presenceLabel}</span>
+            <span className="profile-footer-username absolute inset-0 truncate">{currentUser.username || currentUser.userId.slice(0, 8)}</span>
           </p>
         </button>
 
-        {onToggleMute && (
+        <div className="profile-footer-actions flex items-center gap-0.5">
+          {onToggleMute && (
+            <button
+              onClick={onToggleMute}
+              title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"}
+              aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"}
+              className="rounded-md p-1.5 text-discord-text-muted transition-colors hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
+            >
+              {currentUser.isMuted ? <MicOff className="h-[18px] w-[18px]" /> : <Mic className="h-[18px] w-[18px]" />}
+            </button>
+          )}
+
+          {onToggleDeafen && (
+            <button
+              onClick={onToggleDeafen}
+              title={currentUser.isDeafened ? "Ativar áudio" : "Desativar áudio"}
+              aria-label={currentUser.isDeafened ? "Ativar áudio" : "Desativar áudio"}
+              className={cn(
+                "rounded-md p-1.5 transition-colors hover:bg-discord-bg-modifier-hover",
+                currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-discord-text-normal"
+              )}
+            >
+              <Headphones className="h-[18px] w-[18px]" />
+            </button>
+          )}
+
+          <ThemePicker placement="up" align="left" />
+
           <button
-            onClick={onToggleMute}
-            title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"}
-            className="rounded-md p-1.5 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
+            onClick={onOpenSettings}
+            title="Configurações"
+            aria-label="Abrir configurações"
+            className="rounded-md p-1.5 text-discord-text-muted transition-colors hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
           >
-            {currentUser.isMuted ? <MicOff className="h-[18px] w-[18px]" /> : <Mic className="h-[18px] w-[18px]" />}
+            <Settings className="h-[18px] w-[18px]" />
           </button>
-        )}
-
-        {onToggleDeafen && (
-          <button
-            onClick={onToggleDeafen}
-            title={currentUser.isDeafened ? "Ativar áudio" : "Desativar áudio"}
-            className={cn(
-              "rounded-md p-1.5 hover:bg-discord-bg-modifier-hover",
-              currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-discord-text-normal"
-            )}
-          >
-            <Headphones className="h-[18px] w-[18px]" />
-          </button>
-        )}
-
-        <ThemePicker placement="up" align="left" />
-
-        <button
-          onClick={onOpenSettings}
-          title="Configurações"
-          className="rounded-md p-1.5 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
-        >
-          <Settings className="h-[18px] w-[18px]" />
-        </button>
+        </div>
       </div>
     </div>
   );
