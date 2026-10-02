@@ -41,9 +41,15 @@ function applyTheme(id: string) {
   [
     "--d-brand", "--d-brand-hover", "--surface", "--surface-soft", "--surface-card", "--surface-border",
     "--d-darkest", "--d-dark", "--d-primary", "--d-secondary", "--d-hover", "--d-floating",
+    "--bg-gradient-start", "--bg-gradient-end",
     ...Array.from({ length: 7 }, (_, i) => `--g${i + 1}`),
     ...Array.from({ length: 7 }, (_, i) => `--gw${i + 1}`),
   ].forEach((name) => root.style.removeProperty(name));
+  if (selected) {
+    const backgroundStops = selected.backgroundStops ?? [selected.stops[0], selected.stops[6]];
+    root.style.setProperty("--bg-gradient-start", backgroundStops[0]);
+    root.style.setProperty("--bg-gradient-end", backgroundStops[1]);
+  }
   if (!selected || ["azul", "roxo", "rosa", "verde", "ambar", "ciano", "rubi", "preto", "menta", "por-do-sol", "oceano", "candy", "grafite"].includes(id)) return;
   const stop = (index: number) => toRgb(selected.stops[index]).join(" ");
   ["50", "100", "200", "300"].forEach((step, index) => root.style.setProperty(`--brand-${step}`, mixWithWhite(selected.stops[0], [0.94, 0.82, 0.62, 0.36][index])));
