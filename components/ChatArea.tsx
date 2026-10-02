@@ -1,4 +1,4 @@
-z"use client";
+"use client";
 
 import { useMemo, useRef, useState } from "react";
 import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
