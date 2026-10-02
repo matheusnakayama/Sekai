@@ -87,15 +87,42 @@ create table if not exists public.channel_categories (
   unique (server_id, name)
 );
 alter table public.channels add column if not exists category_id uuid references public.channel_categories(id) on delete set null;
-insert into public.channel_categories (server_id, name, position)
-select distinct c.server_id, coalesce(nullif(c.category, ''), 'GERAL'), 0
-from public.channels c
-where c.server_id is not null
-on conflict (server_id, name) do nothing;
-update public.channels c set category_id = cc.id
-from public.channel_categories cc
-where c.category_id is null and cc.server_id = c.server_id
-  and cc.name = coalesce(nullif(c.category, ''), 'GERAL');
+-- Bancos antigos podem ter a categoria em channels.category (texto) ou somente
+-- channels.category_id (UUID). Detecta o formato para a migração servir aos dois.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'channels' and column_name = 'category'
+  ) then
+    execute $sql$
+      insert into public.channel_categories (server_id, name, position)
+      select distinct c.server_id, coalesce(nullif(c.category, ''), 'GERAL'), 0
+      from public.channels c
+      where c.server_id is not null
+      on conflict (server_id, name) do nothing
+    $sql$;
+    execute $sql$
+      update public.channels c set category_id = cc.id
+      from public.channel_categories cc
+      where c.category_id is null and cc.server_id = c.server_id
+        and cc.name = coalesce(nullif(c.category, ''), 'GERAL')
+    $sql$;
+  else
+    insert into public.channel_categories (server_id, name, position)
+    select distinct c.server_id, 'GERAL', 0
+    from public.channels c
+    where c.server_id is not null
+    on conflict (server_id, name) do nothing;
+    update public.channels c set category_id = cc.id
+    from public.channel_categories cc
+    where cc.server_id = c.server_id and cc.name = 'GERAL'
+      and (c.category_id is null or not exists (
+        select 1 from public.channel_categories existing
+        where existing.id = c.category_id and existing.server_id = c.server_id
+      ));
+  end if;
+end $$;
 alter table public.channel_categories enable row level security;
 grant select, insert, update, delete on public.channel_categories to authenticated;
 drop policy if exists channel_categories_select_member on public.channel_categories;
@@ -114,9 +141,9 @@ begin
     values (new.id, 'CANAIS DE TEXTO', 0) returning id into v_text_category;
   insert into public.channel_categories (server_id, name, position)
     values (new.id, 'CANAIS DE VOZ', 1) returning id into v_voice_category;
-  insert into public.channels (server_id, name, type, category, category_id, position)
-    values (new.id, 'geral', 'text', 'CANAIS DE TEXTO', v_text_category, 0),
-           (new.id, 'Sala de Voz', 'voice', 'CANAIS DE VOZ', v_voice_category, 0);
+  insert into public.channels (server_id, name, type, category_id, position)
+    values (new.id, 'geral', 'text', v_text_category, 0),
+           (new.id, 'Sala de Voz', 'voice', v_voice_category, 0);
   return new;
 end;
 $$;
