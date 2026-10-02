@@ -161,9 +161,15 @@ export class WebRTCManager {
       watcher.ctx.close().catch(() => {});
       this.speakingWatchers.delete(peerId);
     }
+
+    // Quando alguém sai durante uma apresentação, redistribua o limite de
+    // bitrate entre os destinatários que ainda estão conectados. Sem isso,
+    // cada sender continua preso ao valor reduzido da sala maior.
+    if (entry && this.videoProfileOverride) this.rebalanceVideoSenders();
   }
 
   hangupAll() {
+    this.videoProfileOverride = null;
     Array.from(this.peers.keys()).forEach((id) => this.hangupPeer(id));
   }
 
@@ -656,6 +662,19 @@ export class WebRTCManager {
     if (!profile?.totalBitrate) return profile;
     const recipientCount = Math.max(1, this.peers.size);
     return { ...profile, maxBitrate: Math.ceil(profile.totalBitrate / recipientCount) };
+  }
+
+  private rebalanceVideoSenders() {
+    const profile = this.videoProfileOverride;
+    if (!profile) return;
+
+    const adjustedProfile = this.profileForCurrentPeerCount(profile);
+    for (const peer of this.peers.values()) {
+      const sender = peer.connection.getSenders().find((candidate) => candidate.track?.kind === 'video');
+      if (sender?.track?.readyState === 'live') {
+        void this.configureVideoSender(sender, adjustedProfile, peer);
+      }
+    }
   }
 
   private watchSpeaking(id: string, stream: MediaStream) {
