@@ -640,6 +640,15 @@ html[data-reduced-motion="true"] *::after {
   animation: profile-card-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+.custom-profile-badge {
+  cursor: help;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 160ms ease;
+}
+.custom-profile-badge:hover {
+  transform: translateY(-1px) scale(1.08);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 28%);
+}
+
 .profile-footer-subline { isolation: isolate; }
 .profile-footer-status,
 .profile-footer-username {
@@ -728,6 +737,7 @@ html[data-reduced-motion="true"] *::after {
 
 @media (prefers-reduced-motion: reduce) {
   .profile-card-enter,
+  .custom-profile-badge,
   .settings-backdrop-enter,
   .settings-window-enter,
   .settings-section-enter,

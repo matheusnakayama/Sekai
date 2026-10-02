@@ -14,6 +14,7 @@ import { ChatArea } from "@/components/ChatArea";
 import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
 import { MemberList, MemberItem } from "@/components/MemberList";
+import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { FriendsHome } from "@/components/FriendsHome";
@@ -119,7 +120,7 @@ export default function Home() {
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -140,10 +141,15 @@ export default function Home() {
     if (!currentUserId) return;
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, status")
+      .select("display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status")
       .eq("id", currentUserId)
       .single();
     if (data) {
+      const { data: badgeRows } = await supabase
+        .from("user_badges")
+        .select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
+        .eq("user_id", currentUserId);
+      const badges = mapUserBadgeRows(badgeRows).get(currentUserId) ?? [];
       setMyProfile({
         displayName: data.display_name || data.username,
         username: data.username,
@@ -152,6 +158,8 @@ export default function Home() {
         customStatus: data.custom_status,
         avatarUrl: data.avatar_url,
         bannerUrl: data.banner_url,
+        profileCardColor: data.profile_card_color,
+        badges,
         presence: data.status,
       });
     }
@@ -339,8 +347,17 @@ export default function Home() {
     // Membros + cargos (um membro pode ter vários cargos agora)
     const { data: memberRows } = await supabase
       .from("members")
-      .select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, status)")
+      .select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status)")
       .eq("server_id", activeServerId);
+
+    const memberUserIds = [...new Set((memberRows ?? []).map((member: any) => member.user_id).filter(Boolean))];
+    const { data: badgeRows } = memberUserIds.length
+      ? await supabase
+          .from("user_badges")
+          .select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
+          .in("user_id", memberUserIds)
+      : { data: [] };
+    const badgesByUser = mapUserBadgeRows(badgeRows);
 
     const { data: memberRoleRows } = await supabase
       .from("member_roles")
@@ -366,6 +383,8 @@ export default function Home() {
         customStatus: m.profiles?.custom_status,
         avatarUrl: m.avatar_url || m.profiles?.avatar_url,
         bannerUrl: m.banner_url || m.profiles?.banner_url,
+        profileCardColor: m.profiles?.profile_card_color,
+        badges: badgesByUser.get(m.user_id) ?? [],
         status: m.profiles?.status ?? "offline",
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
@@ -379,6 +398,18 @@ export default function Home() {
 
   useEffect(() => {
     loadChannelsAndMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeServerId, currentUserId]);
+
+  useEffect(() => {
+    if (!activeServerId || !currentUserId) return;
+    const channel = supabase.channel(`sekai-user-badges:${activeServerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_badges" }, () => {
+        void loadChannelsAndMembers();
+        void loadMyProfile();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeServerId, currentUserId]);
 
@@ -661,6 +692,8 @@ export default function Home() {
           displayName: currentMember?.displayName ?? "Você",
           avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl,
           bannerUrl: currentMember?.bannerUrl ?? myProfile?.bannerUrl,
+          profileCardColor: myProfile?.profileCardColor,
+          badges: myProfile?.badges,
           bio: myProfile?.bio,
           customStatus: myProfile?.customStatus,
           presence: myProfile?.presence ?? "online",
@@ -692,6 +725,7 @@ export default function Home() {
           userId={currentUserId}
           serverId={activeServerId}
           initial={myProfile ?? { displayName: currentMember?.displayName ?? "Você", username: currentMember?.username ?? "" }}
+          members={members}
           onClose={() => setShowUserSettings(false)}
           onSaved={() => {
             loadMyProfile();

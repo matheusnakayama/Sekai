@@ -2,20 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Accessibility, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, LogOut, Trash2,
+  Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, LogOut, Plus, Trash2,
   Monitor, Palette, Settings2, Shield, UserRound, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { MemberItem } from "@/components/MemberList";
+import { CustomBadgeList } from "@/components/CustomBadgeList";
+import type { CustomBadge } from "@/lib/badges";
 import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/useTheme";
 
-type Section = "perfil" | "aparencia" | "acessibilidade" | "privacidade" | "conta";
+type Section = "perfil" | "aparencia" | "acessibilidade" | "privacidade" | "conta" | "insignias";
 type Presence = "online" | "idle" | "dnd" | "offline";
 type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean };
 
 interface UserSettingsModalProps {
   userId: string;
   serverId?: string | null;
+  members?: MemberItem[];
   initial: {
     displayName: string;
     username?: string | null;
@@ -24,6 +28,7 @@ interface UserSettingsModalProps {
     customStatus?: string | null;
     avatarUrl?: string | null;
     bannerUrl?: string | null;
+    profileCardColor?: string | null;
     presence?: Presence | null;
   };
   onClose: () => void;
@@ -36,7 +41,10 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
   { id: "conta", label: "Minha conta", icon: Settings2, group: "Conta" },
   { id: "aparencia", label: "Aparência", icon: Palette, group: "Aplicativo" },
   { id: "acessibilidade", label: "Acessibilidade", icon: Accessibility, group: "Aplicativo" },
+  { id: "insignias", label: "Insígnias", icon: Award, group: "Gestão" },
 ];
+
+const PROFILE_CARD_COLORS = ["#111216", "#202127", "#292d46", "#40244f", "#173c38", "#4a2632"];
 
 const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false };
 const PRESENCE: { id: Presence; label: string; description: string; color: string }[] = [
@@ -58,7 +66,7 @@ function uploadExtension(file: File) {
   return ext && /^[a-z0-9]{1,8}$/.test(ext) ? ext : "png";
 }
 
-export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved }: UserSettingsModalProps) {
+export function UserSettingsModal({ userId, serverId, initial, members = [], onClose, onSaved }: UserSettingsModalProps) {
   const supabase = createClient();
   const { theme, setTheme } = useTheme();
   const [section, setSection] = useState<Section>("perfil");
@@ -69,6 +77,7 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
   const [bio, setBio] = useState(initial.bio ?? "");
   const [customStatus, setCustomStatus] = useState(initial.customStatus ?? "");
   const [presence, setPresence] = useState<Presence>(initial.presence ?? "online");
+  const [profileCardColor, setProfileCardColor] = useState(initial.profileCardColor ?? "#202127");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -89,11 +98,62 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
   const [sendingReset, setSendingReset] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [isBadgeManager, setIsBadgeManager] = useState(false);
+  const [badgeDefinitions, setBadgeDefinitions] = useState<CustomBadge[]>([]);
+  const [badgeAssignments, setBadgeAssignments] = useState<Record<string, string[]>>({});
+  const [badgeTargetUser, setBadgeTargetUser] = useState(userId);
+  const [badgeName, setBadgeName] = useState("");
+  const [badgeIcon, setBadgeIcon] = useState("✦");
+  const [badgeBackground, setBadgeBackground] = useState("#4f46e5");
+  const [badgeForeground, setBadgeForeground] = useState("#ffffff");
+  const [badgeImageFile, setBadgeImageFile] = useState<File | null>(null);
+  const [badgeImagePreview, setBadgeImagePreview] = useState("");
+  const [badgeLoading, setBadgeLoading] = useState(false);
+  const [badgeSaving, setBadgeSaving] = useState(false);
+  const [badgePendingDeleteId, setBadgePendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     setPreferences(loadPreferences(userId));
     void supabase.auth.getUser().then(({ data }) => { const currentEmail = data.user?.email ?? ""; setEmail(currentEmail); setEmailDraft(currentEmail); });
   }, [supabase, userId]);
+
+  useEffect(() => {
+    let active = true;
+    void supabase.from("badge_managers").select("user_id").eq("user_id", userId).maybeSingle().then(({ data, error: managerError }) => {
+      if (!active) return;
+      setIsBadgeManager(Boolean(data));
+      if (managerError) setError("Não foi possível verificar o acesso às insígnias. Confirme se a migração do Supabase foi executada.");
+    });
+    return () => { active = false; };
+  }, [supabase, userId]);
+
+  useEffect(() => {
+    if (!isBadgeManager) return;
+    let active = true;
+    const userIds = [...new Set([userId, ...members.map((member) => member.id)])];
+    setBadgeLoading(true);
+    void Promise.all([
+      supabase.from("custom_badges").select("id, name, icon, background_color, foreground_color, image_url").order("created_at", { ascending: false }),
+      supabase.from("user_badges").select("user_id, badge_id").in("user_id", userIds),
+    ]).then(([definitionsResult, assignmentsResult]) => {
+      if (!active) return;
+      if (definitionsResult.error) setError("Não foi possível carregar as insígnias: " + definitionsResult.error.message);
+      if (assignmentsResult.error) setError("Não foi possível carregar as atribuições: " + assignmentsResult.error.message);
+      setBadgeDefinitions((definitionsResult.data ?? []).map((badge: any) => ({
+        id: badge.id,
+        name: badge.name,
+        icon: badge.icon,
+        backgroundColor: badge.background_color,
+        foregroundColor: badge.foreground_color,
+        imageUrl: badge.image_url,
+      })));
+      const assignments: Record<string, string[]> = {};
+      for (const row of assignmentsResult.data ?? []) assignments[row.user_id] = [...(assignments[row.user_id] ?? []), row.badge_id];
+      setBadgeAssignments(assignments);
+      setBadgeLoading(false);
+    });
+    return () => { active = false; };
+  }, [isBadgeManager, members, serverId, supabase, userId]);
 
   useEffect(() => {
     if (!serverId) return;
@@ -112,13 +172,22 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
     try { localStorage.setItem(`sekai-preferences:${userId}`, JSON.stringify(preferences)); } catch { /* Preferências valem até fechar a página. */ }
   }, [preferences, userId]);
 
+  useEffect(() => () => {
+    if (badgeImagePreview.startsWith("blob:")) URL.revokeObjectURL(badgeImagePreview);
+  }, [badgeImagePreview]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) { if (event.key === "Escape" && !saving) onClose(); }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose, saving]);
 
-  const currentSection = useMemo(() => NAV.find((item) => item.id === section)!, [section]);
+  const visibleNavigation = useMemo(() => NAV.filter((item) => item.id !== "insignias" || isBadgeManager), [isBadgeManager]);
+  const currentSection = useMemo(() => visibleNavigation.find((item) => item.id === section) ?? visibleNavigation[0], [section, visibleNavigation]);
+
+  useEffect(() => {
+    if (!isBadgeManager && section === "insignias") setSection("perfil");
+  }, [isBadgeManager, section]);
 
   function setPreference<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPreferences((current) => ({ ...current, [key]: value }));
@@ -136,7 +205,17 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
     else { setBannerFile(file); setRemoveBanner(false); setBannerPreview(URL.createObjectURL(file)); }
   }
 
+  function handleBadgeImagePick(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setError("Escolha uma imagem para o ícone da insígnia."); return; }
+    if (file.size > 8 * 1024 * 1024) { setError("A imagem da insígnia deve ter no máximo 8 MB."); return; }
+    setError("");
+    setBadgeImageFile(file);
+    setBadgeImagePreview(URL.createObjectURL(file));
+  }
+
   async function handleSave() {
+    if (section === "insignias") return;
     if (section === "perfil" && profileScope === "server") {
       if (!serverId) return;
       if (!serverDisplayName.trim()) { setError("Informe um nome para este perfil de servidor."); return; }
@@ -173,11 +252,79 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
 
     const { error: updateError } = await supabase.from("profiles").update({
       display_name: displayName.trim(), username: username.trim().toLowerCase(), pronouns: pronouns.trim() || null, bio: bio.trim() || null, custom_status: customStatus.trim() || null,
-      avatar_url: avatarUrl, banner_url: bannerUrl, status: presence,
+      avatar_url: avatarUrl, banner_url: bannerUrl, status: presence, profile_card_color: profileCardColor,
     }).eq("id", userId);
     setSaving(false);
     if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
     onSaved(); onClose();
+  }
+
+  async function createBadge() {
+    const cleanName = badgeName.trim();
+    const cleanIcon = badgeIcon.trim();
+    if (!cleanName || cleanName.length > 32 || !cleanIcon || cleanIcon.length > 12) {
+      setError("Informe um nome de até 32 caracteres e um emoji ou símbolo curto.");
+      return;
+    }
+    setBadgeSaving(true); setError(""); setNotice("");
+    let imageUrl: string | null = null;
+    let imagePath: string | null = null;
+    if (badgeImageFile) {
+      imagePath = `${userId}/badges/badge-${Date.now()}-${Math.random().toString(36).slice(2)}.${uploadExtension(badgeImageFile)}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(imagePath, badgeImageFile, { contentType: badgeImageFile.type });
+      if (uploadError) { setBadgeSaving(false); setError("Não foi possível enviar a arte da insígnia: " + uploadError.message); return; }
+      imageUrl = supabase.storage.from("avatars").getPublicUrl(imagePath).data.publicUrl;
+    }
+    const { data, error: createError } = await supabase.from("custom_badges").insert({
+      name: cleanName,
+      icon: cleanIcon,
+      background_color: badgeBackground,
+      foreground_color: badgeForeground,
+      image_url: imageUrl,
+      image_path: imagePath,
+      created_by: userId,
+    }).select("id, name, icon, background_color, foreground_color, image_url").single();
+    setBadgeSaving(false);
+    if (createError) {
+      if (imagePath) await supabase.storage.from("avatars").remove([imagePath]);
+      setError("Não foi possível criar a insígnia: " + createError.message);
+      return;
+    }
+    setBadgeDefinitions((current) => [{ id: data.id, name: data.name, icon: data.icon, backgroundColor: data.background_color, foregroundColor: data.foreground_color, imageUrl: data.image_url }, ...current]);
+    setBadgeName("");
+    setBadgeImageFile(null);
+    setBadgeImagePreview("");
+    setNotice("Insígnia criada. Agora você pode atribuí-la a alguém do servidor.");
+  }
+
+  async function toggleBadgeAssignment(badge: CustomBadge) {
+    const assigned = (badgeAssignments[badgeTargetUser] ?? []).includes(badge.id);
+    setBadgeSaving(true); setError(""); setNotice("");
+    const result = assigned
+      ? await supabase.from("user_badges").delete().eq("user_id", badgeTargetUser).eq("badge_id", badge.id)
+      : await supabase.from("user_badges").insert({ user_id: badgeTargetUser, badge_id: badge.id, assigned_by: userId });
+    setBadgeSaving(false);
+    if (result.error) { setError("Não foi possível atualizar a insígnia: " + result.error.message); return; }
+    setBadgeAssignments((current) => {
+      const userBadges = new Set(current[badgeTargetUser] ?? []);
+      if (assigned) userBadges.delete(badge.id); else userBadges.add(badge.id);
+      return { ...current, [badgeTargetUser]: [...userBadges] };
+    });
+    setNotice(assigned ? "Insígnia removida do perfil." : "Insígnia atribuída ao perfil.");
+    onSaved();
+  }
+
+  async function deleteBadge(badge: CustomBadge) {
+    setBadgeSaving(true); setError(""); setNotice("");
+    const { data: deletedBadge, error: deleteError } = await supabase.from("custom_badges").delete().eq("id", badge.id).select("image_path").single();
+    setBadgeSaving(false);
+    if (deleteError) { setError("Não foi possível excluir a insígnia: " + deleteError.message); return; }
+    if (deletedBadge?.image_path) await supabase.storage.from("avatars").remove([deletedBadge.image_path]);
+    setBadgeDefinitions((current) => current.filter((item) => item.id !== badge.id));
+    setBadgeAssignments((current) => Object.fromEntries(Object.entries(current).map(([id, ids]) => [id, ids.filter((badgeId) => badgeId !== badge.id)])));
+    setBadgePendingDeleteId(null);
+    setNotice("Insígnia excluída.");
+    onSaved();
   }
 
   async function sendPasswordReset() {
@@ -208,10 +355,14 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-theme-gradient text-white"><Settings2 size={18}/></div>
             <div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Sekai</p><h2 id="user-settings-title" className="font-semibold text-discord-header-primary">Configurações</h2></div>
           </div>
-          {(["Conta", "Aplicativo"] as const).map((group) => <div key={group} className="mb-5">
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-discord-text-muted">{group}</p>
-            <div className="space-y-1">{NAV.filter((item) => item.group === group).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => { setSection(id); setError(""); setNotice(""); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${section === id ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:bg-discord-bg-modifier-hover/60 hover:text-discord-text-normal"}`}><Icon size={17}/>{label}<ChevronRight size={14} className="ml-auto opacity-50"/></button>)}</div>
-          </div>)}
+          {(["Conta", "Aplicativo", "Gestão"] as const).map((group) => {
+            const items = visibleNavigation.filter((item) => item.group === group);
+            if (!items.length) return null;
+            return <div key={group} className="mb-5">
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-widest text-discord-text-muted">{group}</p>
+              <div className="space-y-1">{items.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => { setSection(id); setError(""); setNotice(""); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${section === id ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:bg-discord-bg-modifier-hover/60 hover:text-discord-text-normal"}`}><Icon size={17}/>{label}<ChevronRight size={14} className="ml-auto opacity-50"/></button>)}</div>
+            </div>;
+          })}
           <div className="mt-auto rounded-xl bg-discord-bg-secondary p-3">
             <div className="flex items-center gap-3"><div className="h-9 w-9 overflow-hidden rounded-full bg-theme-gradient">{avatarPreview && <img src={avatarPreview} alt="" className="h-full w-full object-cover"/>}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-discord-text-normal">{displayName || "Seu perfil"}</p><p className="truncate text-xs text-discord-text-muted">Personalize seu espaço</p></div></div>
           </div>
@@ -219,7 +370,7 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center justify-between border-b border-black/15 px-5 py-4 sm:px-8">
-            <div className="flex min-w-0 items-center gap-3"><select aria-label="Seção de configurações" value={section} onChange={(e) => setSection(e.target.value as Section)} className="max-w-[190px] rounded-lg bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal sm:hidden">{NAV.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><div className="hidden items-center gap-2 sm:flex"><currentSection.icon size={18} className="text-discord-brand"/><h3 className="font-semibold text-discord-header-primary">{currentSection.label}</h3></div><span className="hidden text-sm text-discord-text-muted sm:inline">/</span><span className="hidden text-sm text-discord-text-muted sm:inline">Configurações de usuário</span></div>
+            <div className="flex min-w-0 items-center gap-3"><select aria-label="Seção de configurações" value={section} onChange={(e) => setSection(e.target.value as Section)} className="max-w-[190px] rounded-lg bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal sm:hidden">{visibleNavigation.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><div className="hidden items-center gap-2 sm:flex"><currentSection.icon size={18} className="text-discord-brand"/><h3 className="font-semibold text-discord-header-primary">{currentSection.label}</h3></div><span className="hidden text-sm text-discord-text-muted sm:inline">/</span><span className="hidden text-sm text-discord-text-muted sm:inline">Configurações de usuário</span></div>
             <button onClick={onClose} aria-label="Fechar configurações" className="rounded-full p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><X size={19}/></button>
           </header>
 
@@ -229,7 +380,7 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
                 {serverId && <div className="mb-6 flex gap-6 border-b border-white/10"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")} className={`settings-profile-tab pb-3 text-sm font-semibold transition ${profileScope === "user" ? "text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Perfil do usuário</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")} className={`settings-profile-tab pb-3 text-sm font-semibold transition ${profileScope === "server" ? "text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Perfis do servidor</button></div>}
                 <div hidden={profileScope !== "user"}>
                 <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai.</p></div>
-                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-primary shadow-lg shadow-black/10">
+                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-primary shadow-lg shadow-black/10" style={{ backgroundColor: profileCardColor }}>
                   <div className="relative z-0 h-32 bg-theme-gradient bg-cover bg-center">
                     {bannerPreview && <img key={bannerPreview} src={bannerPreview} alt="" className="profile-card-enter pointer-events-none absolute inset-0 h-full w-full object-cover"/>}
                     <div className="absolute right-3 top-3 flex gap-2"><label className="settings-upload-control flex cursor-pointer items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>Trocar banner<input type="file" accept="image/gif,image/*" className="hidden" onChange={(e) => handleImagePick(e.target.files?.[0], "banner")}/></label>{bannerPreview && <button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button>}</div>
@@ -249,6 +400,13 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
                   <Field label="Status personalizado" hint={`${customStatus.length}/128`}><input value={customStatus} maxLength={128} onChange={(e) => setCustomStatus(e.target.value)} placeholder="O que você está fazendo?" className={inputClass}/></Field>
                 </div>
                 <Field label="Sobre você" hint={`${bio.length}/190 caracteres`}><textarea value={bio} maxLength={190} onChange={(e) => setBio(e.target.value)} rows={4} placeholder="Conte um pouco sobre você..." className={`${inputClass} resize-y`}/></Field>
+                <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
+                  <div className="mb-3"><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Escolha a cor que aparece atrás das informações no seu perfil.</p></div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {PROFILE_CARD_COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color}`} aria-pressed={profileCardColor.toLowerCase() === color} onClick={() => setProfileCardColor(color)} className={`h-9 w-9 rounded-full border transition ${profileCardColor.toLowerCase() === color ? "scale-110 border-white ring-2 ring-discord-brand ring-offset-2 ring-offset-discord-bg-primary" : "border-white/15 hover:scale-105 hover:border-white/50"}`} style={{ backgroundColor: color }}/>) }
+                    <label className="ml-1 flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-medium text-discord-text-normal transition hover:bg-discord-bg-modifier-hover">Personalizada<input aria-label="Escolher cor personalizada do perfil" type="color" value={profileCardColor} onChange={(event) => setProfileCardColor(event.target.value)} className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"/></label>
+                  </div>
+                </div>
                 <div className="mt-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4"><div className="mb-3 flex items-center gap-2"><Circle size={10} className="fill-current text-discord-brand"/><h4 className="text-sm font-semibold text-discord-header-primary">Presença</h4></div><div className="grid gap-2 sm:grid-cols-2">{PRESENCE.map((item) => <button type="button" key={item.id} onClick={() => setPresence(item.id)} className={`flex items-start gap-3 rounded-lg border p-3 text-left transition ${presence === item.id ? "border-discord-brand bg-discord-brand/10" : "border-white/5 hover:bg-discord-bg-modifier-hover"}`}><span className={`mt-1 h-2.5 w-2.5 rounded-full ${item.color}`}/><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-discord-text-normal">{item.label}</span><span className="mt-0.5 block text-xs text-discord-text-muted">{item.description}</span></span>{presence === item.id && <Check size={15} className="text-discord-brand"/>}</button>)}</div><p className="mt-2 text-[11px] text-discord-text-muted">A presença é exibida no perfil e na lista de membros.</p></div>
                 </div>
                 {serverId && <div hidden={profileScope !== "server"}>
@@ -276,6 +434,45 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
                 <PreferenceCard icon={Monitor} title="Densidade da interface" description="Escolha quanto espaço os elementos ocupam."><div className="grid grid-cols-2 gap-2">{([['comfortable', 'Confortável'], ['compact', 'Compacta']] as const).map(([value, label]) => <Choice key={value} active={preferences.density === value} onClick={() => setPreference("density", value)}>{label}</Choice>)}</div></PreferenceCard>
               </section>}
 
+              {section === "insignias" && isBadgeManager && <section className="settings-section-enter">
+                <SectionIntro eyebrow="Personalização da comunidade" title="Insígnias" text="Crie símbolos exclusivos e escolha quais membros podem exibi-los ao lado do nome."/>
+                <div className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-primary p-4 sm:p-5">
+                  <div className="mb-4 flex items-start gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-discord-brand/15 text-discord-brand"><Award size={19}/></div><div><h3 className="font-semibold text-discord-header-primary">Nova insígnia</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Use um emoji, símbolo ou caractere especial. O título aparece ao passar o cursor.</p></div></div>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_90px]">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Nome da insígnia<input value={badgeName} maxLength={32} onChange={(event) => setBadgeName(event.target.value)} placeholder="Ex.: Fundador" className={inputClass}/></label>
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Símbolo<input value={badgeIcon} maxLength={12} onChange={(event) => setBadgeIcon(event.target.value)} placeholder="✦" className={`${inputClass} text-center text-lg`}/></label>
+                  </div>
+                  <label className="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Arte personalizada opcional <span className="font-normal normal-case tracking-normal">(PNG, JPG ou GIF · até 8 MB)</span><input type="file" accept="image/gif,image/png,image/jpeg,image/webp" onChange={(event) => { handleBadgeImagePick(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }} className="mt-2 block w-full cursor-pointer rounded-lg border border-white/5 bg-discord-bg-secondary px-3 py-2 text-xs text-discord-text-normal file:mr-3 file:rounded-md file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-discord-text-normal hover:file:bg-white/15"/></label>
+                  {badgeImagePreview && <button type="button" onClick={() => { setBadgeImageFile(null); setBadgeImagePreview(""); }} className="mt-2 text-xs font-medium text-discord-text-muted transition hover:text-rose-300">Remover arte selecionada</button>}
+                  <div className="mt-4 flex flex-wrap items-end gap-4">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Fundo<input aria-label="Cor do fundo da insígnia" type="color" value={badgeBackground} onChange={(event) => setBadgeBackground(event.target.value)} className="mt-2 block h-10 w-14 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"/></label>
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Símbolo<input aria-label="Cor do símbolo da insígnia" type="color" value={badgeForeground} onChange={(event) => setBadgeForeground(event.target.value)} className="mt-2 block h-10 w-14 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"/></label>
+                    <div className="flex flex-1 items-center gap-2 pb-1"><span className="text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Prévia</span><CustomBadgeList badges={[{ id: "preview", name: badgeName.trim() || "Prévia", icon: badgeIcon.trim() || "✦", backgroundColor: badgeBackground, foregroundColor: badgeForeground, imageUrl: badgeImagePreview || null }]} size="medium"/></div>
+                    <button type="button" onClick={() => void createBadge()} disabled={badgeSaving || !badgeName.trim()} className="inline-flex items-center gap-2 rounded-lg bg-theme-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50"><Plus size={16}/>{badgeSaving ? "Salvando..." : "Criar insígnia"}</button>
+                  </div>
+                </div>
+
+                <div className="mb-4 rounded-2xl border border-white/5 bg-discord-bg-primary p-4 sm:p-5">
+                  <label className="mb-4 block text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Atribuir a um membro
+                    <select value={badgeTargetUser} onChange={(event) => setBadgeTargetUser(event.target.value)} className={inputClass}>
+                      <option value={userId}>Você</option>
+                      {members.filter((member) => member.id !== userId).map((member) => <option key={member.id} value={member.id}>{member.displayName} · @{member.username || member.id.slice(0, 8)}</option>)}
+                    </select>
+                  </label>
+                  {!serverId && <p className="mb-4 text-xs text-amber-200/80">Abra estas configurações dentro de um servidor para escolher outros membros. Você ainda pode atribuir insígnias ao seu próprio perfil.</p>}
+                  <h3 className="mb-3 text-sm font-semibold text-discord-header-primary">Insígnias criadas <span className="font-normal text-discord-text-muted">({badgeDefinitions.length})</span></h3>
+                  {badgeLoading ? <p className="py-4 text-sm text-discord-text-muted">Carregando insígnias…</p> : badgeDefinitions.length === 0 ? <p className="rounded-lg border border-dashed border-white/10 px-4 py-6 text-center text-sm text-discord-text-muted">Ainda não há insígnias. Crie a primeira acima.</p> : <div className="space-y-2">{badgeDefinitions.map((badge) => {
+                    const assigned = (badgeAssignments[badgeTargetUser] ?? []).includes(badge.id);
+                    return <div key={badge.id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-discord-bg-secondary/60 p-3 transition hover:border-white/10">
+                      <CustomBadgeList badges={[badge]} size="medium"/>
+                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-discord-text-normal">{badge.name}</p><p className={`text-[11px] ${badgePendingDeleteId === badge.id ? "text-rose-200" : "text-discord-text-muted"}`}>{badgePendingDeleteId === badge.id ? "Isso remove a insígnia de todos os perfis." : `${badge.icon} · toque para exibir ou remover`}</p></div>
+                      <button type="button" aria-pressed={assigned} onClick={() => void toggleBadgeAssignment(badge)} disabled={badgeSaving} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${assigned ? "bg-emerald-400/10 text-emerald-200 hover:bg-rose-400/10 hover:text-rose-200" : "bg-discord-bg-modifier-hover text-discord-text-normal hover:bg-discord-brand/20"}`}>{assigned ? "Atribuída" : "Atribuir"}</button>
+                      {badgePendingDeleteId === badge.id ? <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => void deleteBadge(badge)} disabled={badgeSaving} className="rounded-lg bg-rose-500/15 px-2.5 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/25 disabled:opacity-50">Excluir</button><button type="button" onClick={() => setBadgePendingDeleteId(null)} disabled={badgeSaving} className="rounded-lg px-2.5 py-2 text-xs text-discord-text-muted hover:bg-white/5">Cancelar</button></div> : <button type="button" onClick={() => setBadgePendingDeleteId(badge.id)} disabled={badgeSaving} aria-label={`Excluir insígnia ${badge.name}`} title="Excluir para todos" className="rounded-lg p-2 text-discord-text-muted transition hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-50"><Trash2 size={15}/></button>}
+                    </div>;
+                  })}</div>}
+                </div>
+              </section>}
+
               {section === "acessibilidade" && <section className="settings-section-enter">
                 <SectionIntro eyebrow="Conforto" title="Acessibilidade" text="Ajuste leitura e movimento para tornar o Sekai mais confortável."/>
                 <PreferenceCard icon={Accessibility} title="Tamanho do texto" description="Aumente o texto da interface sem alterar o conteúdo das mensagens."><div className="grid grid-cols-2 gap-2">{([['normal', 'Padrão'], ['large', 'Maior']] as const).map(([value, label]) => <Choice key={value} active={preferences.fontScale === value} onClick={() => setPreference("fontScale", value)}>{label}</Choice>)}</div></PreferenceCard>
@@ -299,7 +496,7 @@ export function UserSettingsModal({ userId, serverId, initial, onClose, onSaved 
           </div>
 
           {(error || notice) && <div className={`mx-5 mb-3 rounded-lg px-3 py-2 text-sm sm:mx-9 ${error ? "bg-discord-danger/10 text-discord-danger" : "bg-emerald-500/10 text-emerald-300"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">As preferências de aparência são aplicadas na hora.</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button><button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button></div></footer>
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
     </div>
