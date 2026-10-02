@@ -86,7 +86,36 @@ create table if not exists public.channel_categories (
   created_at timestamptz not null default now(),
   unique (server_id, name)
 );
+alter table public.channel_categories add column if not exists position integer not null default 0;
+alter table public.channel_categories add column if not exists created_at timestamptz not null default now();
 alter table public.channels add column if not exists category_id uuid references public.channel_categories(id) on delete set null;
+-- Uma tabela channel_categories de versões antigas pode existir sem a restrição
+-- única usada por ON CONFLICT. Normaliza nomes, remapeia canais e remove duplicatas.
+update public.channel_categories
+set name = 'GERAL'
+where name is null or btrim(name) = '';
+with ranked_categories as (
+  select id,
+         first_value(id) over (partition by server_id, name order by id) as keep_id,
+         row_number() over (partition by server_id, name order by id) as row_num
+  from public.channel_categories
+), duplicate_categories as (
+  select id, keep_id from ranked_categories where row_num > 1
+)
+update public.channels c
+set category_id = d.keep_id
+from duplicate_categories d
+where c.category_id = d.id;
+with ranked_categories as (
+  select id,
+         row_number() over (partition by server_id, name order by id) as row_num
+  from public.channel_categories
+)
+delete from public.channel_categories c
+using ranked_categories r
+where c.id = r.id and r.row_num > 1;
+create unique index if not exists channel_categories_server_name_key
+  on public.channel_categories (server_id, name);
 -- Bancos antigos podem ter a categoria em channels.category (texto) ou somente
 -- channels.category_id (UUID). Detecta o formato para a migração servir aos dois.
 do $$
