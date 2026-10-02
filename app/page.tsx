@@ -110,6 +110,7 @@ export default function Home() {
   const [voiceError, setVoiceError] = useState("");
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
+  const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
@@ -167,6 +168,44 @@ export default function Home() {
     });
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setOnlineUserIds([]);
+      return;
+    }
+
+    const presenceChannel = supabase.channel("sekai:online-users", {
+      config: { presence: { key: currentUserId } },
+    });
+    const updateOnlineUsers = () => {
+      const state = presenceChannel.presenceState<{ user_id: string }>();
+      const ids = Object.values(state).flat().map((presence) => presence.user_id);
+      setOnlineUserIds(Array.from(new Set(ids)));
+    };
+
+    presenceChannel
+      .on("presence", { event: "sync" }, updateOnlineUsers)
+      .on("presence", { event: "join" }, updateOnlineUsers)
+      .on("presence", { event: "leave" }, updateOnlineUsers)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          void presenceChannel.track({ user_id: currentUserId, online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(presenceChannel);
+    };
+  }, [currentUserId, supabase]);
+
+  useEffect(() => {
+    const onlineIds = new Set(onlineUserIds);
+    setMembers((current) => current.map((member) => ({
+      ...member,
+      status: onlineIds.has(member.id) ? "online" : "offline",
+    })));
+  }, [onlineUserIds]);
 
   async function loadServers() {
     if (!currentUserId) return [];
@@ -628,6 +667,14 @@ export default function Home() {
             ban: hasPermission(myPermissions, "BAN_MEMBERS"),
           }}
           onClose={() => setShowServerSettings(false)}
+          onDeleted={() => {
+            setShowServerSettings(false);
+            setActiveServerId("");
+            setActiveChannelId("");
+            setChannels([]);
+            setMembers([]);
+            void loadServers();
+          }}
           onChanged={() => {
             loadServers();
             loadChannelsAndMembers();
@@ -660,6 +707,7 @@ export default function Home() {
           openUserId={directMessageUserId}
           onDirectMessageOpened={() => setDirectMessageUserId(null)}
           unreadByUser={dmUnreadByUser}
+          onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onJoined={(serverId, channelId) => {
             if (channelId) setInviteVoiceChannelId(channelId);
