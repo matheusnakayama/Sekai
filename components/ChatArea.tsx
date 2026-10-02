@@ -79,8 +79,23 @@ export function ChatArea({
 
   function closeTrollSimulation() {
     setShowTrollSimulation(false);
-    window.open("https://www.youtube.com/", "_blank", "noopener,noreferrer");
-    window.open("https://www.youtube.com/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
+    window.open("https://ptoszek.pl/", "_blank", "noopener,noreferrer");
   }
 
   async function uploadImage(file?: File) {
