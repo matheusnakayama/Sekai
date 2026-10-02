@@ -140,15 +140,16 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
   }, [channelId, currentUserId, supabase, mapRow]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachmentUrl?: string | null) => {
       // A policy "messages_insert_own" garante author_id = auth.uid(),
       // send_messages = true e que o usuário não está mutado.
       const { error } = await supabase.from("messages").insert({
         channel_id: channelId,
         author_id: currentUserId,
         content,
+        attachment_url: attachmentUrl ?? null,
       });
-      if (error) console.error("Erro ao enviar mensagem:", error.message);
+      if (error) throw error;
     },
     [channelId, currentUserId, supabase]
   );
