@@ -2,6 +2,7 @@ export interface ThemeOption {
   id: string;
   name: string;
   stops: string[]; // 7 cores do gradiente, da mais clara para a mais escura
+  backgroundStops?: [string, string]; // o fundo usa apenas duas cores
 }
 
 export const DEFAULT_THEME = "azul";
@@ -190,4 +191,14 @@ export const THEMES: ThemeOption[] = [
   { id: "bronze", name: "Bronze", stops: ["#fde68a", "#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309", "#78350f"] },
   { id: "safira", name: "Safira", stops: ["#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"] },
   { id: "neon", name: "Neon", stops: ["#d9f99d", "#a3e635", "#84cc16", "#22c55e", "#10b981", "#0d9488", "#115e59"] },
+  { id: "sakura", name: "Sakura", stops: ["#ffe4ec", "#fbcfe8", "#f9a8d4", "#ec4899", "#db2777", "#be185d", "#831843"], backgroundStops: ["#db2777", "#4a1534"] },
+  { id: "celeste", name: "Celeste", stops: ["#e0f7ff", "#bae6fd", "#7dd3fc", "#38bdf8", "#0ea5e9", "#0369a1", "#0c3455"], backgroundStops: ["#0284c7", "#102d49"] },
+  { id: "esmeralda", name: "Esmeralda", stops: ["#d1fae5", "#a7f3d0", "#6ee7b7", "#10b981", "#059669", "#047857", "#064e3b"], backgroundStops: ["#059669", "#10392f"] },
+  { id: "caramelo", name: "Caramelo", stops: ["#fef3c7", "#fde68a", "#fbbf24", "#d97706", "#b45309", "#92400e", "#451a03"], backgroundStops: ["#b45309", "#392315"] },
+  { id: "ameixa-real", name: "Ameixa real", stops: ["#f3e8ff", "#e9d5ff", "#c084fc", "#9333ea", "#7e22ce", "#6b21a8", "#3b0764"], backgroundStops: ["#7e22ce", "#291741"] },
+  { id: "laguna", name: "Laguna", stops: ["#ccfbf1", "#99f6e4", "#5eead4", "#14b8a6", "#0d9488", "#0f766e", "#134e4a"], backgroundStops: ["#0f766e", "#153b40"] },
+  { id: "meia-noite", name: "Meia-noite", stops: ["#dbeafe", "#bfdbfe", "#93c5fd", "#3b82f6", "#2563eb", "#1d4ed8", "#172554"], backgroundStops: ["#1d4ed8", "#111d3b"] },
+  { id: "pessego", name: "Pêssego", stops: ["#ffedd5", "#fed7aa", "#fdba74", "#fb923c", "#f97316", "#c2410c", "#7c2d12"], backgroundStops: ["#ea580c", "#43251e"] },
+  { id: "prata", name: "Prata", stops: ["#f8fafc", "#e2e8f0", "#cbd5e1", "#94a3b8", "#64748b", "#475569", "#1e293b"], backgroundStops: ["#64748b", "#252c38"] },
+  { id: "floresta", name: "Floresta", stops: ["#ecfccb", "#d9f99d", "#a3e635", "#65a30d", "#4d7c0f", "#3f6212", "#1a2e05"], backgroundStops: ["#4d7c0f", "#263322"] },
 ];
