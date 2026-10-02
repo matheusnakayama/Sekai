@@ -77,6 +77,10 @@ export function ChatArea({
     setDraft(`/${name} `);
   }
 
+  function closeTrollSimulation() {
+    window.location.assign("https://www.youtube.com/");
+  }
+
   async function uploadImage(file?: File) {
     if (!file || !file.type.startsWith("image/") || !onUploadFile) return;
     if (file.size > 5 * 1024 * 1024) { window.alert("A imagem deve ter até 5 MB."); return; }
@@ -211,7 +215,7 @@ export function ChatArea({
         </form>
       </div>
 
-      {showTrollSimulation && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="troll-title"><div className="w-full max-w-md rounded-2xl border border-violet-300/25 bg-discord-bg-floating p-6 shadow-2xl"><div className="mb-4 flex items-center justify-between"><span className="rounded-full bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-200">SIMULAÇÃO VISUAL DO SEKAI</span><button onClick={() => setShowTrollSimulation(false)} aria-label="Fechar simulação" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/10 hover:text-white"><X size={18}/></button></div><div className="mb-4 rounded-xl bg-black/35 p-4 font-mono text-xs text-emerald-300"><p>&gt; executando brincadeira...</p><p className="mt-2 text-emerald-200/70">&gt; nenhum arquivo acessado</p><p className="text-emerald-200/70">&gt; nenhuma alteração feita</p></div><h2 id="troll-title" className="text-lg font-bold text-discord-header-primary">Pegadinha! 😄</h2><p className="mt-2 text-sm text-discord-text-muted">Isto é só uma animação dentro do Sekai. Seu dispositivo e seus arquivos não foram acessados nem alterados.</p><button onClick={() => setShowTrollSimulation(false)} className="mt-5 w-full rounded-lg bg-violet-600 px-4 py-2.5 font-semibold text-white hover:bg-violet-500">Fechar</button></div></div>}
+      {showTrollSimulation && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="troll-title"><div className="w-full max-w-md rounded-2xl border border-violet-300/25 bg-discord-bg-floating p-6 shadow-2xl"><div className="mb-4 flex items-center justify-between"><span className="rounded-full bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-200">SIMULAÇÃO VISUAL DO SEKAI</span><button onClick={closeTrollSimulation} aria-label="Fechar simulação" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/10 hover:text-white"><X size={18}/></button></div><div className="mb-4 rounded-xl bg-black/35 p-4 font-mono text-xs text-emerald-300"><p>&gt; executando brincadeira...</p><p className="mt-2 text-emerald-200/70">&gt; nenhum arquivo acessado</p><p className="text-emerald-200/70">&gt; nenhuma alteração feita</p></div><h2 id="troll-title" className="text-lg font-bold text-discord-header-primary">Pegadinha! 😄</h2><p className="mt-2 text-sm text-discord-text-muted">Isto é só uma animação dentro do Sekai. Seu dispositivo e seus arquivos não foram acessados nem alterados.</p><button onClick={closeTrollSimulation} className="mt-5 w-full rounded-lg bg-violet-600 px-4 py-2.5 font-semibold text-white hover:bg-violet-500">Fechar</button></div></div>}
     </div>
   );
 }
