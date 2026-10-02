@@ -8,6 +8,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "unmute", description: "Remove o mute de um membro", usage: "/unmute @usuario" },
   { name: "help", description: "Lista todos os comandos disponíveis", usage: "/help" },
   { name: "roll", description: "Rola um dado de N lados (padrão 6)", usage: "/roll [N]" },
+  { name: "troll", description: "Envia uma simulação visual inofensiva para um membro abrir se quiser", usage: ".troll @usuario" },
 ];
 
 interface CommandContext {
@@ -34,7 +35,7 @@ export async function executeSlashCommand(
   ctx: CommandContext
 ): Promise<CommandResult> {
   const supabase = createClient();
-  const [cmdName, ...args] = raw.trim().slice(1).split(/\s+/);
+  const [cmdName, ...args] = raw.trim().replace(/^[/.]/, "").split(/\s+/);
 
   switch (cmdName) {
     case "help": {
@@ -51,6 +52,21 @@ export async function executeSlashCommand(
         content: `🎲 rolou um d${sides} e tirou **${result}**`,
       });
       return { ok: true, message: `Você rolou ${result}` };
+    }
+
+    case "troll": {
+      const userId = await ctx.resolveMentionToUserId(args[0] ?? "");
+      if (!userId) return { ok: false, message: "Usuário não encontrado neste servidor." };
+      if (userId === ctx.currentUserId) return { ok: false, message: "Escolha outra pessoa para enviar a simulação." };
+
+      const { error } = await supabase.from("messages").insert({
+        channel_id: ctx.channelId,
+        author_id: ctx.currentUserId,
+        content: `[sekai-troll:${userId}]`,
+      });
+      return error
+        ? { ok: false, message: "Não foi possível enviar o convite da brincadeira." }
+        : { ok: true, message: "Convite da simulação enviado. A pessoa decide se quer abrir." };
     }
 
     case "clear": {
