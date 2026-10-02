@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +26,8 @@ interface ChatAreaProps {
   channelName: string;
   messages: ChatMessage[];
   slashCommands: SlashCommand[];
-  onSendMessage: (content: string) => void;
-  onUploadFile?: () => void;
+  onSendMessage: (content: string, attachmentUrl?: string | null) => void;
+  onUploadFile?: (file: File) => Promise<string>;
   onToggleReaction?: (messageId: string, emoji: string) => void;
   currentUserId?: string;
   onEditMessage?: (messageId: string, content: string) => Promise<void>;
@@ -54,6 +54,8 @@ export function ChatArea({
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const showAutocomplete = draft.startsWith("/") && draft.length > 0;
   const filteredCommands = useMemo(() => {
@@ -72,6 +74,20 @@ export function ChatArea({
 
   function pickCommand(name: string) {
     setDraft(`/${name} `);
+  }
+
+  async function uploadImage(file?: File) {
+    if (!file || !file.type.startsWith("image/") || !onUploadFile) return;
+    if (file.size > 5 * 1024 * 1024) { window.alert("A imagem deve ter até 5 MB."); return; }
+    setUploading(true);
+    try {
+      const url = await onUploadFile(file);
+      onSendMessage("", url);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -167,9 +183,10 @@ export function ChatArea({
           onSubmit={handleSubmit}
           className="flex items-center gap-2 rounded-lg bg-discord-bg-secondary px-4 py-2.5"
         >
-          <button type="button" onClick={onUploadFile} className="text-discord-text-muted hover:text-discord-text-normal">
+          <button type="button" onClick={() => imageInput.current?.click()} className="text-discord-text-muted hover:text-discord-text-normal">
             <Plus className="h-5 w-5" />
           </button>
+          <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
           <input
             value={draft}
@@ -181,6 +198,8 @@ export function ChatArea({
           <button type="button" className="text-discord-text-muted hover:text-discord-text-normal">
             <Smile className="h-5 w-5" />
           </button>
+
+          <button type="button" title="Enviar imagem" onClick={() => imageInput.current?.click()} disabled={uploading} className="text-discord-text-muted hover:text-discord-text-normal disabled:opacity-50"><ImageIcon className="h-5 w-5" /></button>
 
           <button type="submit" className="text-discord-text-muted hover:text-discord-brand">
             <SendHorizontal className="h-5 w-5" />
