@@ -2,6 +2,32 @@
 -- Execute uma vez no SQL Editor do Supabase, além do schema principal.
 create extension if not exists pgcrypto;
 
+-- O app armazena permissões como uma máscara numérica em roles.permissions.
+-- Defina a função usada pela policy dos convites caso ela ainda não exista no banco.
+create or replace function public.has_permission(p_server_id uuid, p_permission text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select public.is_server_owner(p_server_id) or exists (
+    select 1
+    from public.member_roles mr
+    join public.roles r on r.id = mr.role_id
+    where mr.server_id = p_server_id
+      and mr.user_id = auth.uid()
+      and (coalesce(r.permissions, 0)::bigint &
+        case lower(p_permission)
+          when 'create_invite' then 1::bigint
+          when 'create_instant_invite' then 1::bigint
+          else 0::bigint
+        end) <> 0
+  );
+$$;
+revoke all on function public.has_permission(uuid, text) from public;
+grant execute on function public.has_permission(uuid, text) to authenticated;
+
 create table if not exists public.friendships (
   id uuid primary key default gen_random_uuid(),
   sender_id uuid not null references public.profiles(id) on delete cascade,
@@ -65,24 +91,43 @@ set search_path = public, pg_temp
 as $$
 declare
   v_invite public.invites%rowtype;
+  v_code text;
+  v_server_id uuid;
   v_role_id uuid;
+  v_is_new_invite boolean := false;
 begin
   if auth.uid() is null then raise exception 'Autenticação necessária'; end if;
-  select * into v_invite from public.invites
-   where code = upper(trim(p_code))
-   for update;
-  if not found then raise exception 'Convite inválido'; end if;
-  if v_invite.expires_at is not null and v_invite.expires_at <= now() then raise exception 'Convite expirado'; end if;
-  if v_invite.max_age > 0 and v_invite.created_at + make_interval(secs => v_invite.max_age) <= now() then raise exception 'Convite expirado'; end if;
-  if v_invite.max_uses > 0 and v_invite.uses >= v_invite.max_uses then raise exception 'Convite esgotado'; end if;
+  v_code := upper(btrim(coalesce(p_code, '')));
+  if v_code = '' then raise exception 'Convite inválido'; end if;
 
-  select id into v_role_id from public.roles where server_id = v_invite.server_id and is_default limit 1;
+  select * into v_invite from public.invites
+   where upper(btrim(code)) = v_code
+   for update;
+
+  if found then
+    v_is_new_invite := true;
+    if v_invite.expires_at is not null and v_invite.expires_at <= now() then raise exception 'Convite expirado'; end if;
+    if v_invite.max_age > 0 and v_invite.created_at + make_interval(secs => v_invite.max_age) <= now() then raise exception 'Convite expirado'; end if;
+    if v_invite.max_uses > 0 and v_invite.uses >= v_invite.max_uses then raise exception 'Convite esgotado'; end if;
+    v_server_id := v_invite.server_id;
+  else
+    -- Compatibilidade com os códigos antigos guardados diretamente em servers.invite_code.
+    select s.id into v_server_id
+      from public.servers s
+     where upper(btrim(s.invite_code)) = v_code
+     limit 1;
+    if v_server_id is null then raise exception 'Convite inválido'; end if;
+  end if;
+
+  select id into v_role_id from public.roles where server_id = v_server_id and is_default limit 1;
   if v_role_id is null then raise exception 'Servidor sem cargo padrão'; end if;
   insert into public.members (server_id, user_id, role_id)
-  values (v_invite.server_id, auth.uid(), v_role_id)
+  values (v_server_id, auth.uid(), v_role_id)
   on conflict (server_id, user_id) do nothing;
-  update public.invites set uses = uses + 1 where code = v_invite.code;
-  return v_invite.server_id;
+  if v_is_new_invite then
+    update public.invites set uses = uses + 1 where code = v_invite.code;
+  end if;
+  return v_server_id;
 end;
 $$;
 revoke all on function public.redeem_invite(text) from public;
