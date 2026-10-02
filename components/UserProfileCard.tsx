@@ -95,7 +95,7 @@ export function UserProfileCard({
       role="dialog"
       aria-label={`Perfil de ${profile.displayName}`}
       style={{ left: position.left, top: position.top, backgroundColor: profile.profileCardColor || undefined }}
-      className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl"
+      className={`profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 shadow-2xl ${profile.profileCardColor ? "" : "bg-discord-bg-secondary"}`}
     >
       <div
         className="relative h-28 bg-theme-gradient bg-cover bg-center"
@@ -114,7 +114,7 @@ export function UserProfileCard({
           </div>
           <span className={cn("status-dot", STATUS_CLASS[profile.status])}/>
         </div>
-        <div className="mt-3 rounded-xl bg-black/15 p-4">
+        <div className="mt-3 p-4">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <h2 className="max-w-full truncate text-lg font-bold text-discord-header-primary">{profile.displayName}</h2>
             <CustomBadgeList badges={profile.badges} limit={5} size="medium"/>

@@ -68,6 +68,7 @@ export function ChatArea({
   const [uploading, setUploading] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
+  const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
 
   function openAuthorProfile(authorId: string, trigger: HTMLButtonElement) {
@@ -124,7 +125,7 @@ export function ChatArea({
           <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]">
             <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               {message.authorAvatarUrl ? (
-                <HoverGifImage src={message.authorAvatarUrl} alt="" className="h-full w-full object-cover" />
+                <HoverGifImage src={message.authorAvatarUrl} alt="" isHovered={hoveredAuthorMessageId === message.id} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white">
                   {message.authorName[0]?.toUpperCase()}
@@ -133,7 +134,7 @@ export function ChatArea({
             </button>
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
                 <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
               </div>

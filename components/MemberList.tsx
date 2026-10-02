@@ -108,12 +108,14 @@ function groupByRole(members: MemberItem[]): [string, MemberItem[]][] {
 }
 
 function MemberRow({ member, isSelf, onSelect }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <button type="button" onClick={(event) => onSelect(member, event.currentTarget)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover">
+    <button type="button" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover">
       <div className="relative h-8 w-8 shrink-0">
        <div className="h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
-          <HoverGifImage src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
+          <HoverGifImage src={member.avatarUrl} alt="" isHovered={hovered} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
             {member.displayName[0]?.toUpperCase()}

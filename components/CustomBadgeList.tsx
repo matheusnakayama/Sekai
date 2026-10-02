@@ -7,8 +7,8 @@ export function CustomBadgeList({ badges, limit = 4, size = "small" }: {
 }) {
   if (!badges?.length) return null;
   const visibleBadges = badges.slice(0, limit);
-  const sizeClass = size === "medium" ? "h-[21px] min-w-[21px] text-[12px]" : "h-[17px] min-w-[17px] text-[10px]";
-  const imageWidthClass = size === "medium" ? "w-[21px]" : "w-[17px]";
+  const sizeClass = size === "medium" ? "h-5 min-w-5 text-[17px]" : "h-4 min-w-4 text-[14px]";
+  const imageSizeClass = size === "medium" ? "h-5 w-5" : "h-4 w-4";
 
   return (
     <span className="inline-flex min-w-0 items-center gap-1 align-middle" aria-label={`${badges.length} insígnias`}>
@@ -17,10 +17,10 @@ export function CustomBadgeList({ badges, limit = 4, size = "small" }: {
           key={badge.id}
           title={badge.name}
           aria-label={badge.name}
-          className={`custom-profile-badge inline-flex shrink-0 items-center justify-center rounded-full font-semibold leading-none shadow-sm ring-1 ring-white/10 ${sizeClass} ${badge.imageUrl ? `overflow-hidden p-0 ${imageWidthClass}` : "px-1"}`}
-          style={{ backgroundColor: badge.backgroundColor, color: badge.foregroundColor }}
+          className={`custom-profile-badge inline-flex shrink-0 items-center justify-center font-semibold leading-none ${sizeClass}`}
+          style={{ color: badge.foregroundColor }}
         >
-          {badge.imageUrl ? <img src={badge.imageUrl} alt="" className="h-full w-full rounded-full object-cover"/> : badge.icon}
+          {badge.imageUrl ? <img src={badge.imageUrl} alt="" className={`${imageSizeClass} object-contain`}/> : badge.icon}
         </span>
       ))}
       {badges.length > limit && (

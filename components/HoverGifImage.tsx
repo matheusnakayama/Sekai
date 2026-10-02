@@ -24,7 +24,9 @@ export function HoverGifImage({
   const [localHover, setLocalHover] = useState(false);
   const [poster, setPoster] = useState(() => posterCache.get(src) ?? "");
   const [corsBlocked, setCorsBlocked] = useState(false);
-  const animate = isHovered ?? localHover;
+  // `isHovered` lets a containing member/message row control playback; the image
+  // itself can still be hovered independently (for example in the profile card).
+  const animate = Boolean(isHovered) || localHover;
 
   function capturePoster(event: SyntheticEvent<HTMLImageElement>) {
     if (!gif || posterCache.has(src)) {
