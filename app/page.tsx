@@ -553,7 +553,7 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null) {
-    if (content.startsWith("/")) {
+    if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content.trim())) {
       const result = await executeSlashCommand(content, {
         serverId: activeServerId,
         channelId: activeChannelId,
