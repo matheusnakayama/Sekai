@@ -1,4 +1,4 @@
-"use client";
+z"use client";
 
 import { useMemo, useRef, useState } from "react";
 import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
@@ -78,7 +78,9 @@ export function ChatArea({
   }
 
   function closeTrollSimulation() {
-    window.location.assign("https://www.youtube.com/");
+    setShowTrollSimulation(false);
+    window.open("https://www.youtube.com/", "_blank", "noopener,noreferrer");
+    window.open("https://www.youtube.com/", "_blank", "noopener,noreferrer");
   }
 
   async function uploadImage(file?: File) {
