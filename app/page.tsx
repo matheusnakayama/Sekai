@@ -818,6 +818,9 @@ export default function Home() {
           onEditMessage={editMessage}
           onDeleteMessage={deleteMessage}
           canManageMessages={isOwner || hasPermission(myPermissions, "MANAGE_MESSAGES")}
+          members={members}
+          onAddFriend={handleAddFriend}
+          onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
         />
       )}
 
