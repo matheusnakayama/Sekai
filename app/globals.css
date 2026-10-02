@@ -33,6 +33,8 @@
   --g5: #4650df;
   --g6: #3840b8;
   --g7: #2a316f;
+  --bg-gradient-start: #5865f2;
+  --bg-gradient-end: #20254a;
   --gw1: rgb(142 162 251 / 0.30);
   --gw2: rgb(122 139 248 / 0.30);
   --gw3: rgb(106 118 245 / 0.30);
@@ -516,32 +518,40 @@ html[data-theme="grafite"] {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
 }
 
-/* Superfícies principais recebem um degradê visível, sem cobrir o texto nem os controles. */
-.bg-discord-bg-primary,
-.bg-discord-bg-secondary,
-.bg-discord-bg-dark,
+/* Fundos com duas cores e níveis próprios para separar chat, canais e navegação. */
+.bg-discord-bg-primary {
+  background-image: linear-gradient(135deg,
+    color-mix(in srgb, rgb(var(--d-primary)) 88%, var(--bg-gradient-start)) 0%,
+    color-mix(in srgb, rgb(var(--d-primary)) 84%, var(--bg-gradient-end)) 100%);
+}
+.bg-discord-bg-secondary {
+  background-image: linear-gradient(135deg,
+    color-mix(in srgb, rgb(var(--d-secondary)) 91%, var(--bg-gradient-start)) 0%,
+    color-mix(in srgb, rgb(var(--d-secondary)) 87%, var(--bg-gradient-end)) 100%);
+}
+.bg-discord-bg-dark {
+  background-image: linear-gradient(135deg,
+    color-mix(in srgb, rgb(var(--d-dark)) 92%, var(--bg-gradient-start)) 0%,
+    color-mix(in srgb, rgb(var(--d-dark)) 88%, var(--bg-gradient-end)) 100%);
+}
 .bg-discord-bg-darkest {
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--g1) 48%, transparent),
-    color-mix(in srgb, var(--g4) 34%, transparent) 52%,
-    color-mix(in srgb, var(--g7) 48%, transparent)
-  );
+  background-image: linear-gradient(135deg,
+    color-mix(in srgb, rgb(var(--d-darkest)) 94%, var(--bg-gradient-start)) 0%,
+    color-mix(in srgb, rgb(var(--d-darkest)) 90%, var(--bg-gradient-end)) 100%);
 }
 
 /* Versão translúcida, para destacar áreas sem perder a leitura do conteúdo */
 .bg-theme-wash {
-  background-image: linear-gradient(135deg, var(--gw1), var(--gw2), var(--gw3), var(--gw4), var(--gw5), var(--gw6), var(--gw7));
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--g1) 38%, transparent), color-mix(in srgb, var(--g7) 38%, transparent));
 }
 
-/* Fundo da tela de chamada: cor do tema + gradiente de 7 cores */
+/* Fundo da tela de chamada: duas cores do tema sobre a superfície escura. */
 .call-bg {
   background-color: rgb(var(--surface));
   background-image: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--g1) 44%, transparent),
-    color-mix(in srgb, var(--g4) 32%, transparent) 52%,
-    color-mix(in srgb, var(--g7) 44%, transparent)
+    color-mix(in srgb, var(--bg-gradient-start) 30%, rgb(var(--surface))),
+    color-mix(in srgb, var(--bg-gradient-end) 34%, rgb(var(--surface)))
   );
 }
 
