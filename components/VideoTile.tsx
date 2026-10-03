@@ -50,7 +50,7 @@ export default function VideoTile({
       className={focused
         ? 'relative h-full min-h-0 w-full overflow-hidden bg-black'
         : `relative rounded-xl overflow-hidden bg-surface-card border transition-shadow ${
-            participant.isSpeaking ? 'border-success/70 shadow-[0_0_0_3px_rgba(34,197,94,0.25)]' : 'border-surface-border'
+            participant.isSpeaking ? 'voice-speaking-tile' : 'border-surface-border'
           }`}
     >
       <div className={`relative w-full h-full ${focused ? 'min-h-0 bg-black' : 'aspect-video bg-gradient-to-br from-surface-card to-surface'}`}>
@@ -65,7 +65,7 @@ export default function VideoTile({
         )}
         {!showVideo && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <Avatar name={participant.name} avatarUrl={participant.avatarUrl} />
+            <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />
           </div>
         )}
       </div>
@@ -150,10 +150,10 @@ export default function VideoTile({
   );
 }
 
-function Avatar({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) {
+function Avatar({ name, avatarUrl, isSpeaking = false }: { name: string; avatarUrl?: string | null; isSpeaking?: boolean }) {
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   return (
-    <div className="h-20 w-20 sm:h-28 sm:w-28 rounded-full bg-theme-gradient flex items-center justify-center overflow-hidden text-2xl sm:text-3xl font-semibold text-white ring-4 ring-white/10 shadow-xl">
+    <div className={`h-20 w-20 sm:h-28 sm:w-28 rounded-full bg-theme-gradient flex items-center justify-center overflow-hidden text-2xl sm:text-3xl font-semibold text-white ring-4 ring-white/10 shadow-xl ${isSpeaking ? 'voice-speaking-avatar' : ''}`}>
       {avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
