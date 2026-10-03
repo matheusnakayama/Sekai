@@ -13,7 +13,7 @@ import { ChannelSidebar, Channel, VoiceMemberPreview } from "@/components/Channe
 import { ChatArea } from "@/components/ChatArea";
 import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
-import { MemberList, MemberItem } from "@/components/MemberList";
+import { MemberList, MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
@@ -96,6 +96,7 @@ export default function Home() {
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
+  const [serverRoles, setServerRoles] = useState<ServerRoleOption[]>([]);
   const [myPermissions, setMyPermissions] = useState<bigint>(0n);
   const [isOwner, setIsOwner] = useState(false);
   const [activeServerId, setActiveServerId] = useState<string>("");
@@ -367,6 +368,12 @@ export default function Home() {
       .from("member_roles")
       .select("user_id, roles(id, name, color, position, permissions)")
       .eq("server_id", activeServerId);
+    const { data: allServerRoles } = await supabase
+      .from("roles")
+      .select("id,name,color,position,is_default")
+      .eq("server_id", activeServerId)
+      .order("position", { ascending: false });
+    setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default));
 
     const rolesByUser = new Map<string, any[]>();
     (memberRoleRows ?? []).forEach((row: any) => {
@@ -392,6 +399,7 @@ export default function Home() {
         status: m.profiles?.status ?? "offline",
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
+        roleIds: roles.map((role) => role.id),
       };
     });
     setMembers(list);
@@ -487,8 +495,33 @@ export default function Home() {
     if (!activeServerId || member.id === currentUserId) return;
     const ok = await dialogs.confirm({ title: "Expulsar membro", message: `Expulsar ${member.displayName} deste servidor? Ele poderá voltar com um convite.`, confirmLabel: "Expulsar", danger: true });
     if (!ok) return;
-    const { error } = await supabase.from("members").delete().match({ server_id: activeServerId, user_id: member.id });
+    const { error } = await supabase.rpc("moderate_server_member", {
+      p_server_id: activeServerId,
+      p_user_id: member.id,
+      p_action: "kick",
+      p_reason: null,
+    });
     if (error) { await dialogs.notify({ title: "Não foi possível expulsar", message: error.message }); return; }
+    await loadChannelsAndMembers();
+  }
+
+  async function handleToggleMemberRole(member: MemberItem, role: ServerRoleOption, assigned: boolean) {
+    if (!activeServerId || member.id === currentUserId) return;
+    const { error } = await supabase.rpc("assign_server_member_role", {
+      p_server_id: activeServerId,
+      p_user_id: member.id,
+      p_role_id: role.id,
+      p_assign: !assigned,
+    });
+    if (error) {
+      await dialogs.notify({
+        title: "Não foi possível alterar o cargo",
+        message: error.message.includes("assign_server_member_role")
+          ? "Aplique db/server_member_actions_audit.sql no SQL Editor do Supabase e tente novamente."
+          : error.message,
+      });
+      return;
+    }
     await loadChannelsAndMembers();
   }
 
@@ -876,6 +909,11 @@ export default function Home() {
           members={members}
           onAddFriend={handleAddFriend}
           onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+          canKickMembers={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
+          onKickMember={handleKickMember}
+          roles={serverRoles}
+          canManageRoles={isOwner || hasPermission(myPermissions, "MANAGE_ROLES")}
+          onToggleMemberRole={handleToggleMemberRole}
         />
       )}
 
@@ -886,6 +924,9 @@ export default function Home() {
         canKick={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
         onKickMember={handleKickMember}
         onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+        roles={serverRoles}
+        canManageRoles={isOwner || hasPermission(myPermissions, "MANAGE_ROLES")}
+        onToggleRole={handleToggleMemberRole}
       />}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
