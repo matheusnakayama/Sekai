@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { aggregateRolePermissions, hasPermission, PERMISSIONS, toBigInt } from "@/lib/permissions";
 import { UserSettingsModal } from "@/components/UserSettingsModal";
@@ -19,6 +19,8 @@ import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { FriendsHome } from "@/components/FriendsHome";
 import type { Participant } from "@/lib/types";
+
+type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void };
 
 function LoginScreen() {
   const supabase = createClient();
@@ -110,6 +112,8 @@ export default function Home() {
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
+  const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
+  const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
@@ -449,6 +453,14 @@ export default function Home() {
     setVoiceParticipants(participants);
   }, []);
 
+  const handleVoiceControlsReady = useCallback((controls: VoiceControlHandle | null) => {
+    voiceControlsRef.current = controls;
+  }, []);
+
+  const handleVoiceControlStateChange = useCallback((state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => {
+    setVoiceControlState((current) => current.micOn === state.micOn && current.deafened === state.deafened && current.isSpeaking === state.isSpeaking ? current : state);
+  }, []);
+
   async function handleAddFriend(userId: string) {
     if (!currentUserId || userId === currentUserId) return;
     const { error } = await supabase.from("friendships").insert({
@@ -509,6 +521,8 @@ export default function Home() {
     setVoiceSession(null);
     setCallExpanded(false);
     setVoiceParticipants([]);
+    voiceControlsRef.current = null;
+    setVoiceControlState({ micOn: true, deafened: false, isSpeaking: false });
   }
 
   // Um clique entra diretamente na tela da chamada dentro da mesma aba.
@@ -614,7 +628,7 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null) {
-    if (content.startsWith("/")) {
+    if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content)) {
       const result = await executeSlashCommand(content, {
         serverId: activeServerId,
         channelId: activeChannelId,
@@ -630,7 +644,35 @@ export default function Home() {
       if (!result.ok) console.warn(result.message);
       return;
     }
-    await sendMessage(content, attachmentUrl);
+    try {
+      if (activeServerId && content) {
+        const { data: preferenceRow } = await supabase.from("server_preferences").select("settings").eq("server_id", activeServerId).maybeSingle();
+        const settings = (preferenceRow?.settings ?? {}) as { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
+        if (settings.autoModEnabled) {
+          const mentionLimit = Number(settings.mentionLimit ?? 0);
+          const mentions = (content.match(/@/g) ?? []).length;
+          if (mentionLimit > 0 && mentions > mentionLimit) {
+            await dialogs.notify({ title: "Mensagem bloqueada pelo AutoMod", message: `Esta mensagem tem ${mentions} menções. O limite do servidor é ${mentionLimit}.` });
+            return;
+          }
+          if (settings.blockInviteLinks && /(discord[.]gg|discord(app)?[.]com\/invite|https?:\/\/[^\s]+\/(invite|convite)\/)/i.test(content)) {
+            await dialogs.notify({ title: "Convite externo bloqueado", message: "O AutoMod deste servidor não permite links de convite externos." });
+            return;
+          }
+        }
+        const slowmodeSeconds = Math.max(0, Number(settings.slowmodeSeconds ?? 0));
+        if (slowmodeSeconds > 0) {
+          const { data: recent } = await supabase.from("messages").select("created_at").eq("channel_id", activeChannelId).eq("author_id", currentUserId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (recent?.created_at) {
+            const remaining = Math.ceil(slowmodeSeconds - (Date.now() - new Date(recent.created_at).getTime()) / 1000);
+            if (remaining > 0) { await dialogs.notify({ title: "Modo lento", message: `Aguarde ${remaining} segundo(s) antes de enviar outra mensagem.` }); return; }
+          }
+        }
+      }
+      await sendMessage(content, attachmentUrl);
+    } catch (error) {
+      await dialogs.notify({ title: "Não foi possível enviar", message: error instanceof Error ? error.message : "A mensagem foi recusada pelas regras do servidor." });
+    }
   }
 
   async function uploadChannelImage(file: File): Promise<string> {
@@ -651,6 +693,10 @@ export default function Home() {
   const callOpenHere =
     callExpanded && !!voiceSession && activeChannelType === "voice" && activeChannelId === voiceSession.channelId;
   const connectedHere = !!voiceSession && voiceSession.channelId === activeChannelId;
+  const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking }));
+  const visibleVoiceMembersByChannel = voiceSession
+    ? { ...voiceMembersByChannel, [voiceSession.channelId]: liveVoiceMembers }
+    : voiceMembersByChannel;
 
   return (
     <div className="flex h-screen w-screen flex-col">
@@ -682,9 +728,12 @@ export default function Home() {
         }}
         onOpenServerMenu={() => activeServerId && setShowServerSettings(true)}
         onOpenSettings={() => setShowUserSettings(true)}
+        onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
+        onToggleDeafen={voiceSession ? () => voiceControlsRef.current?.toggleDeafen() : undefined}
         connectedVoiceChannelId={voiceSession?.channelId ?? null}
         connectedVoiceChannelName={voiceSession?.channelName}
-        voiceMembersByChannel={voiceMembersByChannel}
+        connectedVoiceMembers={liveVoiceMembers}
+        voiceMembersByChannel={visibleVoiceMembersByChannel}
         onDisconnectVoice={disconnectVoice}
         currentUser={{
           userId: currentUserId,
@@ -697,6 +746,9 @@ export default function Home() {
           bio: myProfile?.bio,
           customStatus: myProfile?.customStatus,
           presence: myProfile?.presence ?? "online",
+          isMuted: !voiceControlState.micOn,
+          isDeafened: voiceControlState.deafened,
+          isSpeaking: voiceControlState.isSpeaking,
         }}
         onPresenceChange={handlePresenceChange}
       /> : null}
@@ -747,6 +799,7 @@ export default function Home() {
             createInvite: hasPermission(myPermissions, "CREATE_INSTANT_INVITE"),
             kick: hasPermission(myPermissions, "KICK_MEMBERS"),
             ban: hasPermission(myPermissions, "BAN_MEMBERS"),
+            viewAudit: hasPermission(myPermissions, "VIEW_AUDIT_LOG"),
           }}
           onClose={() => setShowServerSettings(false)}
           onDeleted={() => {
@@ -775,6 +828,8 @@ export default function Home() {
             accessToken={voiceSession.accessToken}
             autoJoin
             onParticipantsChange={handleVoiceParticipantsChange}
+            onControlsReady={handleVoiceControlsReady}
+            onControlStateChange={handleVoiceControlStateChange}
             onAddFriend={handleAddFriend}
             onClose={disconnectVoice}
             onMinimize={() => setCallExpanded(false)}
