@@ -204,7 +204,11 @@ revoke all on function public.has_permission(uuid, text) from public;
 grant execute on function public.has_permission(uuid, text) to authenticated;
 
 -- Mute temporário e banimentos precisam existir também no banco, não só na UI.
+alter table public.members add column if not exists is_muted boolean not null default false;
 alter table public.members add column if not exists communication_disabled_until timestamptz;
+update public.members set is_muted = false where is_muted is null;
+alter table public.members alter column is_muted set default false;
+alter table public.members alter column is_muted set not null;
 revoke update on public.members from authenticated;
 grant update (nickname) on public.members to authenticated;
 create table if not exists public.guild_bans (
@@ -383,3 +387,113 @@ create policy sekai_chat_images_upload on storage.objects for insert to authenti
 
 -- O cliente precisa do registro completo para remover uma reação em tempo real.
 alter table public.message_reactions replica identity full;
+
+-- Preferências e recursos avançados das configurações de servidor.
+create table if not exists public.server_preferences (
+  server_id uuid primary key references public.servers(id) on delete cascade,
+  settings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+alter table public.server_preferences enable row level security;
+grant select, insert, update on public.server_preferences to authenticated;
+drop policy if exists server_preferences_select_manage on public.server_preferences;
+drop policy if exists server_preferences_select_member on public.server_preferences;
+create policy server_preferences_select_member on public.server_preferences for select to authenticated
+  using (public.is_server_member(server_id));
+drop policy if exists server_preferences_insert_manage on public.server_preferences;
+create policy server_preferences_insert_manage on public.server_preferences for insert to authenticated
+  with check (public.has_permission(server_id, 'manage_guild'));
+drop policy if exists server_preferences_update_manage on public.server_preferences;
+create policy server_preferences_update_manage on public.server_preferences for update to authenticated
+  using (public.has_permission(server_id, 'manage_guild'))
+  with check (public.has_permission(server_id, 'manage_guild'));
+
+create table if not exists public.server_assets (
+  id uuid primary key default gen_random_uuid(),
+  server_id uuid not null references public.servers(id) on delete cascade,
+  kind text not null check (kind in ('emoji', 'sticker', 'sound')),
+  name text not null,
+  asset_url text not null,
+  storage_path text,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (server_id, kind, name)
+);
+alter table public.server_assets enable row level security;
+grant select, insert, delete on public.server_assets to authenticated;
+drop policy if exists server_assets_select_member on public.server_assets;
+create policy server_assets_select_member on public.server_assets for select to authenticated
+  using (public.is_server_member(server_id));
+drop policy if exists server_assets_insert_manage on public.server_assets;
+create policy server_assets_insert_manage on public.server_assets for insert to authenticated
+  with check (public.has_permission(server_id, 'manage_guild') and created_by = auth.uid());
+drop policy if exists server_assets_delete_manage on public.server_assets;
+create policy server_assets_delete_manage on public.server_assets for delete to authenticated
+  using (public.has_permission(server_id, 'manage_guild'));
+
+create table if not exists public.server_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  server_id uuid not null references public.servers(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null,
+  target text,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists server_audit_logs_server_created
+  on public.server_audit_logs (server_id, created_at desc);
+alter table public.server_audit_logs enable row level security;
+grant select, insert on public.server_audit_logs to authenticated;
+drop policy if exists server_audit_logs_select_manage on public.server_audit_logs;
+create policy server_audit_logs_select_manage on public.server_audit_logs for select to authenticated
+  using (public.has_permission(server_id, 'view_audit_log'));
+drop policy if exists server_audit_logs_insert_manage on public.server_audit_logs;
+create policy server_audit_logs_insert_manage on public.server_audit_logs for insert to authenticated
+  with check (actor_id = auth.uid() and public.has_permission(server_id, 'manage_guild'));
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('server-assets', 'server-assets', true, 8388608,
+  array['image/png','image/jpeg','image/webp','image/gif','audio/mpeg','audio/ogg','audio/wav','audio/webm'])
+on conflict (id) do update set public = true, file_size_limit = 8388608,
+  allowed_mime_types = array['image/png','image/jpeg','image/webp','image/gif','audio/mpeg','audio/ogg','audio/wav','audio/webm'];
+drop policy if exists server_assets_storage_upload on storage.objects;
+create policy server_assets_storage_upload on storage.objects for insert to authenticated with check (
+  bucket_id = 'server-assets' and (storage.foldername(name))[2] = auth.uid()::text
+  and public.has_permission(((storage.foldername(name))[1])::uuid, 'manage_guild')
+);
+drop policy if exists server_assets_storage_delete on storage.objects;
+create policy server_assets_storage_delete on storage.objects for delete to authenticated using (
+  bucket_id = 'server-assets'
+  and public.has_permission(((storage.foldername(name))[1])::uuid, 'manage_guild')
+);
+
+-- AutoMod e modo lento aplicados pela própria policy, mesmo se alguém tentar
+-- inserir mensagens sem passar pela interface do chat.
+drop policy if exists messages_insert_own on public.messages;
+create policy messages_insert_own on public.messages for insert to authenticated with check (
+  author_id = auth.uid()
+  and public.has_permission((select server_id from public.channels where id = channel_id), 'send_messages')
+  and not exists (select 1 from public.members m
+    where m.server_id = (select server_id from public.channels where id = channel_id)
+      and m.user_id = auth.uid()
+      and (m.is_muted = true or m.communication_disabled_until > now()))
+  and not exists (
+    select 1 from public.server_preferences p
+    where p.server_id = (select server_id from public.channels where id = channel_id)
+      and coalesce((p.settings->>'autoModEnabled')::boolean, false)
+      and (
+        (coalesce((p.settings->>'mentionLimit')::integer, 0) > 0
+          and length(coalesce(messages.content, '')) - length(replace(coalesce(messages.content, ''), '@', '')) > (p.settings->>'mentionLimit')::integer)
+        or (coalesce((p.settings->>'blockInviteLinks')::boolean, false)
+          and coalesce(messages.content, '') ~* '(discord[.]gg|discord(app)?[.]com/invite|https?://[^ ]+/(invite|convite)/)')
+      )
+  )
+  and not exists (
+    select 1 from public.server_preferences p
+    join public.messages recent on recent.channel_id = messages.channel_id and recent.author_id = auth.uid()
+    where p.server_id = (select server_id from public.channels where id = channel_id)
+      and coalesce((p.settings->>'slowmodeSeconds')::integer, 0) > 0
+      and recent.created_at > now() - make_interval(secs => (p.settings->>'slowmodeSeconds')::integer)
+  )
+);
