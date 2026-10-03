@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check } from "lucide-react";
+import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
@@ -289,6 +289,34 @@ function GeralTab({
 // ---------------- Cargos ----------------
 const ROLE_COLORS = ["#99aab5", "#1abc9c", "#2ecc71", "#3498db", "#9b59b6", "#e91e63", "#f1c40f", "#e67e22", "#e74c3c", "#607d8b", "#16a085", "#27ae60", "#2980b9", "#8e44ad", "#c0392b", "#34495e"];
 
+const PERMISSION_DESCRIPTIONS: Record<keyof typeof PERMISSIONS, string> = {
+  ADMINISTRATOR: "Acesso completo ao servidor e a todas as permissões, inclusive as futuras.",
+  MANAGE_GUILD: "Altere as configurações e os dados principais do servidor.",
+  MANAGE_ROLES: "Crie, edite e organize cargos abaixo do seu cargo mais alto.",
+  MANAGE_CHANNELS: "Crie, edite e remova canais e categorias do servidor.",
+  VIEW_AUDIT_LOG: "Consulte ações recentes de moderação e mudanças no servidor.",
+  CREATE_INSTANT_INVITE: "Crie links para convidar pessoas para este servidor.",
+  CHANGE_NICKNAME: "Altere o próprio apelido neste servidor.",
+  MANAGE_NICKNAMES: "Altere os apelidos dos outros membros.",
+  KICK_MEMBERS: "Remova membros do servidor. Eles ainda poderão receber outro convite.",
+  BAN_MEMBERS: "Bana membros para impedir que voltem a entrar no servidor.",
+  MODERATE_MEMBERS: "Aplique um tempo de silêncio temporário aos membros.",
+  VIEW_CHANNEL: "Veja os canais aos quais este cargo tem acesso.",
+  SEND_MESSAGES: "Envie mensagens nos canais de texto visíveis.",
+  MANAGE_MESSAGES: "Apague mensagens de outras pessoas e modere conversas.",
+  EMBED_LINKS: "Mostre prévias incorporadas ao enviar links.",
+  ATTACH_FILES: "Envie imagens e outros arquivos nas conversas.",
+  READ_MESSAGE_HISTORY: "Veja mensagens enviadas antes de entrar no canal.",
+  MENTION_EVERYONE: "Use menções que notificam todos os membros do canal.",
+  ADD_REACTIONS: "Adicione reações às mensagens do canal.",
+  USE_EXTERNAL_EMOJIS: "Use emojis personalizados de outros servidores.",
+  CONNECT: "Entre em canais de voz do servidor.",
+  SPEAK: "Use o microfone nos canais de voz.",
+  MUTE_MEMBERS: "Silencie o microfone de outros participantes da chamada.",
+  DEAFEN_MEMBERS: "Ensurdeça outros participantes da chamada.",
+  MOVE_MEMBERS: "Mova participantes entre canais de voz.",
+};
+
 function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string; canEdit: boolean; onChanged: () => void; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void> }) {
   const supabase = createClient();
   const dialogs = useDialogs();
@@ -296,11 +324,13 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
   const [members, setMembers] = useState<any[]>([]);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [permissionSearch, setPermissionSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [section, setSection] = useState<"display" | "permissions" | "members">("display");
   const [roleName, setRoleName] = useState("");
   const [roleColor, setRoleColor] = useState(ROLE_COLORS[0]);
   const [saving, setSaving] = useState(false);
+  const [draggedRoleId, setDraggedRoleId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function load() {
@@ -391,7 +421,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
   }
 
   async function togglePermission(bit: keyof typeof PERMISSIONS) {
-    if (!selectedRole) return;
+    if (!selectedRole || !canEdit) return;
     const current = toBigInt(selectedRole.permissions);
     const bitValue = PERMISSIONS[bit];
     const next = (current & bitValue) !== 0n ? current & ~bitValue : current | bitValue;
@@ -399,6 +429,48 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     if (error) { setError(error.message); return; }
     await onAudit("role.permissions.update", selectedRole.name, { role_id: selectedRole.id, permission: bit });
     await load();
+    onChanged();
+  }
+
+  async function clearPermissionGroup(bits: (keyof typeof PERMISSIONS)[]) {
+    if (!selectedRole || !canEdit) return;
+    const mask = bits.reduce((combined, bit) => combined | PERMISSIONS[bit], 0n);
+    const current = toBigInt(selectedRole.permissions);
+    const next = current & ~mask;
+    if (next === current) return;
+    const { error } = await supabase.from("roles").update({ permissions: next.toString() }).eq("id", selectedRole.id).eq("server_id", serverId);
+    if (error) { setError(error.message); return; }
+    await onAudit("role.permissions.clear_group", selectedRole.name, { role_id: selectedRole.id, group: bits });
+    await load();
+    onChanged();
+  }
+
+  async function reorderRole(droppedRoleId: string) {
+    if (!canEdit || !draggedRoleId || draggedRoleId === droppedRoleId || search.trim()) return;
+    const dragged = roles.find((role) => role.id === draggedRoleId);
+    const dropped = roles.find((role) => role.id === droppedRoleId);
+    if (!dragged || !dropped || dragged.is_default || dropped.is_default) return;
+
+    const ordered = roles.filter((role) => !role.is_default);
+    const from = ordered.findIndex((role) => role.id === draggedRoleId);
+    const to = ordered.findIndex((role) => role.id === droppedRoleId);
+    if (from < 0 || to < 0) return;
+    const [moving] = ordered.splice(from, 1);
+    ordered.splice(to, 0, moving);
+    const updates = await Promise.all(ordered.map((role, index) =>
+      supabase.from("roles").update({ position: ordered.length - index }).eq("id", role.id).eq("server_id", serverId)
+    ));
+    const failed = updates.find((result) => result.error)?.error;
+    setDraggedRoleId(null);
+    if (failed) {
+      setError(`Não foi possível salvar a ordem dos cargos: ${failed.message}`);
+      await load();
+      return;
+    }
+    const defaultRole = roles.find((role) => role.is_default);
+    const nextRoles = [...ordered, ...(defaultRole ? [defaultRole] : [])];
+    setRoles(nextRoles);
+    await onAudit("role.reorder", moving.name, { role_id: moving.id, position: ordered.length - to });
     onChanged();
   }
 
@@ -433,9 +505,11 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
       <div className="grid min-h-[460px] overflow-hidden rounded-xl border border-white/[0.08] bg-discord-bg-primary lg:grid-cols-[minmax(230px,0.72fr)_minmax(0,1.6fr)]">
         <aside className="border-b border-white/[0.08] p-3 lg:border-b-0 lg:border-r">
           <div className="mb-2 grid grid-cols-[minmax(0,1fr)_52px] px-2 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted"><span>Cargos · {filteredRoles.length}</span><span className="text-right">Membros</span></div>
-          <div className="max-h-[520px] space-y-1 overflow-y-auto">{filteredRoles.map((role) => <div key={role.id} className={cn("group flex items-center gap-2 rounded-lg px-2 py-2 transition", selectedRoleId === role.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]")}>
+          {canEdit && !search.trim() && <p className="mb-2 flex items-center gap-1.5 px-2 text-[10px] text-discord-text-muted"><GripVertical size={13}/>Arraste os cargos para definir a hierarquia</p>}
+          <div className="max-h-[520px] space-y-1 overflow-y-auto">{filteredRoles.map((role) => <div key={role.id} draggable={canEdit && !role.is_default && !search.trim()} onDragStart={(event) => { setDraggedRoleId(role.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", role.id); }} onDragOver={(event) => { if (canEdit && !role.is_default) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); void reorderRole(role.id); }} onDragEnd={() => setDraggedRoleId(null)} className={cn("group flex items-center gap-1.5 rounded-lg px-1.5 py-2 transition", selectedRoleId === role.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]", draggedRoleId === role.id && "opacity-40", canEdit && !role.is_default && !search.trim() && "cursor-grab active:cursor-grabbing")}>
+            {canEdit && !role.is_default && <span aria-hidden="true" className="shrink-0 text-discord-text-muted/60"><GripVertical size={15}/></span>}
             <button type="button" onClick={() => setSelectedRoleId(role.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: role.color || "#99aab5" }}/><span className="truncate text-sm text-discord-text-normal">{role.name}{role.is_default ? <span className="ml-1 text-[10px] text-discord-text-muted">padrão</span> : null}</span></button>
-            <span className="w-10 text-right text-xs tabular-nums text-discord-text-muted">{role.memberCount}</span>
+            <span className="w-8 text-right text-xs tabular-nums text-discord-text-muted">{role.memberCount}</span>
             {!role.is_default && canEdit && <button type="button" onClick={() => void handleDeleteRole(role.id)} aria-label={`Apagar cargo ${role.name}`} className="rounded-md p-1.5 text-discord-text-muted opacity-60 transition hover:bg-red-500/10 hover:text-red-300 sm:opacity-0 sm:group-hover:opacity-100"><Trash2 size={14}/></button>}
           </div>)}{filteredRoles.length === 0 && <p className="px-2 py-6 text-center text-xs text-discord-text-muted">Nenhum cargo encontrado.</p>}</div>
         </aside>
@@ -452,7 +526,25 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
             {selectedRole.is_default && <p className="text-xs leading-5 text-discord-text-muted">O cargo padrão não pode ser renomeado ou removido. Suas permissões ainda podem ser configuradas na aba Permissões.</p>}
           </div>}
 
-          {section === "permissions" && <div className="space-y-3">{PERMISSION_GROUPS.map((group) => <section key={group.label} className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">{group.label}</h4><div className="grid gap-1 sm:grid-cols-2">{group.bits.map((bit) => { const checked = (toBigInt(selectedRole.permissions) & PERMISSIONS[bit]) !== 0n; return <label key={bit} className={cn("flex cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 text-sm text-discord-text-normal transition hover:bg-white/[0.04]", !canEdit && "cursor-not-allowed opacity-60")}><input type="checkbox" checked={checked} disabled={!canEdit} onChange={() => void togglePermission(bit)} className="mt-0.5 h-4 w-4 accent-indigo-500"/><span>{PERMISSION_LABELS[bit]}</span></label>; })}</div></section>)}</div>}
+          {section === "permissions" && <div className="space-y-4">
+            <div className="sticky top-0 z-10 rounded-xl border border-white/[0.08] bg-discord-bg-primary/95 p-3 shadow-lg backdrop-blur"><label className="flex items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-secondary px-3 py-2.5 text-discord-text-muted focus-within:border-discord-brand/70"><Search size={16}/><input value={permissionSearch} onChange={(event) => setPermissionSearch(event.target.value)} placeholder="Buscar permissões" className="min-w-0 flex-1 bg-transparent text-sm text-discord-text-normal outline-none placeholder:text-discord-text-muted"/><kbd className="hidden rounded border border-white/[0.08] px-1.5 py-0.5 text-[10px] sm:inline">{PERMISSION_GROUPS.reduce((total, group) => total + group.bits.length, 0)} opções</kbd></label></div>
+            {PERMISSION_GROUPS.map((group) => {
+              const query = permissionSearch.trim().toLocaleLowerCase();
+              const bits = group.bits.filter((bit) => `${PERMISSION_LABELS[bit]} ${PERMISSION_DESCRIPTIONS[bit]}`.toLocaleLowerCase().includes(query));
+              if (!bits.length) return null;
+              return <section key={group.label} className="overflow-hidden rounded-xl border border-white/[0.08] bg-discord-bg-secondary shadow-sm">
+                <header className="flex items-center justify-between gap-3 border-b border-white/[0.07] bg-white/[0.025] px-4 py-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">{group.label}</h4><p className="mt-0.5 text-[11px] text-discord-text-muted">{bits.length} permissão{bits.length === 1 ? "" : "ões"}</p></div><button type="button" disabled={!canEdit} onClick={() => void clearPermissionGroup(group.bits)} className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium text-discord-brand transition hover:bg-discord-brand/10 disabled:cursor-not-allowed disabled:opacity-40">Limpar permissões</button></header>
+                <div className="divide-y divide-white/[0.06]">{bits.map((bit) => {
+                  const checked = (toBigInt(selectedRole.permissions) & PERMISSIONS[bit]) !== 0n;
+                  return <div key={bit} className="flex items-start gap-4 px-4 py-3.5 transition hover:bg-white/[0.025]">
+                    <div className="min-w-0 flex-1"><h5 className="text-sm font-medium text-discord-text-normal">{PERMISSION_LABELS[bit]}</h5><p className="mt-1 max-w-2xl text-xs leading-5 text-discord-text-muted">{PERMISSION_DESCRIPTIONS[bit]}</p></div>
+                    <button type="button" role="switch" aria-checked={checked} aria-label={`${PERMISSION_LABELS[bit]}: ${checked ? "ativada" : "desativada"}`} disabled={!canEdit} onClick={() => void togglePermission(bit)} className={cn("relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand focus-visible:ring-offset-2 focus-visible:ring-offset-discord-bg-secondary disabled:cursor-not-allowed disabled:opacity-50", checked ? "border-discord-brand bg-discord-brand" : "border-white/[0.16] bg-discord-bg-dark")}><span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform", checked ? "translate-x-[22px]" : "translate-x-0.5")}/></button>
+                  </div>;
+                })}</div>
+              </section>;
+            })}
+            {PERMISSION_GROUPS.every((group) => group.bits.every((bit) => !`${PERMISSION_LABELS[bit]} ${PERMISSION_DESCRIPTIONS[bit]}`.toLocaleLowerCase().includes(permissionSearch.trim().toLocaleLowerCase()))) && <div className="rounded-xl border border-white/[0.08] bg-discord-bg-secondary px-4 py-10 text-center"><Search className="mx-auto h-5 w-5 text-discord-text-muted"/><p className="mt-2 text-sm font-medium text-discord-text-normal">Nenhuma permissão encontrada</p><p className="mt-1 text-xs text-discord-text-muted">Tente buscar por outro nome ou descrição.</p></div>}
+          </div>}
 
           {section === "members" && <div className="space-y-4"><div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><h4 className="text-sm font-semibold text-discord-header-primary">Membros com este cargo</h4><p className="mt-1 text-xs text-discord-text-muted">Adicione ou remova o cargo das pessoas do servidor.</p>{currentRoleMembers.length === 0 ? <p className="mt-4 rounded-lg bg-discord-bg-primary p-3 text-xs text-discord-text-muted">Ninguém recebeu este cargo ainda.</p> : <div className="mt-3 space-y-1">{currentRoleMembers.map((member) => <div key={member.user_id} className="flex items-center gap-3 rounded-lg bg-discord-bg-primary px-3 py-2"><span className="grid h-8 w-8 place-items-center rounded-full bg-discord-brand/20 text-xs font-bold text-discord-brand">{(member.profiles?.display_name || member.profiles?.username || "?")[0]?.toUpperCase()}</span><span className="min-w-0 flex-1 truncate text-sm text-discord-text-normal">{member.profiles?.display_name || member.profiles?.username || "Membro"}<span className="ml-2 text-xs text-discord-text-muted">@{member.profiles?.username || ""}</span></span>{canEdit && !selectedRole.is_default && <button type="button" onClick={() => void toggleMemberRole(member, false)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/10">Remover cargo</button>}</div>)}</div>}</div>
             {canEdit && !selectedRole.is_default && <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><h4 className="text-sm font-semibold text-discord-header-primary">Adicionar membros</h4><label className="mt-3 flex items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-discord-text-muted"><Search size={15}/><input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Buscar pessoa no servidor" className="min-w-0 flex-1 bg-transparent text-sm text-discord-text-normal outline-none"/></label><div className="mt-2 max-h-44 space-y-1 overflow-y-auto">{availableMembers.slice(0, 12).map((member) => <div key={member.user_id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-white/[0.04]"><span className="min-w-0 flex-1 truncate text-sm text-discord-text-normal">{member.profiles?.display_name || member.profiles?.username || "Membro"}</span><button type="button" onClick={() => void toggleMemberRole(member, true)} className="rounded-md px-3 py-1.5 text-xs font-semibold text-discord-brand hover:bg-discord-brand/10">Adicionar</button></div>)}{availableMembers.length === 0 && <p className="px-2 py-3 text-xs text-discord-text-muted">Não há outros membros para adicionar.</p>}</div></div>}</div>}
