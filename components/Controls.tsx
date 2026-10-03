@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Volume2, VolumeX } from 'lucide-react';
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon } from './icons';
 
 export type ScreenResolution = 480 | 720 | 1080 | 1440 | 2160;
@@ -15,6 +16,7 @@ const FRAME_RATES: ScreenFrameRate[] = [30, 60, 90, 120];
 
 export default function Controls({
   micOn,
+  deafened,
   camOn,
   sharingScreen,
   screenAudioAvailable,
@@ -26,6 +28,7 @@ export default function Controls({
   isHost,
   micLockedByHost,
   onToggleMic,
+  onToggleDeafen,
   onToggleCam,
   onToggleScreenShare,
   onToggleScreenAudio,
@@ -35,6 +38,7 @@ export default function Controls({
   onToggleChat,
 }: {
   micOn: boolean;
+  deafened: boolean;
   camOn: boolean;
   sharingScreen: boolean;
   screenAudioAvailable: boolean;
@@ -46,6 +50,7 @@ export default function Controls({
   isHost: boolean;
   micLockedByHost: boolean;
   onToggleMic: () => void;
+  onToggleDeafen: () => void;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
   onToggleScreenAudio: () => void;
@@ -74,6 +79,16 @@ export default function Controls({
         title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : undefined}
       >
         <MicIcon off={!micOn} />
+      </ControlButton>
+
+      <ControlButton
+        active={!deafened}
+        activeLabel="Ensurdecer"
+        inactiveLabel="Reativar áudio"
+        onClick={onToggleDeafen}
+        danger={deafened}
+      >
+        {deafened ? <VolumeX className="h-5 w-5"/> : <Volume2 className="h-5 w-5"/>}
       </ControlButton>
 
       <ControlButton
