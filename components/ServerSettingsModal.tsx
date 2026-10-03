@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical } from "lucide-react";
+import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
+import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
 import {
   ServerAssetsPanel,
   ServerAuditPanel,
@@ -288,6 +289,8 @@ function GeralTab({
 
 // ---------------- Cargos ----------------
 const ROLE_COLORS = ["#99aab5", "#1abc9c", "#2ecc71", "#3498db", "#9b59b6", "#e91e63", "#f1c40f", "#e67e22", "#e74c3c", "#607d8b", "#16a085", "#27ae60", "#2980b9", "#8e44ad", "#c0392b", "#34495e"];
+const ROLE_ICON_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_ROLE_ICON_SIZE = 5 * 1024 * 1024;
 
 const PERMISSION_DESCRIPTIONS: Record<keyof typeof PERMISSIONS, string> = {
   ADMINISTRATOR: "Acesso completo ao servidor e a todas as permissões, inclusive as futuras.",
@@ -330,12 +333,20 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
   const [roleName, setRoleName] = useState("");
   const [roleColor, setRoleColor] = useState(ROLE_COLORS[0]);
   const [saving, setSaving] = useState(false);
+  const [iconUploading, setIconUploading] = useState(false);
+  const [createRoleOpen, setCreateRoleOpen] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleColor, setNewRoleColor] = useState(ROLE_COLORS[0]);
+  const [newRoleIconFile, setNewRoleIconFile] = useState<File | null>(null);
+  const [newRoleIconPreview, setNewRoleIconPreview] = useState<string | null>(null);
+  const [creatingRole, setCreatingRole] = useState(false);
+  const [createRoleError, setCreateRoleError] = useState("");
   const [draggedRoleId, setDraggedRoleId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function load() {
     const [{ data: roleRows }, { data: memberRows }, { data: assignments }] = await Promise.all([
-      supabase.from("roles").select("id, name, color, position, permissions, is_default").eq("server_id", serverId).order("position", { ascending: false }),
+      supabase.from("roles").select("id, name, color, icon_url, position, permissions, is_default").eq("server_id", serverId).order("position", { ascending: false }),
       supabase.from("members").select("user_id, profiles(display_name, username)").eq("server_id", serverId),
       supabase.from("member_roles").select("user_id, role_id").eq("server_id", serverId),
     ]);
@@ -343,10 +354,82 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     (assignments ?? []).forEach((assignment: any) => roleCounts.set(assignment.role_id, (roleCounts.get(assignment.role_id) ?? 0) + 1));
     const memberships = new Map<string, string[]>();
     (assignments ?? []).forEach((assignment: any) => memberships.set(assignment.user_id, [...(memberships.get(assignment.user_id) ?? []), assignment.role_id]));
-    const nextRoles = (roleRows ?? []).map((role: any) => ({ ...role, memberCount: roleCounts.get(role.id) ?? 0 }));
+    const nextRoles = (roleRows ?? []).map((role: any) => ({ ...role, iconUrl: role.icon_url ?? null, memberCount: roleCounts.get(role.id) ?? 0 }));
     setRoles(nextRoles);
     setMembers((memberRows ?? []).map((member: any) => ({ ...member, roleIds: memberships.get(member.user_id) ?? [] })));
     setSelectedRoleId((current) => current && nextRoles.some((role: any) => role.id === current) ? current : nextRoles[0]?.id ?? null);
+  }
+
+  function handleNewRoleIconChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (!ROLE_ICON_TYPES.has(file.type)) { setNewRoleIconFile(null); setNewRoleIconPreview(null); setCreateRoleError("Escolha uma imagem PNG, JPG, WebP ou GIF."); return; }
+    if (file.size > MAX_ROLE_ICON_SIZE) { setNewRoleIconFile(null); setNewRoleIconPreview(null); setCreateRoleError("O ícone do cargo deve ter no máximo 5 MB."); return; }
+    setCreateRoleError("");
+    setNewRoleIconFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setNewRoleIconPreview(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  }
+
+  async function removeStoredRoleIcon(iconUrl?: string | null) {
+    if (!iconUrl) return;
+    const marker = "/storage/v1/object/public/server-assets/";
+    const markerIndex = iconUrl.indexOf(marker);
+    if (markerIndex < 0) return;
+    let path: string;
+    try { path = decodeURIComponent(iconUrl.slice(markerIndex + marker.length).split("?")[0]); } catch { return; }
+    if (!path.startsWith(`${serverId}/role-icons/`)) return;
+    await supabase.storage.from("server-assets").remove([path]);
+  }
+
+  async function persistRoleIcon(roleId: string, file: File, previousIconUrl?: string | null): Promise<{ iconUrl?: string; error?: string }> {
+    if (!ROLE_ICON_TYPES.has(file.type)) return { error: "Escolha uma imagem PNG, JPG, WebP ou GIF." };
+    if (file.size > MAX_ROLE_ICON_SIZE) return { error: "O ícone do cargo deve ter no máximo 5 MB." };
+
+    const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+    const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const path = `${serverId}/role-icons/${roleId}/${uniqueName}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("server-assets").upload(path, file, {
+      upsert: false,
+      contentType: file.type,
+      cacheControl: "31536000",
+    });
+    if (uploadError) return { error: uploadError.message };
+
+    const iconUrl = supabase.storage.from("server-assets").getPublicUrl(path).data.publicUrl;
+    const { error: updateError } = await supabase.from("roles").update({ icon_url: iconUrl }).eq("id", roleId).eq("server_id", serverId);
+    if (updateError) { await removeStoredRoleIcon(iconUrl); return { error: updateError.message }; }
+    await removeStoredRoleIcon(previousIconUrl);
+    return { iconUrl };
+  }
+
+  async function handleSelectedRoleIconChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !selectedRole || selectedRole.is_default || !canEdit) return;
+    setIconUploading(true);
+    setError("");
+    const result = await persistRoleIcon(selectedRole.id, file, selectedRole.icon_url);
+    setIconUploading(false);
+    if (result.error) { setError(`Não foi possível salvar a imagem: ${result.error}`); return; }
+    await onAudit("role.icon.update", selectedRole.name, { role_id: selectedRole.id });
+    await load();
+    onChanged();
+  }
+
+  async function removeSelectedRoleIcon() {
+    if (!selectedRole || selectedRole.is_default || !canEdit) return;
+    setIconUploading(true);
+    setError("");
+    const { error: updateError } = await supabase.from("roles").update({ icon_url: null }).eq("id", selectedRole.id).eq("server_id", serverId);
+    setIconUploading(false);
+    if (updateError) { setError(`Não foi possível remover a imagem: ${updateError.message}`); return; }
+    await removeStoredRoleIcon(selectedRole.icon_url);
+    await onAudit("role.icon.remove", selectedRole.name, { role_id: selectedRole.id });
+    await load();
+    onChanged();
   }
 
   useEffect(() => {
@@ -382,25 +465,34 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
   }
 
   async function handleCreateRole() {
-    const name = await dialogs.prompt({
-      title: "Criar cargo",
-      label: "Nome do cargo",
-      placeholder: "Novo cargo",
-      confirmLabel: "Criar cargo",
-    });
-    if (!name) return;
+    const cleanName = newRoleName.trim();
+    if (!cleanName) { setCreateRoleError("Dê um nome para o novo cargo."); return; }
+    setCreatingRole(true);
+    setCreateRoleError("");
     const { data, error } = await supabase
       .from("roles")
-      .insert({ server_id: serverId, name, position: roles.length })
+      .insert({ server_id: serverId, name: cleanName, color: newRoleColor, position: roles.filter((role) => !role.is_default).length })
       .select("id")
       .single();
     if (error) {
-      await dialogs.notify({ title: "Não foi possível criar o cargo", message: error.message });
+      setCreatingRole(false);
+      setCreateRoleError(`Não foi possível criar o cargo: ${error.message}`);
       return;
     }
-    await onAudit("role.create", name.trim(), { role_id: data?.id });
+    if (newRoleIconFile && data?.id) {
+      const iconResult = await persistRoleIcon(data.id, newRoleIconFile);
+      if (iconResult.error) await dialogs.notify({ title: "Cargo criado sem imagem", message: `O cargo foi salvo, mas a imagem não pôde ser enviada: ${iconResult.error}` });
+    }
+    await onAudit("role.create", cleanName, { role_id: data?.id });
     await load();
     if (data) setSelectedRoleId(data.id);
+    setNewRoleName("");
+    setNewRoleColor(ROLE_COLORS[0]);
+    setNewRoleIconFile(null);
+    setNewRoleIconPreview(null);
+    setCreateRoleOpen(false);
+    setCreateRoleError("");
+    setCreatingRole(false);
     onChanged();
   }
 
@@ -498,8 +590,20 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-discord-text-muted focus-within:border-discord-brand/70"><Search size={17}/><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cargos" className="min-w-0 flex-1 bg-transparent text-sm text-discord-text-normal outline-none placeholder:text-discord-text-muted"/></label>
-        {canEdit && <button type="button" onClick={() => void handleCreateRole()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"><Plus size={16}/>Criar cargo</button>}
+        {canEdit && <button type="button" aria-expanded={createRoleOpen} onClick={() => { setCreateRoleOpen((open) => !open); setCreateRoleError(""); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"><Plus size={16}/>Criar cargo</button>}
       </div>
+      {createRoleOpen && canEdit && <form onSubmit={(event) => { event.preventDefault(); void handleCreateRole(); }} className="mb-4 rounded-xl border border-discord-brand/25 bg-discord-brand/[0.06] p-4 shadow-sm">
+        <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Novo cargo</h3><p className="mt-1 text-xs text-discord-text-muted">Defina um nome, uma cor e, se quiser, um pequeno ícone para a lista de membros.</p></div>
+        <label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input autoFocus value={newRoleName} maxLength={80} onChange={(event) => setNewRoleName(event.target.value)} placeholder="Ex.: Equipe, VAMP, Moderador" className="mt-1.5 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70"/></label>
+        <div className="mt-4"><p className="mb-2 text-xs font-semibold text-discord-text-muted">Cor do cargo</p><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" aria-label={`Selecionar cor ${color}`} aria-pressed={newRoleColor.toLowerCase() === color.toLowerCase()} onClick={() => setNewRoleColor(color)} className={cn("grid h-7 w-7 place-items-center rounded-full border-2 transition hover:scale-110", newRoleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{newRoleColor.toLowerCase() === color.toLowerCase() && <Check size={13} className="text-white drop-shadow"/>}</button>)}</div></div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleIconChange}/><ImageIcon size={15} className="text-discord-brand"/>{newRoleIconFile ? "Trocar imagem" : "Adicionar imagem (opcional)"}</label>
+          {newRoleIconFile && <span className="max-w-48 truncate text-xs text-discord-text-muted">{newRoleIconFile.name}</span>}
+          <div className="ml-auto"><RoleBadgeList roles={[{ id: "new-role-preview", name: newRoleName.trim() || "Novo cargo", color: newRoleColor, iconUrl: newRoleIconPreview }]} size="medium"/></div>
+        </div>
+        {createRoleError && <p role="alert" className="mt-3 text-xs text-red-300">{createRoleError}</p>}
+        <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCreateRoleOpen(false); setNewRoleName(""); setNewRoleIconFile(null); setNewRoleIconPreview(null); setCreateRoleError(""); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Cancelar</button><button type="submit" disabled={creatingRole} className="rounded-lg bg-discord-brand px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{creatingRole ? "Criando…" : "Criar cargo"}</button></div>
+      </form>}
       <p className="mb-4 text-xs leading-5 text-discord-text-muted">O membro usa a cor do cargo mais alto que possui. Selecione um cargo para editar sua aparência, permissões e membros.</p>
 
       <div className="grid min-h-[460px] overflow-hidden rounded-xl border border-white/[0.08] bg-discord-bg-primary lg:grid-cols-[minmax(230px,0.72fr)_minmax(0,1.6fr)]">
@@ -508,7 +612,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
           {canEdit && !search.trim() && <p className="mb-2 flex items-center gap-1.5 px-2 text-[10px] text-discord-text-muted"><GripVertical size={13}/>Arraste os cargos para definir a hierarquia</p>}
           <div className="max-h-[520px] space-y-1 overflow-y-auto">{filteredRoles.map((role) => <div key={role.id} draggable={canEdit && !role.is_default && !search.trim()} onDragStart={(event) => { setDraggedRoleId(role.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", role.id); }} onDragOver={(event) => { if (canEdit && !role.is_default) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); void reorderRole(role.id); }} onDragEnd={() => setDraggedRoleId(null)} className={cn("group flex items-center gap-1.5 rounded-lg px-1.5 py-2 transition", selectedRoleId === role.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]", draggedRoleId === role.id && "opacity-40", canEdit && !role.is_default && !search.trim() && "cursor-grab active:cursor-grabbing")}>
             {canEdit && !role.is_default && <span aria-hidden="true" className="shrink-0 text-discord-text-muted/60"><GripVertical size={15}/></span>}
-            <button type="button" onClick={() => setSelectedRoleId(role.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: role.color || "#99aab5" }}/><span className="truncate text-sm text-discord-text-normal">{role.name}{role.is_default ? <span className="ml-1 text-[10px] text-discord-text-muted">padrão</span> : null}</span></button>
+            <button type="button" onClick={() => setSelectedRoleId(role.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><RoleIcon role={role} size="medium"/><span className="truncate text-sm text-discord-text-normal">{role.name}{role.is_default ? <span className="ml-1 text-[10px] text-discord-text-muted">padrão</span> : null}</span></button>
             <span className="w-8 text-right text-xs tabular-nums text-discord-text-muted">{role.memberCount}</span>
             {!role.is_default && canEdit && <button type="button" onClick={() => void handleDeleteRole(role.id)} aria-label={`Apagar cargo ${role.name}`} className="rounded-md p-1.5 text-discord-text-muted opacity-60 transition hover:bg-red-500/10 hover:text-red-300 sm:opacity-0 sm:group-hover:opacity-100"><Trash2 size={14}/></button>}
           </div>)}{filteredRoles.length === 0 && <p className="px-2 py-6 text-center text-xs text-discord-text-muted">Nenhum cargo encontrado.</p>}</div>
@@ -520,8 +624,17 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
           {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">{error}</p>}
 
           {section === "display" && <div className="space-y-4">
-            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><h4 className="mb-4 text-sm font-semibold text-discord-header-primary">Identidade do cargo</h4><label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input value={roleName} disabled={!canEdit || selectedRole.is_default} maxLength={80} onChange={(event) => setRoleName(event.target.value)} className="mt-2 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70 disabled:opacity-60"/></label><div className="mt-5"><div className="mb-3 flex items-center gap-2 text-xs font-semibold text-discord-text-muted"><Palette size={15}/>Cor do cargo</div><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" disabled={!canEdit} aria-label={`Selecionar cor ${color}`} aria-pressed={roleColor.toLowerCase() === color.toLowerCase()} onClick={() => setRoleColor(color)} className={cn("grid h-8 w-8 place-items-center rounded-full border-2 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50", roleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{roleColor.toLowerCase() === color.toLowerCase() && <Check size={15} className="text-white drop-shadow"/>}</button>)}</div></div></div>
-            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Prévia</p><div className="inline-flex items-center gap-2 rounded-full bg-discord-bg-primary px-3 py-2 text-sm font-semibold" style={{ color: roleColor }}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: roleColor }}/>{roleName || "Novo cargo"}</div></div>
+            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4">
+              <h4 className="mb-4 text-sm font-semibold text-discord-header-primary">Identidade do cargo</h4>
+              <label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input value={roleName} disabled={!canEdit || selectedRole.is_default} maxLength={80} onChange={(event) => setRoleName(event.target.value)} className="mt-2 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70 disabled:opacity-60"/></label>
+              <div className="mt-5 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-discord-bg-primary p-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-discord-text-muted">{selectedRole.iconUrl ? <img src={selectedRole.iconUrl} alt="" className="h-full w-full object-cover"/> : <ImageIcon size={18}/>}</span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-discord-text-normal">Ícone do cargo</span><span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">PNG, JPG, WebP ou GIF · até 5 MB</span></span>
+                {canEdit && !selectedRole.is_default && <div className="flex shrink-0 items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/[0.1] px-2.5 py-2 text-[11px] font-semibold text-discord-text-normal transition hover:bg-white/[0.06]">{iconUploading ? "Enviando…" : selectedRole.iconUrl ? "Trocar" : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={iconUploading} onChange={handleSelectedRoleIconChange}/></label>{selectedRole.iconUrl && <button type="button" disabled={iconUploading} onClick={() => void removeSelectedRoleIcon()} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50" aria-label="Remover ícone do cargo"><Trash2 size={14}/></button>}</div>}
+              </div>
+              <div className="mt-5"><div className="mb-3 flex items-center gap-2 text-xs font-semibold text-discord-text-muted"><Palette size={15}/>Cor do cargo</div><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" disabled={!canEdit || selectedRole.is_default} aria-label={`Selecionar cor ${color}`} aria-pressed={roleColor.toLowerCase() === color.toLowerCase()} onClick={() => setRoleColor(color)} className={cn("grid h-8 w-8 place-items-center rounded-full border-2 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50", roleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{roleColor.toLowerCase() === color.toLowerCase() && <Check size={15} className="text-white drop-shadow"/>}</button>)}</div></div>
+            </div>
+            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Prévia</p><RoleBadgeList roles={[{ id: selectedRole.id, name: roleName || selectedRole.name, color: roleColor, iconUrl: selectedRole.iconUrl }]} size="medium"/></div>
             {canEdit && !selectedRole.is_default && <button type="button" onClick={() => void saveRoleAppearance()} disabled={saving} className="rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">{saving ? "Salvando…" : "Salvar alterações"}</button>}
             {selectedRole.is_default && <p className="text-xs leading-5 text-discord-text-muted">O cargo padrão não pode ser renomeado ou removido. Suas permissões ainda podem ser configuradas na aba Permissões.</p>}
           </div>}

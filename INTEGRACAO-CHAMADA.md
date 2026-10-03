@@ -25,8 +25,14 @@ Execute `db/social_invites_migration.sql` e `db/direct_messages_migration.sql` u
 
 No chat de texto, clique com o botão direito em uma mensagem própria para editar ou excluir. Clique com o botão direito em um canal para excluí-lo (requer permissão de gerenciamento); no servidor, abra as configurações para ver suas opções de gerenciamento.
 
+Na lista de membros, clique com o botão direito para abrir o menu de perfil, menção, mensagem, amizade, apelido, cargos e moderação. As opções de timeout, expulsão, banimento, apelido e alteração de cargos respeitam as permissões do servidor e também são verificadas no banco. Para habilitar a alteração segura de apelidos por moderadores, execute `db/member_context_menu_migration.sql` uma vez, depois de `db/project_integrity_upgrade.sql`.
+
 A chamada continua usando a infraestrutura de presença e sinalização Pusher já integrada. Cada canal de voz usa seu próprio ID como sala. A lista do canal consulta a presença Pusher para mostrar nomes e avatares a todos os membros do servidor, mesmo quando ainda não entraram na chamada. Um clique no canal abre a chamada diretamente. No perfil de um membro do servidor é possível enviar DM ou, para quem tem permissão, expulsar a pessoa do servidor. Não é necessário adicionar variáveis de ambiente para esses recursos: mantenha as variáveis Supabase e Pusher listadas acima, com `PUSHER_SECRET` apenas no servidor.
 
 ## Temas
 
 O seletor de cores inclui 26 opções (o tema Azul original e 25 alternativas), salva a escolha no navegador e aplica os temas adicionais sem exigir alterações na configuração da Vercel.
+
+## Ícones dos cargos
+
+Para habilitar imagens nos cargos, execute `db/role_icons_migration.sql` uma vez no SQL Editor do Supabase, depois de `db/project_integrity_upgrade.sql`. O ícone é salvo no bucket público `server-assets`; somente pessoas com permissão **Gerenciar cargos** podem enviar, substituir ou remover imagens. PNG, JPG, WebP e GIF são aceitos, até 5 MB.

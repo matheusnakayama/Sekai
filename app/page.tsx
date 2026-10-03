@@ -96,6 +96,8 @@ export default function Home() {
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
+  const [mentionRequest, setMentionRequest] = useState<{ displayName: string; nonce: number } | null>(null);
+  const mentionRequestRef = useRef(0);
   const [serverRoles, setServerRoles] = useState<ServerRoleOption[]>([]);
   const [myPermissions, setMyPermissions] = useState<bigint>(0n);
   const [isOwner, setIsOwner] = useState(false);
@@ -120,113 +122,12 @@ export default function Home() {
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
-  const bankaiAudioRef = useRef<HTMLAudioElement | null>(null);
-  const bankaiAudioUnlockedRef = useRef(false);
-  const bankaiCooldownByServerRef = useRef(new Map<string, number>());
   const [showCreateServer, setShowCreateServer] = useState(false);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
-  const channelListVersion = channels.map((channel) => channel.id).join(":");
-
-  const playBankaiSound = useCallback(async () => {
-    if (myProfile?.presence === "dnd") return;
-    const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
-    bankaiAudioRef.current = audio;
-    audio.preload = "auto";
-    audio.volume = 0.85;
-    audio.currentTime = 0;
-    try {
-      await audio.play();
-      bankaiAudioUnlockedRef.current = true;
-    } catch {
-      // O navegador pode bloquear a reprodução remota; o primeiro gesto local
-      // tenta liberar o elemento de áudio silenciosamente.
-    }
-  }, [myProfile?.presence]);
-
-  useEffect(() => {
-    function unlockBankaiAudio() {
-      if (bankaiAudioUnlockedRef.current) return;
-      const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
-      bankaiAudioRef.current = audio;
-      audio.preload = "auto";
-      audio.muted = true;
-      audio.currentTime = 0;
-      void audio.play().then(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.muted = false;
-        bankaiAudioUnlockedRef.current = true;
-      }).catch(() => {
-        audio.muted = false;
-      });
-    }
-
-    window.addEventListener("pointerdown", unlockBankaiAudio);
-    window.addEventListener("keydown", unlockBankaiAudio);
-    window.addEventListener("touchstart", unlockBankaiAudio);
-    return () => {
-      window.removeEventListener("pointerdown", unlockBankaiAudio);
-      window.removeEventListener("keydown", unlockBankaiAudio);
-      window.removeEventListener("touchstart", unlockBankaiAudio);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!currentUserId || servers.length === 0) return;
-    let cancelled = false;
-    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
-
-    async function subscribeToServerBankai() {
-      const serverIds = [...new Set(servers.map((server) => server.id))];
-      const { data: textChannels, error } = await supabase
-        .from("channels")
-        .select("id, server_id")
-        .in("server_id", serverIds)
-        .eq("type", "text");
-
-      if (cancelled || error || !textChannels?.length) {
-        if (error) console.warn("Não foi possível ouvir os comandos BANKAI:", error.message);
-        return;
-      }
-
-      const channel = supabase.channel(`sekai-bankai:${currentUserId}`);
-      textChannels.forEach((textChannel) => {
-        channel.on("postgres_changes", {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `channel_id=eq.${textChannel.id}`,
-        }, (event) => {
-          const message = event.new as { content?: string | null; author_id?: string };
-          if (message.content?.trim().toLocaleUpperCase() !== ".BANKAI") return;
-          // O remetente já iniciou o áudio diretamente no gesto de envio.
-          if (message.author_id === currentUserId) return;
-          const now = Date.now();
-          const lastPlayed = bankaiCooldownByServerRef.current.get(textChannel.server_id) ?? 0;
-          if (now - lastPlayed < 2500) return;
-          bankaiCooldownByServerRef.current.set(textChannel.server_id, now);
-          void playBankaiSound();
-        });
-      });
-
-      realtimeChannel = channel;
-      channel.subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn("A conexão do comando BANKAI foi interrompida:", status);
-        }
-      });
-    }
-
-    void subscribeToServerBankai();
-    return () => {
-      cancelled = true;
-      if (realtimeChannel) void supabase.removeChannel(realtimeChannel);
-    };
-  }, [channelListVersion, currentUserId, playBankaiSound, servers, supabase]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -467,14 +368,20 @@ export default function Home() {
 
     const { data: memberRoleRows } = await supabase
       .from("member_roles")
-      .select("user_id, roles(id, name, color, position, permissions)")
+      .select("user_id, roles(id, name, color, icon_url, position, permissions)")
       .eq("server_id", activeServerId);
     const { data: allServerRoles } = await supabase
       .from("roles")
-      .select("id,name,color,position,is_default")
+      .select("id,name,color,icon_url,position,is_default")
       .eq("server_id", activeServerId)
       .order("position", { ascending: false });
-    setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default));
+    setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default).map((role: any) => ({
+      id: role.id,
+      name: role.name,
+      color: role.color,
+      iconUrl: role.icon_url,
+      position: role.position,
+    })));
 
     const rolesByUser = new Map<string, any[]>();
     (memberRoleRows ?? []).forEach((row: any) => {
@@ -485,7 +392,8 @@ export default function Home() {
 
     const list: MemberItem[] = (memberRows ?? []).map((m: any) => {
       const roles = rolesByUser.get(m.user_id) ?? [];
-      const topRole = [...roles].sort((a, b) => b.position - a.position)[0];
+      const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
+      const topRole = sortedRoles[0];
       return {
         id: m.user_id,
         displayName: m.nickname || m.profiles?.display_name || m.profiles?.username || "Usuário",
@@ -501,6 +409,12 @@ export default function Home() {
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
         roleIds: roles.map((role) => role.id),
+        assignedRoles: sortedRoles.map((role) => ({
+          id: role.id,
+          name: role.name,
+          color: role.color,
+          iconUrl: role.icon_url,
+        })),
       };
     });
     setMembers(list);
@@ -592,6 +506,15 @@ export default function Home() {
     await dialogs.notify({ title: "Solicitação enviada", message: "A pessoa receberá seu pedido de amizade na tela Amigos." });
   }
 
+  function handleMentionMember(member: MemberItem) {
+    if (activeChannelType !== "text") {
+      void dialogs.notify({ title: "Menção indisponível", message: "Abra um canal de texto para inserir uma menção na mensagem." });
+      return;
+    }
+    mentionRequestRef.current += 1;
+    setMentionRequest({ displayName: member.displayName, nonce: mentionRequestRef.current });
+  }
+
   async function handleKickMember(member: MemberItem) {
     if (!activeServerId || member.id === currentUserId) return;
     const ok = await dialogs.confirm({ title: "Expulsar membro", message: `Expulsar ${member.displayName} deste servidor? Ele poderá voltar com um convite.`, confirmLabel: "Expulsar", danger: true });
@@ -603,6 +526,85 @@ export default function Home() {
       p_reason: null,
     });
     if (error) { await dialogs.notify({ title: "Não foi possível expulsar", message: error.message }); return; }
+    await loadChannelsAndMembers();
+  }
+
+  async function handleBanMember(member: MemberItem) {
+    if (!activeServerId || member.id === currentUserId) return;
+    const reason = await dialogs.prompt({
+      title: `Banir ${member.displayName}`,
+      label: "Motivo (opcional)",
+      description: "A pessoa será removida do servidor e não poderá entrar novamente enquanto o banimento estiver ativo.",
+      placeholder: "Motivo do banimento",
+      allowEmpty: true,
+      maxLength: 200,
+      confirmLabel: "Banir",
+    });
+    if (reason === null) return;
+    const { error } = await supabase.rpc("moderate_server_member", {
+      p_server_id: activeServerId,
+      p_user_id: member.id,
+      p_action: "ban",
+      p_reason: reason || null,
+    });
+    if (error) { await dialogs.notify({ title: "Não foi possível banir", message: error.message }); return; }
+    await loadChannelsAndMembers();
+  }
+
+  async function handleTimeoutMember(member: MemberItem) {
+    if (!activeServerId || member.id === currentUserId) return;
+    const minutesText = await dialogs.prompt({
+      title: `Aplicar timeout em ${member.displayName}`,
+      label: "Duração em minutos",
+      description: "Informe um valor de 1 a 40.320 minutos (até 28 dias).",
+      placeholder: "10",
+      defaultValue: "10",
+      maxLength: 5,
+      confirmLabel: "Aplicar timeout",
+    });
+    if (minutesText === null) return;
+    const minutes = Number(minutesText);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 40320) {
+      await dialogs.notify({ title: "Duração inválida", message: "Informe um número inteiro de 1 a 40.320 minutos." });
+      return;
+    }
+    const { error } = await supabase.rpc("set_server_member_timeout", {
+      p_server_id: activeServerId,
+      p_user_id: member.id,
+      p_until: new Date(Date.now() + minutes * 60_000).toISOString(),
+    });
+    if (error) { await dialogs.notify({ title: "Não foi possível aplicar timeout", message: error.message }); return; }
+    await loadChannelsAndMembers();
+  }
+
+  async function handleChangeMemberNickname(member: MemberItem) {
+    if (!activeServerId || member.id === currentUserId) return;
+    const nickname = await dialogs.prompt({
+      title: `Alterar apelido de ${member.displayName}`,
+      label: "Novo apelido",
+      description: "Deixe vazio para remover o apelido e voltar a usar o nome do perfil.",
+      placeholder: "Apelido",
+      defaultValue: member.displayName,
+      allowEmpty: true,
+      maxLength: 32,
+      confirmLabel: "Salvar apelido",
+    });
+    if (nickname === null) return;
+    const { error } = await supabase.rpc("set_server_member_nickname", {
+      p_server_id: activeServerId,
+      p_user_id: member.id,
+      p_nickname: nickname || null,
+    });
+    if (error) {
+      const migrationMissing = error.code === "PGRST202" || error.message.includes("set_server_member_nickname");
+      await dialogs.notify({
+        title: "Não foi possível alterar o apelido",
+        message: migrationMissing
+          ? "Execute db/member_context_menu_migration.sql no SQL Editor do Supabase e tente novamente."
+          : error.message,
+      });
+      return;
+    }
     await loadChannelsAndMembers();
   }
 
@@ -778,11 +780,6 @@ export default function Home() {
       if (!result.ok) console.warn(result.message);
       return;
     }
-    // Começa a reprodução no próprio envio (gesto local do usuário), antes das
-    // consultas assíncronas de moderação e modo lento.
-    if (/^\.BANKAI$/i.test(content.trim()) && myProfile?.presence !== "dnd") {
-      void playBankaiSound();
-    }
     try {
       if (activeServerId && content) {
         const { data: preferenceRow } = await supabase.from("server_preferences").select("settings").eq("server_id", activeServerId).maybeSingle();
@@ -881,7 +878,6 @@ export default function Home() {
           avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl,
           bannerUrl: currentMember?.bannerUrl ?? myProfile?.bannerUrl,
           profileCardColor: myProfile?.profileCardColor,
-          badges: myProfile?.badges,
           bio: myProfile?.bio,
           customStatus: myProfile?.customStatus,
           presence: myProfile?.presence ?? "online",
@@ -1015,6 +1011,8 @@ export default function Home() {
           members={members}
           onAddFriend={handleAddFriend}
           onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+          mentionRequest={mentionRequest}
+          onMentionHandled={(nonce) => setMentionRequest((current) => current?.nonce === nonce ? null : current)}
           canKickMembers={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
           onKickMember={handleKickMember}
           roles={serverRoles}
@@ -1028,7 +1026,14 @@ export default function Home() {
         currentUserId={currentUserId}
         onAddFriend={handleAddFriend}
         canKick={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
+        canBan={isOwner || hasPermission(myPermissions, "BAN_MEMBERS")}
+        canTimeout={isOwner || hasPermission(myPermissions, "MODERATE_MEMBERS") || hasPermission(myPermissions, "MUTE_MEMBERS")}
+        canManageNicknames={isOwner || hasPermission(myPermissions, "MANAGE_NICKNAMES")}
         onKickMember={handleKickMember}
+        onBanMember={handleBanMember}
+        onTimeoutMember={handleTimeoutMember}
+        onChangeNickname={handleChangeMemberNickname}
+        onMentionMember={handleMentionMember}
         onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
         roles={serverRoles}
         canManageRoles={isOwner || hasPermission(myPermissions, "MANAGE_ROLES")}

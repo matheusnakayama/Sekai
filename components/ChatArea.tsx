@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,8 @@ interface ChatAreaProps {
   members?: MemberItem[];
   onAddFriend?: (userId: string) => void;
   onMessageMember?: (member: MemberItem) => void;
+  mentionRequest?: { displayName: string; nonce: number } | null;
+  onMentionHandled?: (nonce: number) => void;
   canKickMembers?: boolean;
   onKickMember?: (member: MemberItem) => void;
   roles?: ServerRoleOption[];
@@ -66,6 +68,8 @@ export function ChatArea({
   members = [],
   onAddFriend,
   onMessageMember,
+  mentionRequest,
+  onMentionHandled,
   canKickMembers = false,
   onKickMember,
   roles = [],
@@ -82,6 +86,21 @@ export function ChatArea({
   const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
   const [prankOpen, setPrankOpen] = useState(false);
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
+  const composerRef = useRef<HTMLInputElement>(null);
+  const lastMentionNonce = useRef(0);
+
+  useEffect(() => {
+    setSelectedProfile((current) => current ? memberById.get(current.id) ?? null : null);
+  }, [memberById]);
+
+  useEffect(() => {
+    if (!mentionRequest || mentionRequest.nonce === lastMentionNonce.current) return;
+    lastMentionNonce.current = mentionRequest.nonce;
+    const token = `@${mentionRequest.displayName}`;
+    setDraft((current) => `${current}${current && !/\s$/.test(current) ? " " : ""}${token} `);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+    onMentionHandled?.(mentionRequest.nonce);
+  }, [mentionRequest, onMentionHandled]);
 
   function openAuthorProfile(authorId: string, trigger: HTMLButtonElement) {
     const member = memberById.get(authorId);
@@ -245,6 +264,7 @@ export function ChatArea({
           <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
           <input
+            ref={composerRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Conversar em #${channelName}`}
