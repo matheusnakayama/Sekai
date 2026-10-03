@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { Plus, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +80,7 @@ export function ServerSidebar({
     <div className="flex h-full w-[72px] flex-col items-center gap-2 bg-discord-bg-darkest py-3">
       {/* Botão "Início" (DM) */}
       <ServerIcon active={!activeServerId} onClick={() => { onSelectServer(""); onOpenHome?.(); }} label="Mensagens diretas">
-        <Image src="/sekai-symbol.jpg" alt="Sekai" width={48} height={48} priority className="h-full w-full object-cover" />
+        <span className="text-lg font-bold">S</span>
       </ServerIcon>
 
       <div className="my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
