@@ -120,8 +120,8 @@ export default function Home() {
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
-  const [bankaiAudioBlocked, setBankaiAudioBlocked] = useState(false);
   const bankaiAudioRef = useRef<HTMLAudioElement | null>(null);
+  const bankaiAudioUnlockedRef = useRef(false);
   const bankaiCooldownByServerRef = useRef(new Map<string, number>());
   const [showCreateServer, setShowCreateServer] = useState(false);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
@@ -132,18 +132,47 @@ export default function Home() {
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
   const playBankaiSound = useCallback(async () => {
+    if (myProfile?.presence === "dnd") return;
     const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
     bankaiAudioRef.current = audio;
+    audio.preload = "auto";
     audio.volume = 0.85;
     audio.currentTime = 0;
     try {
       await audio.play();
-      setBankaiAudioBlocked(false);
+      bankaiAudioUnlockedRef.current = true;
     } catch {
-      // Alguns navegadores bloqueiam som iniciado por outro usuário até haver
-      // um clique local. O aviso persistente permite liberar a reprodução.
-      setBankaiAudioBlocked(true);
+      // O navegador pode bloquear a reprodução remota; o primeiro gesto local
+      // tenta liberar o elemento de áudio silenciosamente.
     }
+  }, [myProfile?.presence]);
+
+  useEffect(() => {
+    function unlockBankaiAudio() {
+      if (bankaiAudioUnlockedRef.current) return;
+      const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+      bankaiAudioRef.current = audio;
+      audio.preload = "auto";
+      audio.muted = true;
+      audio.currentTime = 0;
+      void audio.play().then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+        bankaiAudioUnlockedRef.current = true;
+      }).catch(() => {
+        audio.muted = false;
+      });
+    }
+
+    window.addEventListener("pointerdown", unlockBankaiAudio);
+    window.addEventListener("keydown", unlockBankaiAudio);
+    window.addEventListener("touchstart", unlockBankaiAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockBankaiAudio);
+      window.removeEventListener("keydown", unlockBankaiAudio);
+      window.removeEventListener("touchstart", unlockBankaiAudio);
+    };
   }, []);
 
   useEffect(() => {
@@ -172,8 +201,10 @@ export default function Home() {
           table: "messages",
           filter: `channel_id=eq.${textChannel.id}`,
         }, (event) => {
-          const message = event.new as { content?: string | null };
+          const message = event.new as { content?: string | null; author_id?: string };
           if (message.content?.trim().toLocaleUpperCase() !== ".BANKAI") return;
+          // O remetente já iniciou o áudio diretamente no gesto de envio.
+          if (message.author_id === currentUserId) return;
           const now = Date.now();
           const lastPlayed = bankaiCooldownByServerRef.current.get(textChannel.server_id) ?? 0;
           if (now - lastPlayed < 2500) return;
@@ -747,6 +778,11 @@ export default function Home() {
       if (!result.ok) console.warn(result.message);
       return;
     }
+    // Começa a reprodução no próprio envio (gesto local do usuário), antes das
+    // consultas assíncronas de moderação e modo lento.
+    if (/^\.BANKAI$/i.test(content.trim()) && myProfile?.presence !== "dnd") {
+      void playBankaiSound();
+    }
     try {
       if (activeServerId && content) {
         const { data: preferenceRow } = await supabase.from("server_preferences").select("settings").eq("server_id", activeServerId).maybeSingle();
@@ -1002,7 +1038,6 @@ export default function Home() {
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Nova mensagem direta</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
       </button>}
-      {bankaiAudioBlocked && <button type="button" onClick={() => void playBankaiSound()} className="fixed bottom-5 right-5 z-[160] flex max-w-sm items-center gap-3 rounded-xl border border-discord-brand/40 bg-discord-bg-floating px-4 py-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-discord-brand/20 text-lg">🔊</span><span><span className="block text-sm font-semibold text-discord-header-primary">BANKAI recebido</span><span className="block text-xs text-discord-text-muted">Clique para reproduzir o áudio.</span></span></button>}
       </div>
     </div>
   );
