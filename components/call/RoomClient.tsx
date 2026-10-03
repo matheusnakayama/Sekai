@@ -42,6 +42,8 @@ export default function RoomClient({
   onMinimize,
   onParticipantsChange,
   onAddFriend,
+  onControlsReady,
+  onControlStateChange,
   autoJoin = false,
 }: {
   roomId: string;
@@ -53,6 +55,8 @@ export default function RoomClient({
   onMinimize?: () => void;
   onParticipantsChange?: (participants: Participant[]) => void;
   onAddFriend?: (userId: string) => void;
+  onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void } | null) => void;
+  onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
   /** Entra direto, sem a tela de pré-visualização (microfone ligado, câmera desligada). */
   autoJoin?: boolean;
 }) {
@@ -60,6 +64,8 @@ export default function RoomClient({
   const [autoJoining, setAutoJoining] = useState(autoJoin);
   const [participants, setParticipants] = useState<Record<string, Participant>>({});
   const [micOn, setMicOn] = useState(true);
+  const [deafened, setDeafened] = useState(false);
+  const [localSpeaking, setLocalSpeaking] = useState(false);
   const [micLockedByHost, setMicLockedByHost] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [sharingScreen, setSharingScreen] = useState(false);
@@ -104,6 +110,10 @@ export default function RoomClient({
     onParticipantsChange?.(phase === 'in-call' ? Object.values(participants) : []);
   }, [onParticipantsChange, participants, phase]);
 
+  useEffect(() => {
+    onControlStateChange?.({ micOn, deafened, isSpeaking: phase === 'in-call' && localSpeaking });
+  }, [micOn, deafened, localSpeaking, phase, onControlStateChange]);
+
   const cleanup = useCallback(() => {
     managerRef.current?.destroy();
     managerRef.current = null;
@@ -128,6 +138,37 @@ export default function RoomClient({
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
+
+  useEffect(() => {
+    const track = cameraStreamRef.current?.getAudioTracks()[0];
+    if (!track || !micOn || phase !== 'in-call' || deafened) {
+      setLocalSpeaking(false);
+      return;
+    }
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    const source = context.createMediaStreamSource(new MediaStream([track]));
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    let frame = 0;
+    let speaking = false;
+    let aboveThresholdSince = 0;
+    let belowThresholdSince = 0;
+    const sample = (time: number) => {
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const value of samples) { const centered = (value - 128) / 128; sum += centered * centered; }
+      const rms = Math.sqrt(sum / samples.length);
+      if (rms > 0.035) { aboveThresholdSince ||= time; belowThresholdSince = 0; }
+      else { belowThresholdSince ||= time; aboveThresholdSince = 0; }
+      const next = speaking ? !(time - belowThresholdSince > 260) : (time - aboveThresholdSince > 110);
+      if (next !== speaking) { speaking = next; setLocalSpeaking(next); updateLocalParticipant({ isSpeaking: next }); }
+      frame = window.requestAnimationFrame(sample);
+    };
+    frame = window.requestAnimationFrame(sample);
+    return () => { window.cancelAnimationFrame(frame); source.disconnect(); void context.close(); setLocalSpeaking(false); };
+  }, [micOn, phase, deafened]);
 
   function updateHost(nextHostId: string) {
     hostIdRef.current = nextHostId;
@@ -558,7 +599,7 @@ export default function RoomClient({
     }
   }
 
-  function toggleMic() {
+  const toggleMic = useCallback(() => {
     if (micLockedByHostRef.current) {
       setBanner('O anfitrião bloqueou seu microfone. Aguarde ele liberar o áudio.');
       return;
@@ -575,7 +616,18 @@ export default function RoomClient({
     tracks.forEach((t) => (t.enabled = next));
     updateLocalParticipant({ micOn: next });
     managerRef.current?.broadcastMediaState({ micOn: next, camOn });
-  }
+  }, [micOn, camOn]);
+
+  const toggleDeafen = useCallback(() => {
+    const next = !deafened;
+    setDeafened(next);
+    if (next && micOn) toggleMic();
+  }, [deafened, micOn, toggleMic]);
+
+  useEffect(() => {
+    onControlsReady?.({ toggleMic, toggleDeafen });
+    return () => onControlsReady?.(null);
+  }, [onControlsReady, toggleMic, toggleDeafen]);
 
   function toggleCam() {
     if (sharingScreen) return; // câmera fica em segundo plano durante compartilhamento
@@ -1034,7 +1086,7 @@ export default function RoomClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const participantList = Object.values(participants);
+  const participantList = Object.values(participants).map((participant) => participant.isLocal ? { ...participant, isSpeaking: localSpeaking } : participant);
   const isHost = Boolean(localIdRef.current) && hostId === localIdRef.current;
 
   if (phase === 'pre-join' && autoJoining) {
@@ -1189,7 +1241,7 @@ export default function RoomClient({
             <div className="max-w-xs">
               <ParticipantsGrid
                 participants={participantList}
-                muteRemoteAudio={muteRemoteAudioDuringShare}
+                muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
                 focusedParticipantId={focusedPresentationId}
                 onFocusPresentation={focusPresentation}
                 onExitPresentationFocus={exitPresentationFocus}
@@ -1202,7 +1254,7 @@ export default function RoomClient({
         ) : (
           <ParticipantsGrid
             participants={participantList}
-            muteRemoteAudio={muteRemoteAudioDuringShare}
+            muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
             focusedParticipantId={focusedPresentationId}
             onFocusPresentation={focusPresentation}
             onExitPresentationFocus={exitPresentationFocus}
@@ -1213,6 +1265,7 @@ export default function RoomClient({
       <footer className="px-3 sm:px-6 py-4 border-t border-surface-border">
         <Controls
           micOn={micOn}
+          deafened={deafened}
           camOn={camOn}
           sharingScreen={sharingScreen}
           screenAudioAvailable={screenAudioAvailable}
@@ -1221,6 +1274,7 @@ export default function RoomClient({
           onScreenShareSettingsChange={setScreenShareSettings}
           participantCount={participantList.length}
           onToggleMic={toggleMic}
+          onToggleDeafen={toggleDeafen}
           onToggleCam={toggleCam}
           onToggleScreenShare={toggleScreenShare}
           onToggleScreenAudio={toggleSharedScreenAudio}
