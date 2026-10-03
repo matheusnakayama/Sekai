@@ -72,31 +72,36 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
 
   return (
     <>
-    <div className="h-full w-60 space-y-4 overflow-y-auto bg-discord-bg-dark px-2 py-4">
-      {groupsOnline.map(([roleName, roleMembers]) => (
-        <div key={roleName}>
-          <p className="px-2 text-xs font-semibold uppercase text-discord-text-muted">
-            {roleName} — {roleMembers.length}
-          </p>
-          <div className="mt-1 space-y-0.5">
+    <div className="h-full w-60 space-y-3 overflow-y-auto bg-discord-bg-dark px-2 py-3">
+      {groupsOnline.map(({ roleName, roleColor, members: roleMembers }) => (
+        <section key={roleName} className="overflow-hidden rounded-lg border border-white/[0.045] bg-white/[0.018]">
+          <div className="flex items-center gap-2 border-b border-white/[0.045] px-2.5 py-2">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: roleColor || "var(--discord-text-muted)" }} />
+            <p className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[.12em] text-discord-text-muted">
+              {roleName}
+            </p>
+            <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-discord-text-muted">{roleMembers.length}</span>
+          </div>
+          <div className="space-y-0.5 p-1">
             {roleMembers.map((m) => (
               <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} />
             ))}
           </div>
-        </div>
+        </section>
       ))}
 
       {offline.length > 0 && (
-        <div>
-          <p className="px-2 text-xs font-semibold uppercase text-discord-text-muted">
-            Offline — {offline.length}
-          </p>
-          <div className="mt-1 space-y-0.5 opacity-50">
+        <section className="overflow-hidden rounded-lg border border-white/[0.05] bg-black/10">
+          <div className="flex items-center justify-between border-b border-white/[0.05] px-2.5 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-discord-text-muted">Offline</p>
+            <span className="rounded-full bg-white/[0.05] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-discord-text-muted">{offline.length}</span>
+          </div>
+          <div className="space-y-0.5 p-1 opacity-55">
             {offline.map((m) => (
               <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} />
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
       {selected && <UserProfileCard
@@ -116,14 +121,15 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
   );
 }
 
-function groupByRole(members: MemberItem[]): [string, MemberItem[]][] {
-  const map = new Map<string, MemberItem[]>();
+function groupByRole(members: MemberItem[]): { roleName: string; roleColor?: string; members: MemberItem[] }[] {
+  const map = new Map<string, { roleName: string; roleColor?: string; members: MemberItem[] }>();
   for (const m of members) {
-    const list = map.get(m.roleName) ?? [];
-    list.push(m);
-    map.set(m.roleName, list);
+    const group = map.get(m.roleName) ?? { roleName: m.roleName, roleColor: m.roleColor, members: [] };
+    group.members.push(m);
+    if (!group.roleColor && m.roleColor) group.roleColor = m.roleColor;
+    map.set(m.roleName, group);
   }
-  return Array.from(map.entries());
+  return Array.from(map.values());
 }
 
 function MemberRow({ member, isSelf, onSelect }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void }) {
