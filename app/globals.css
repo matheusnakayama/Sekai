@@ -603,6 +603,22 @@ html[data-theme="grafite"] {
   .avatar-speaking {
     @apply ring-2 ring-discord-online animate-speaking rounded-full;
   }
+
+  .voice-speaking-avatar {
+    position: relative;
+    box-shadow: 0 0 0 2px var(--bg-gradient-start), 0 0 14px color-mix(in srgb, var(--bg-gradient-end) 68%, transparent);
+    animation: voice-theme-pulse 1.15s ease-in-out infinite;
+  }
+
+  .voice-speaking-tile {
+    border-color: var(--bg-gradient-start);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg-gradient-start) 78%, transparent), 0 0 20px color-mix(in srgb, var(--bg-gradient-end) 45%, transparent);
+  }
+
+  @keyframes voice-theme-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--bg-gradient-start), 0 0 12px color-mix(in srgb, var(--bg-gradient-end) 42%, transparent); }
+    50% { box-shadow: 0 0 0 3px var(--bg-gradient-end), 0 0 18px color-mix(in srgb, var(--bg-gradient-start) 72%, transparent); }
+  }
 }
 
 /* Preferências pessoais aplicadas pelo painel de configurações do usuário. */
