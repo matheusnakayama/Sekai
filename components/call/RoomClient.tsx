@@ -1,0 +1,1434 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Channel } from 'pusher-js';
+import { uploadPresigned } from '@vercel/blob/client';
+import PreJoin from '@/components/PreJoin';
+import Controls, { type ScreenShareSettings } from '@/components/Controls';
+import ParticipantsGrid from '@/components/ParticipantsGrid';
+import ParticipantsPanel from '@/components/ParticipantsPanel';
+import ChatPanel from '@/components/ChatPanel';
+import ErrorBanner from '@/components/ErrorBanner';
+import ThemePicker from '@/components/ThemePicker';
+import { createClient } from '@/lib/supabase/client';
+import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusherClient';
+import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
+import type {
+  CallError,
+  IceServerConfig,
+  Participant,
+  RoomChatMessage,
+  RoomModerationAction,
+  RoomModerationEvent,
+} from '@/lib/types';
+
+type Phase = 'pre-join' | 'connecting' | 'in-call' | 'left' | 'kicked' | 'fatal-error';
+
+interface PresenceMember {
+  id: string;
+  info: { name: string; joinedAt: number; avatarUrl?: string | null };
+}
+
+interface PresenceMembersSnapshot {
+  each: (callback: (member: PresenceMember) => void) => void;
+}
+
+export default function RoomClient({
+  roomId,
+  roomName,
+  initialName,
+  accessToken,
+  onClose,
+  onMinimize,
+  onParticipantsChange,
+  onAddFriend,
+  onControlsReady,
+  onControlStateChange,
+  autoJoin = false,
+}: {
+  roomId: string;
+  roomName: string;
+  initialName: string;
+  accessToken: string;
+  onClose: () => void;
+  /** Volta para o Sekai sem sair da chamada (o áudio continua). */
+  onMinimize?: () => void;
+  onParticipantsChange?: (participants: Participant[]) => void;
+  onAddFriend?: (userId: string) => void;
+  onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void } | null) => void;
+  onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
+  /** Entra direto, sem a tela de pré-visualização (microfone ligado, câmera desligada). */
+  autoJoin?: boolean;
+}) {
+  const [phase, setPhase] = useState<Phase>('pre-join');
+  const [autoJoining, setAutoJoining] = useState(autoJoin);
+  const [participants, setParticipants] = useState<Record<string, Participant>>({});
+  const [micOn, setMicOn] = useState(true);
+  const [deafened, setDeafened] = useState(false);
+  const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [micLockedByHost, setMicLockedByHost] = useState(false);
+  const [camOn, setCamOn] = useState(true);
+  const [sharingScreen, setSharingScreen] = useState(false);
+  const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
+  const [screenAudioEnabled, setScreenAudioEnabled] = useState(false);
+  const [screenShareSettings, setScreenShareSettings] = useState<ScreenShareSettings>({ height: 1080, frameRate: 60 });
+  const [screenCaptureInfo, setScreenCaptureInfo] = useState('');
+  const [muteRemoteAudioDuringShare, setMuteRemoteAudioDuringShare] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const [hostId, setHostId] = useState('');
+  const [focusedPresentationId, setFocusedPresentationId] = useState<string | null>(null);
+  const [fatalError, setFatalError] = useState<CallError | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [pendingPrankPrompt, setPendingPrankPrompt] = useState<{ senderName: string } | null>(null);
+
+  const localIdRef = useRef<string>('');
+  const localNameRef = useRef<string>('');
+  const roomSessionRef = useRef('');
+  const participantNamesRef = useRef(new Map<string, string>());
+  const participantAvatarsRef = useRef(new Map<string, string | null>());
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const screenAudioContextRef = useRef<AudioContext | null>(null);
+  const presentationSectionRef = useRef<HTMLElement | null>(null);
+  const chatOpenRef = useRef(false);
+  const hostIdRef = useRef('');
+  const memberJoinTimesRef = useRef(new Map<string, number>());
+  const micLockedByHostRef = useRef(false);
+  const managerRef = useRef<WebRTCManager | null>(null);
+  const channelRef = useRef<Channel | null>(null);
+  const camBeforeShareRef = useRef(true);
+  const screenShareOperationRef = useRef(false);
+  const screenAudioEnabledRef = useRef(false);
+  const muteRemoteAudioFallbackRef = useRef(false);
+  const supabase = createClient();
+
+  useEffect(() => {
+    onParticipantsChange?.(phase === 'in-call' ? Object.values(participants) : []);
+  }, [onParticipantsChange, participants, phase]);
+
+  useEffect(() => {
+    onControlStateChange?.({ micOn, deafened, isSpeaking: phase === 'in-call' && localSpeaking });
+  }, [micOn, deafened, localSpeaking, phase, onControlStateChange]);
+
+  const cleanup = useCallback(() => {
+    managerRef.current?.destroy();
+    managerRef.current = null;
+    channelRef.current?.unbind('client-chat-message');
+    channelRef.current?.unbind('client-moderation');
+    channelRef.current = null;
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenAudioContextRef.current?.close().catch(() => {});
+    screenAudioContextRef.current = null;
+    cameraStreamRef.current = null;
+    screenStreamRef.current = null;
+    screenAudioTrackRef.current = null;
+    screenAudioEnabledRef.current = false;
+    muteRemoteAudioFallbackRef.current = false;
+    participantNamesRef.current.clear();
+    participantAvatarsRef.current.clear();
+    memberJoinTimesRef.current.clear();
+    roomSessionRef.current = '';
+    localIdRef.current = '';
+    disconnectPusher();
+  }, []);
+
+  useEffect(() => cleanup, [cleanup]);
+
+  useEffect(() => {
+    const track = cameraStreamRef.current?.getAudioTracks()[0];
+    if (!track || !micOn || phase !== 'in-call' || deafened) {
+      setLocalSpeaking(false);
+      return;
+    }
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    const source = context.createMediaStreamSource(new MediaStream([track]));
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    let frame = 0;
+    let speaking = false;
+    let aboveThresholdSince = 0;
+    let belowThresholdSince = 0;
+    const sample = (time: number) => {
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const value of samples) { const centered = (value - 128) / 128; sum += centered * centered; }
+      const rms = Math.sqrt(sum / samples.length);
+      if (rms > 0.035) { aboveThresholdSince ||= time; belowThresholdSince = 0; }
+      else { belowThresholdSince ||= time; aboveThresholdSince = 0; }
+      const next = speaking ? !(time - belowThresholdSince > 260) : (time - aboveThresholdSince > 110);
+      if (next !== speaking) { speaking = next; setLocalSpeaking(next); updateLocalParticipant({ isSpeaking: next }); }
+      frame = window.requestAnimationFrame(sample);
+    };
+    frame = window.requestAnimationFrame(sample);
+    return () => { window.cancelAnimationFrame(frame); source.disconnect(); void context.close(); setLocalSpeaking(false); };
+  }, [micOn, phase, deafened]);
+
+  function updateHost(nextHostId: string) {
+    hostIdRef.current = nextHostId;
+    setHostId(nextHostId);
+  }
+
+  function electHostFromPresence() {
+    const oldest = Array.from(memberJoinTimesRef.current.entries())
+      .sort(([idA, timeA], [idB, timeB]) => timeA - timeB || idA.localeCompare(idB))[0];
+    updateHost(oldest?.[0] ?? '');
+  }
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      if (!document.fullscreenElement) setFocusedPresentationId(null);
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if (!focusedPresentationId) return;
+    const stillSharing = Object.values(participants).some(
+      (participant) => participant.id === focusedPresentationId && participant.isSharingScreen
+    );
+    if (!stillSharing) {
+      setFocusedPresentationId(null);
+      if (document.fullscreenElement === presentationSectionRef.current) {
+        void document.exitFullscreen().catch(() => {});
+      }
+    }
+  }, [focusedPresentationId, participants]);
+
+  async function handleJoin(opts: {
+    name: string;
+    stream: MediaStream | null;
+    camOn: boolean;
+    micOn: boolean;
+  }) {
+    setPhase('connecting');
+    setChatMessages([]);
+    setChatUnreadCount(0);
+    memberJoinTimesRef.current.clear();
+    updateHost('');
+    micLockedByHostRef.current = false;
+    setMicLockedByHost(false);
+    setShowChat(false);
+    chatOpenRef.current = false;
+    cameraStreamRef.current = opts.stream;
+    setMicOn(opts.micOn);
+    setCamOn(opts.camOn);
+
+    try {
+      const sessionResponse = await fetch('/api/pusher/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ roomId }),
+      });
+      const sessionData = await sessionResponse.json() as {
+        userId?: unknown;
+        token?: unknown;
+        displayName?: unknown;
+        avatarUrl?: unknown;
+        error?: unknown;
+      };
+      if (!sessionResponse.ok || typeof sessionData.userId !== 'string' ||
+        typeof sessionData.token !== 'string' || typeof sessionData.displayName !== 'string') {
+        throw new Error(typeof sessionData.error === 'string' ? sessionData.error : 'Não foi possível criar a sessão da sala.');
+      }
+      const joinedName = sessionData.displayName;
+      const avatarUrl = typeof sessionData.avatarUrl === 'string' ? sessionData.avatarUrl : null;
+      localNameRef.current = joinedName;
+      localIdRef.current = sessionData.userId;
+      roomSessionRef.current = sessionData.token;
+      participantNamesRef.current.set(localIdRef.current, joinedName);
+      participantAvatarsRef.current.set(localIdRef.current, avatarUrl);
+      setParticipants({
+        [localIdRef.current]: {
+          id: localIdRef.current,
+          name: joinedName,
+          avatarUrl,
+          stream: opts.stream ?? undefined,
+          micOn: opts.micOn,
+          camOn: opts.camOn,
+          isSpeaking: false,
+          isSharingScreen: false,
+          isLocal: true,
+        },
+      });
+
+      const iceServers = await fetchIceServers();
+      const channel = subscribeToRoom(roomId, joinedName, localIdRef.current, roomSessionRef.current, avatarUrl);
+      channelRef.current = channel;
+      channel.bind('client-chat-message', (payload: unknown, metadata?: unknown) => {
+        const senderId = getPusherEventUserId(metadata);
+        const message = normalizeChatMessage(payload, senderId, participantNamesRef.current.get(senderId ?? ''));
+        if (!message || message.senderId === localIdRef.current) return;
+        appendChatMessage(message);
+      });
+      channel.bind('client-moderation', (payload: unknown, metadata?: unknown) => {
+        const moderation = normalizeModerationEvent(payload);
+        if (!moderation || getPusherEventUserId(metadata) !== hostIdRef.current) return;
+        if ((moderation.action === 'promote' || moderation.action === 'epstein') && !memberJoinTimesRef.current.has(moderation.targetId)) return;
+
+        const targetIsLocal = moderation.targetId === localIdRef.current;
+        if (moderation.action === 'epstein') {
+          if (targetIsLocal) {
+            const senderId = getPusherEventUserId(metadata);
+            setPendingPrankPrompt({
+              senderName: senderId === localIdRef.current
+                ? 'O anfitrião'
+                : participantNamesRef.current.get(senderId ?? '') || 'O anfitrião',
+            });
+          }
+          return;
+        }
+
+        const actionText = moderation.action === 'kick'
+          ? `${moderation.targetName} foi removido da sala.`
+          : moderation.action === 'mute'
+            ? `${moderation.targetName} foi silenciado pelo anfitrião.`
+            : moderation.action === 'unmute'
+              ? `${moderation.targetName} teve o microfone liberado pelo anfitrião.`
+              : `${moderation.targetName} agora é o anfitrião da sala.`;
+
+        if (moderation.action === 'kick' && targetIsLocal) {
+          appendSystemChatMessage('Você foi removido da sala pelo anfitrião.');
+          cleanup();
+          chatOpenRef.current = false;
+          setShowChat(false);
+          setPhase('kicked');
+          return;
+        }
+
+        appendSystemChatMessage(actionText);
+        if (targetIsLocal && moderation.action === 'mute') void applyHostMicState(true);
+        if (targetIsLocal && moderation.action === 'unmute') void applyHostMicState(false);
+        if (moderation.action === 'promote') updateHost(moderation.targetId);
+      });
+
+      const manager = new WebRTCManager(channel, localIdRef.current);
+      manager.setIceServers(iceServers);
+      if (opts.stream) manager.setLocalStream(opts.stream);
+      managerRef.current = manager;
+
+      manager.onTrack = (peerId, stream) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, stream } };
+        });
+      };
+
+      manager.onConnectionStateChange = (peerId, state) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, connectionState: state } };
+        });
+        if (state === 'failed' || state === 'disconnected') {
+          setBanner('A conexão com um dos participantes ficou instável.');
+        }
+      };
+
+      manager.onSpeakingChange = (peerId, speaking) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, isSpeaking: speaking } };
+        });
+      };
+
+      manager.onScreenShareState = (peerId, sharing) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, isSharingScreen: sharing } };
+        });
+      };
+
+      manager.onMediaState = (peerId, state) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, micOn: state.micOn, camOn: state.camOn } };
+        });
+      };
+
+      channel.bind('pusher:subscription_succeeded', (members: PresenceMembersSnapshot) => {
+        const others: PresenceMember[] = [];
+        members.each((m: PresenceMember) => {
+          memberJoinTimesRef.current.set(m.id, Number.isFinite(m.info?.joinedAt) ? m.info.joinedAt : Date.now());
+          if (m.id !== localIdRef.current) {
+            participantNamesRef.current.set(m.id, m.info?.name || 'Convidado');
+            participantAvatarsRef.current.set(m.id, m.info?.avatarUrl ?? null);
+            others.push(m);
+          }
+        });
+        electHostFromPresence();
+
+        setParticipants((prev) => {
+          const next = { ...prev };
+          for (const m of others) {
+            const participant = createRemoteParticipant(m.id, m.info?.name || 'Convidado', m.info?.avatarUrl);
+            next[m.id] = {
+              ...participant,
+              ...prev[m.id],
+              name: m.info?.name || 'Convidado',
+              avatarUrl: m.info?.avatarUrl ?? null,
+            };
+          }
+          return next;
+        });
+
+        setPhase('in-call');
+
+        // Um lado só inicia a conexão de cada par, evitando ofertas simultâneas.
+        others.forEach((m) => {
+          manager.preparePeerConnection(m.id);
+          if (localIdRef.current < m.id) {
+            manager.callPeer(m.id).catch(() => {
+              setBanner(`Não foi possível conectar com ${m.info?.name || 'um participante'}.`);
+            });
+          }
+        });
+      });
+
+      channel.bind('pusher:member_added', (member: PresenceMember) => {
+        const memberName = member.info?.name || 'Convidado';
+        participantNamesRef.current.set(member.id, memberName);
+        participantAvatarsRef.current.set(member.id, member.info?.avatarUrl ?? null);
+        memberJoinTimesRef.current.set(
+          member.id,
+          Number.isFinite(member.info?.joinedAt) ? member.info.joinedAt : Date.now()
+        );
+        if (!memberJoinTimesRef.current.has(hostIdRef.current)) electHostFromPresence();
+        setParticipants((prev) => {
+          const participant = createRemoteParticipant(member.id, memberName, member.info?.avatarUrl);
+          return {
+            ...prev,
+            [member.id]: { ...participant, ...prev[member.id], name: memberName, avatarUrl: member.info?.avatarUrl ?? null },
+          };
+        });
+        manager.preparePeerConnection(member.id);
+        if (localIdRef.current < member.id) {
+          manager.callPeer(member.id).catch(() => {
+            setBanner(`Não foi possível conectar com ${memberName}.`);
+          });
+        }
+        // Avisa o recém-chegado sobre nosso estado atual (ele só recebe eventos futuros).
+        manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: currentCamRef.current });
+        if (currentSharingRef.current) manager.broadcastScreenShareState(true);
+      });
+
+      channel.bind('pusher:member_removed', (member: PresenceMember) => {
+        manager.hangupPeer(member.id);
+        participantNamesRef.current.delete(member.id);
+        participantAvatarsRef.current.delete(member.id);
+        memberJoinTimesRef.current.delete(member.id);
+        if (member.id === hostIdRef.current) electHostFromPresence();
+        setParticipants((prev) => {
+          const next = { ...prev };
+          delete next[member.id];
+          return next;
+        });
+      });
+
+      channel.bind('pusher:subscription_error', () => {
+        cleanup();
+        setFatalError({
+          kind: 'join-failed',
+          message: 'Não foi possível entrar na sala. Verifique sua conexão e tente novamente.',
+        });
+        setPhase('fatal-error');
+      });
+
+      const pusher = getPusherClient(joinedName, localIdRef.current, roomId, roomSessionRef.current, avatarUrl);
+      pusher.connection.bind('state_change', (states: { current: string }) => {
+        if (states.current === 'unavailable' || states.current === 'failed') {
+          setBanner('Sua conexão com o servidor de sinalização está instável.');
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      cleanup();
+      setFatalError({
+        kind: 'join-failed',
+        message:
+          err instanceof Error ? err.message : 'Não foi possível entrar na sala. Tente novamente.',
+      });
+      setPhase('fatal-error');
+    }
+  }
+
+  // Refs auxiliares para ler o estado atual dentro de callbacks de eventos do Pusher
+  const currentMicRef = useRef(micOn);
+  const currentCamRef = useRef(camOn);
+  const currentSharingRef = useRef(sharingScreen);
+  useEffect(() => {
+    currentMicRef.current = micOn;
+  }, [micOn]);
+  useEffect(() => {
+    currentCamRef.current = camOn;
+  }, [camOn]);
+  useEffect(() => {
+    currentSharingRef.current = sharingScreen;
+  }, [sharingScreen]);
+
+  function appendChatMessage(message: RoomChatMessage) {
+    setChatMessages((previous) => [...previous.slice(-199), message]);
+    if (!chatOpenRef.current) setChatUnreadCount((count) => Math.min(count + 1, 999));
+  }
+
+  function appendSystemChatMessage(text: string) {
+    appendChatMessage({
+      id: createChatMessageId(),
+      senderId: 'system',
+      senderName: 'Sistema',
+      text,
+      sentAt: Date.now(),
+      isSystem: true,
+    });
+  }
+
+  function updateLocalParticipant(patch: Partial<Participant>) {
+    setParticipants((prev) => {
+      const local = prev[localIdRef.current];
+      if (!local) return prev;
+      return { ...prev, [localIdRef.current]: { ...local, ...patch } };
+    });
+  }
+
+  async function applyHostMicState(muted: boolean) {
+    micLockedByHostRef.current = muted;
+    setMicLockedByHost(muted);
+
+    const microphoneTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
+    const nextMicOn = !muted && microphoneTracks.length > 0;
+    microphoneTracks.forEach((track) => { track.enabled = nextMicOn; });
+    currentMicRef.current = nextMicOn;
+    setMicOn(nextMicOn);
+    updateLocalParticipant({ micOn: nextMicOn });
+
+    const manager = managerRef.current;
+    try {
+      if (muted) {
+        // Silencia toda a faixa enviada, incluindo áudio de tela que estivesse
+        // misturado ao microfone, e não só o microfone físico.
+        await manager?.replaceAudioTrack(null);
+      } else if (
+        currentSharingRef.current &&
+        screenAudioEnabledRef.current &&
+        screenAudioTrackRef.current?.readyState === 'live'
+      ) {
+        await setOutgoingScreenAudio(screenAudioTrackRef.current);
+      } else {
+        await setOutgoingScreenAudio(null);
+      }
+    } catch (error) {
+      console.error('Não foi possível aplicar o controle do microfone pelo anfitrião:', error);
+      setBanner('O estado do microfone mudou, mas não foi possível atualizar o áudio enviado.');
+    }
+
+    manager?.broadcastMediaState({ micOn: nextMicOn, camOn: currentCamRef.current });
+    if (!muted && !microphoneTracks.length) {
+      setBanner('O anfitrião liberou seu microfone, mas não há microfone disponível neste dispositivo.');
+    }
+  }
+
+  async function setOutgoingScreenAudio(screenAudioTrack: MediaStreamTrack | null) {
+    const manager = managerRef.current;
+    if (!manager) return false;
+
+    const micTrack = cameraStreamRef.current?.getAudioTracks()[0] ?? null;
+    if (micLockedByHostRef.current) {
+      await manager.replaceAudioTrack(null);
+      const previousContext = screenAudioContextRef.current;
+      screenAudioContextRef.current = null;
+      await previousContext?.close().catch(() => {});
+      return false;
+    }
+    if (!screenAudioTrack) {
+      await manager.replaceAudioTrack(micTrack);
+      const previousContext = screenAudioContextRef.current;
+      screenAudioContextRef.current = null;
+      await previousContext?.close().catch(() => {});
+      return false;
+    }
+
+    const audioContext = new AudioContext();
+    let mixedTrack: MediaStreamTrack | null = null;
+    try {
+      const destination = audioContext.createMediaStreamDestination();
+      for (const track of [micTrack, screenAudioTrack]) {
+        if (!track) continue;
+        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+        source.connect(destination);
+      }
+
+      await audioContext.resume();
+      mixedTrack = destination.stream.getAudioTracks()[0] ?? null;
+      await manager.replaceAudioTrack(mixedTrack);
+    } catch (err) {
+      await audioContext.close().catch(() => {});
+      throw err;
+    }
+
+    const previousContext = screenAudioContextRef.current;
+    screenAudioContextRef.current = audioContext;
+    await previousContext?.close().catch(() => {});
+    return !!mixedTrack;
+  }
+
+  async function toggleSharedScreenAudio() {
+    const screenAudioTrack = screenAudioTrackRef.current;
+    if (!screenAudioTrack || screenAudioTrack.readyState !== 'live' || micLockedByHostRef.current) return;
+
+    const nextEnabled = !screenAudioEnabledRef.current;
+    try {
+      await setOutgoingScreenAudio(nextEnabled ? screenAudioTrack : null);
+      screenAudioEnabledRef.current = nextEnabled;
+      setScreenAudioEnabled(nextEnabled);
+      setMuteRemoteAudioDuringShare(nextEnabled && muteRemoteAudioFallbackRef.current);
+      setBanner(nextEnabled
+        ? 'Áudio da tela transmitido. Ele pode incluir as vozes e sons de outros aplicativos; desligue “Áudio da tela” para evitar isso.'
+        : 'Áudio da tela silenciado. Seu microfone continua ativo.');
+    } catch (error) {
+      console.error('Não foi possível alterar o áudio compartilhado da tela:', error);
+      setBanner('Não foi possível alterar o áudio da tela. Tente novamente.');
+    }
+  }
+
+  const toggleMic = useCallback(() => {
+    if (micLockedByHostRef.current) {
+      setBanner('O anfitrião bloqueou seu microfone. Aguarde ele liberar o áudio.');
+      return;
+    }
+    const tracks = cameraStreamRef.current?.getAudioTracks() ?? [];
+    if (tracks.length === 0) {
+      setBanner('Nenhum microfone está ativo. Permita o acesso ao microfone e entre novamente na sala.');
+      return;
+    }
+
+    const next = !micOn;
+    currentMicRef.current = next;
+    setMicOn(next);
+    tracks.forEach((t) => (t.enabled = next));
+    updateLocalParticipant({ micOn: next });
+    managerRef.current?.broadcastMediaState({ micOn: next, camOn });
+  }, [micOn, camOn]);
+
+  const toggleDeafen = useCallback(() => {
+    const next = !deafened;
+    setDeafened(next);
+    if (next && micOn) toggleMic();
+  }, [deafened, micOn, toggleMic]);
+
+  useEffect(() => {
+    onControlsReady?.({ toggleMic, toggleDeafen });
+    return () => onControlsReady?.(null);
+  }, [onControlsReady, toggleMic, toggleDeafen]);
+
+  function toggleCam() {
+    if (sharingScreen) return; // câmera fica em segundo plano durante compartilhamento
+    const next = !camOn;
+    currentCamRef.current = next;
+    setCamOn(next);
+    cameraStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = next));
+    updateLocalParticipant({ camOn: next });
+    managerRef.current?.broadcastMediaState({ micOn, camOn: next });
+  }
+
+  async function stopScreenShare() {
+    // Marque como parado antes de encerrar a faixa: o evento `ended` também é
+    // disparado quando a pessoa clica no botão do próprio app.
+    if (screenShareOperationRef.current || (!currentSharingRef.current && !screenStreamRef.current)) return;
+    screenShareOperationRef.current = true;
+    currentSharingRef.current = false;
+
+    const display = screenStreamRef.current;
+    screenStreamRef.current = null;
+    screenAudioTrackRef.current = null;
+    screenAudioEnabledRef.current = false;
+    muteRemoteAudioFallbackRef.current = false;
+    setScreenAudioAvailable(false);
+    setScreenAudioEnabled(false);
+
+    const camTrack = cameraStreamRef.current?.getVideoTracks()[0] ?? null;
+    const restoreCam = camBeforeShareRef.current;
+    currentCamRef.current = restoreCam;
+    if (camTrack) camTrack.enabled = restoreCam;
+
+    try {
+      await managerRef.current?.replaceVideoTrack(camTrack, cameraStreamRef.current);
+    } catch (err) {
+      console.error('Não foi possível restaurar a câmera após compartilhar a tela:', err);
+      setBanner('A tela parou de ser compartilhada, mas não foi possível restaurar a câmera.');
+    }
+
+    try {
+      await setOutgoingScreenAudio(null);
+    } catch (err) {
+      console.error('Não foi possível restaurar o microfone após compartilhar a tela:', err);
+      setBanner('A apresentação parou, mas não foi possível restaurar o áudio do microfone.');
+    }
+    display?.getTracks().forEach((track) => track.stop());
+
+    setSharingScreen(false);
+    setCamOn(restoreCam);
+    updateLocalParticipant({
+      isSharingScreen: false,
+      stream: cameraStreamRef.current ?? undefined,
+      camOn: restoreCam,
+    });
+    managerRef.current?.broadcastScreenShareState(false);
+    managerRef.current?.broadcastMediaState({ micOn: currentMicRef.current, camOn: restoreCam });
+    setScreenCaptureInfo('');
+    setMuteRemoteAudioDuringShare(false);
+    screenShareOperationRef.current = false;
+  }
+
+  async function toggleScreenShare() {
+    const manager = managerRef.current;
+    if (!manager || screenShareOperationRef.current) return;
+
+    if (currentSharingRef.current) {
+      await stopScreenShare();
+      return;
+    }
+    screenShareOperationRef.current = true;
+
+    try {
+      const displayOptions = {
+        video: getScreenVideoConstraints(screenShareSettings),
+        audio: { restrictOwnAudio: true },
+        // Mantém o seletor nativo de áudio da tela/janela. O áudio começa
+        // desligado no app e pode ser ativado pelo apresentador quando quiser.
+        systemAudio: 'include',
+        windowAudio: 'window',
+        selfBrowserSurface: 'exclude',
+      } as unknown as DisplayMediaStreamOptions;
+      const display = await navigator.mediaDevices.getDisplayMedia(displayOptions);
+      const screenTrack = display.getVideoTracks()[0];
+      if (!screenTrack) {
+        display.getTracks().forEach((track) => track.stop());
+        setBanner('O navegador não forneceu uma faixa de vídeo para compartilhar.');
+        return;
+      }
+
+      screenStreamRef.current = display;
+      camBeforeShareRef.current = currentCamRef.current;
+      const profile = getScreenVideoProfile(screenShareSettings);
+      if (profile) {
+        screenTrack.contentHint = profile.maxFramerate >= 60 ? 'motion' : 'detail';
+        try {
+          await screenTrack.applyConstraints(getScreenVideoConstraints(screenShareSettings));
+        } catch (constraintError) {
+          // O fluxo continua usando a melhor qualidade que o navegador conseguiu capturar.
+          console.warn('O navegador não aceitou todos os limites de captura escolhidos:', constraintError);
+        }
+      }
+      const settings = screenTrack.getSettings();
+      const actualCaptureInfo = formatScreenCaptureSettings(settings, screenShareSettings);
+      const displaySurface = (settings as MediaTrackSettings & { displaySurface?: string }).displaySurface;
+      const displayAudioTrack = display.getAudioTracks()[0] ?? null;
+      screenAudioTrackRef.current = displayAudioTrack;
+      screenAudioEnabledRef.current = false;
+      setScreenAudioEnabled(false);
+      setScreenAudioAvailable(Boolean(displayAudioTrack));
+      const mayContainCallAudio = Boolean(displayAudioTrack && displaySurface !== 'browser');
+      const audioSettings = displayAudioTrack?.getSettings() as (MediaTrackSettings & { restrictOwnAudio?: boolean }) | undefined;
+      const audioConstraints = navigator.mediaDevices.getSupportedConstraints() as MediaTrackSupportedConstraints & { restrictOwnAudio?: boolean };
+      const ownCallAudioIsFiltered = audioConstraints.restrictOwnAudio === true && audioSettings?.restrictOwnAudio !== false;
+      const useLocalMuteFallback = Boolean(displayAudioTrack && mayContainCallAudio && !ownCallAudioIsFiltered);
+      muteRemoteAudioFallbackRef.current = useLocalMuteFallback;
+      setMuteRemoteAudioDuringShare(false);
+
+      try {
+        await manager.replaceVideoTrack(screenTrack, display, profile);
+      } catch (err) {
+        console.error('Não foi possível enviar o compartilhamento de tela:', err);
+        screenAudioTrackRef.current = null;
+        screenAudioEnabledRef.current = false;
+        muteRemoteAudioFallbackRef.current = false;
+        setScreenAudioAvailable(false);
+        setScreenAudioEnabled(false);
+        display.getTracks().forEach((track) => track.stop());
+        screenStreamRef.current = null;
+        setMuteRemoteAudioDuringShare(false);
+        setScreenCaptureInfo('');
+        await manager
+          .replaceVideoTrack(
+            cameraStreamRef.current?.getVideoTracks()[0] ?? null,
+            cameraStreamRef.current
+          )
+          .catch(() => {});
+        setBanner('A tela foi capturada, mas não foi possível enviá-la aos participantes.');
+        return;
+      }
+
+      try {
+        // Mantém o microfone ativo, mas deixa o áudio capturado da tela
+        // desligado até o apresentador ativá-lo no controle da chamada.
+        await setOutgoingScreenAudio(null);
+        setBanner(displayAudioTrack
+          ? 'A tela foi iniciada com o áudio capturado desligado. Use “Áudio da tela” para ativá-lo; ele pode incluir sons de outros aplicativos, como o Discord.'
+          : 'A tela está sendo compartilhada sem áudio. Para habilitar o controle de áudio, marque “Compartilhar áudio” no seletor do navegador.');
+      } catch (err) {
+        console.error('Não foi possível preparar o áudio da apresentação:', err);
+        setBanner('A tela será compartilhada, mas não foi possível preparar o áudio.');
+      }
+
+      currentSharingRef.current = true;
+      setSharingScreen(true);
+      setScreenCaptureInfo(actualCaptureInfo);
+      updateLocalParticipant({ isSharingScreen: true, stream: display, camOn: true });
+      manager.broadcastScreenShareState(true);
+      // `camOn` também controla se o vídeo remoto é exibido. Durante a
+      // apresentação, avise que há vídeo mesmo se a câmera estava desligada.
+      manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: true });
+
+      screenTrack.addEventListener('ended', () => {
+        // Use a rotina de parada diretamente para não depender do estado React
+        // capturado pela função de clique anterior.
+        void stopScreenShare();
+      }, { once: true });
+      displayAudioTrack?.addEventListener('ended', () => {
+        if (screenAudioTrackRef.current?.id !== displayAudioTrack.id) return;
+        screenAudioTrackRef.current = null;
+        screenAudioEnabledRef.current = false;
+        setScreenAudioAvailable(false);
+        setScreenAudioEnabled(false);
+        setMuteRemoteAudioDuringShare(false);
+        void setOutgoingScreenAudio(null).catch(() => {});
+        setBanner('O navegador encerrou o áudio compartilhado; seu microfone continua ativo.');
+      }, { once: true });
+    } catch (err) {
+      console.error('Não foi possível iniciar a apresentação de tela:', err);
+      screenAudioTrackRef.current = null;
+      screenAudioEnabledRef.current = false;
+      muteRemoteAudioFallbackRef.current = false;
+      setScreenAudioAvailable(false);
+      setScreenAudioEnabled(false);
+      setMuteRemoteAudioDuringShare(false);
+      setScreenCaptureInfo('');
+      setBanner('Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
+    } finally {
+      screenShareOperationRef.current = false;
+    }
+  }
+
+  function handleLeave() {
+    cleanup();
+    chatOpenRef.current = false;
+    onClose();
+  }
+
+  function sendChatMessage(text: string, imageUrl?: string): boolean {
+    if (!imageUrl && handleModerationCommand(text)) return true;
+    const channel = channelRef.current;
+    if (!channel || !localIdRef.current) return false;
+
+    const message: RoomChatMessage = {
+      id: createChatMessageId(),
+      senderId: localIdRef.current,
+      senderName: localNameRef.current,
+      text: text.trim().slice(0, 500),
+      sentAt: Date.now(),
+      imageUrl,
+    };
+    if (!message.text && !message.imageUrl) return false;
+
+    try {
+      if (!channel.trigger('client-chat-message', message)) {
+        setBanner('Não foi possível enviar a mensagem. Verifique se ainda está conectado à sala.');
+        return false;
+      }
+      appendChatMessage(message);
+      return true;
+    } catch (error) {
+      console.error('Não foi possível enviar a mensagem do chat:', error);
+      setBanner('Não foi possível enviar a mensagem. Tente novamente.');
+      return false;
+    }
+  }
+
+  function handleModerationCommand(text: string): boolean {
+    if (!/^\.(kick|mute|unmute|promote|epstein)\b/i.test(text.trim())) return false;
+    if (hostIdRef.current !== localIdRef.current) {
+      showCommandFeedback('Só o anfitrião da sala pode usar comandos de moderação.');
+      return true;
+    }
+
+    const match = /^\.(kick|mute|unmute|promote|epstein)\s+@(.+?)\s*$/i.exec(text.trim());
+    if (!match) {
+      showCommandFeedback('Formato do comando: .kick @nome, .mute @nome, .unmute @nome ou .promote @nome.');
+      return true;
+    }
+
+    const action = match[1].toLowerCase() as RoomModerationAction;
+    const requestedName = match[2].trim().toLocaleLowerCase('pt-BR');
+    const matches = Object.values(participants).filter(
+      (participant) => participant.name.trim().toLocaleLowerCase('pt-BR') === requestedName
+    );
+    if (matches.length === 0) {
+      showCommandFeedback(`Não encontrei “@${match[2].trim()}” na sala. Use o nome que aparece na lista de participantes.`);
+      return true;
+    }
+    if (matches.length > 1) {
+      showCommandFeedback('Há mais de uma pessoa com esse nome. Peça para alguém usar um nome diferente antes de moderar.');
+      return true;
+    }
+
+    const target = matches[0];
+    if (target.id === hostIdRef.current) {
+      showCommandFeedback(action === 'promote'
+        ? 'Você já é o anfitrião da sala.'
+        : action === 'epstein'
+          ? 'Escolha outra pessoa para a brincadeira.'
+          : 'O anfitrião não pode remover ou silenciar a própria conta por comando.');
+      return true;
+    }
+    if ((action === 'promote' || action === 'epstein') && !memberJoinTimesRef.current.has(target.id)) {
+      showCommandFeedback('Essa pessoa já não está conectada à sala. Atualize a lista e tente novamente.');
+      return true;
+    }
+
+    const channel = channelRef.current;
+    if (!channel) {
+      showCommandFeedback('A sala ainda está conectando. Tente o comando novamente em instantes.');
+      return true;
+    }
+
+    const moderation: RoomModerationEvent = { action, targetId: target.id, targetName: target.name };
+    try {
+      if (!channel.trigger('client-moderation', moderation)) {
+        showCommandFeedback('Não foi possível enviar o comando. Verifique se você ainda está conectado à sala.');
+        return true;
+      }
+      if (action === 'epstein') {
+        setBanner(`Pedido de brincadeira enviado para ${target.name}; os arquivos só serão baixados se a pessoa aceitar.`);
+        return true;
+      }
+      const notice = action === 'kick'
+        ? `${target.name} foi removido da sala.`
+        : action === 'mute'
+          ? `${target.name} foi silenciado pelo anfitrião.`
+          : action === 'unmute'
+            ? `${target.name} teve o microfone liberado pelo anfitrião.`
+            : `${target.name} agora é o anfitrião da sala.`;
+      appendSystemChatMessage(notice);
+      if (action === 'promote') updateHost(target.id);
+    } catch (error) {
+      console.error('Não foi possível executar o comando de moderação:', error);
+      showCommandFeedback('Não foi possível enviar o comando de moderação. Tente novamente.');
+    }
+    return true;
+  }
+
+  function showCommandFeedback(message: string) {
+    setBanner(message);
+    appendSystemChatMessage(message);
+  }
+
+  function acceptPrankDownload() {
+    if (!pendingPrankPrompt) return;
+
+    const fileUrl = URL.createObjectURL(new Blob([], { type: 'text/plain;charset=utf-8' }));
+    for (let index = 0; index < 10; index += 1) {
+      const link = document.createElement('a');
+      link.href = fileUrl;
+      link.download = 'eptein.txt';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(fileUrl), 30_000);
+    setPendingPrankPrompt(null);
+    setBanner('Brincadeira aceita: o navegador iniciou o download dos arquivos vazios.');
+  }
+
+  async function sendChatImage(file: File) {
+    const extensionByType: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    };
+    const extension = extensionByType[file.type];
+    if (!extension) throw new Error('Formato de imagem não aceito.');
+    if (!localIdRef.current) throw new Error('Entre na sala antes de enviar uma imagem.');
+
+    const uniqueName = createChatMessageId();
+    const blob = await uploadPresigned(`chat/${roomId}/${uniqueName}.${extension}`, file, {
+      access: 'public',
+      contentType: file.type,
+      handleUploadUrl: '/api/chat-images/upload',
+      clientPayload: JSON.stringify({ roomId, userId: localIdRef.current, sessionToken: roomSessionRef.current }),
+    });
+    if (!sendChatMessage('', blob.url)) {
+      throw new Error('A imagem foi carregada, mas não pôde ser enviada para a sala.');
+    }
+  }
+
+  function toggleChatPanel() {
+    const next = !chatOpenRef.current;
+    chatOpenRef.current = next;
+    setShowChat(next);
+    if (next) {
+      setChatUnreadCount(0);
+      setShowParticipants(false);
+    }
+  }
+
+  function toggleParticipantsPanel() {
+    setShowParticipants((open) => !open);
+    setShowChat(false);
+    chatOpenRef.current = false;
+  }
+
+  function focusPresentation(participantId: string) {
+    setFocusedPresentationId(participantId);
+    setShowChat(false);
+    chatOpenRef.current = false;
+    setShowParticipants(false);
+    const section = presentationSectionRef.current;
+    if (section && !document.fullscreenElement && section.requestFullscreen) {
+      void section.requestFullscreen().catch(() => {
+        // O layout fixo ainda amplia a apresentação quando a API não está liberada.
+      });
+    }
+  }
+
+  function exitPresentationFocus() {
+    setFocusedPresentationId(null);
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  async function handleCopyLink() {
+    const { data: channel, error: channelError } = await supabase
+      .from('channels')
+      .select('server_id')
+      .eq('id', roomId)
+      .eq('type', 'voice')
+      .maybeSingle();
+    if (channelError || !channel) {
+      setBanner('Não foi possível localizar o servidor deste canal.');
+      return;
+    }
+
+    const { data: invite, error: inviteError } = await supabase
+      .from('invites')
+      .insert({ server_id: channel.server_id, channel_id: roomId, inviter_id: localIdRef.current, max_uses: 0, max_age: 0 })
+      .select('code')
+      .single();
+    if (inviteError || !invite) {
+      setBanner('Você não tem permissão para criar um convite ou falta aplicar a migração do Supabase.');
+      return;
+    }
+
+    const url = new URL(window.location.origin);
+    url.searchParams.set('invite', invite.code);
+    url.searchParams.set('voiceChannel', roomId);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setBanner(null);
+    } catch {
+      setBanner(`Convite criado: ${url.toString()}`);
+    }
+  }
+
+  // Entrada com um clique: pega o microfone (e a câmera, se existir), deixa a câmera
+  // desligada e entra na sala. Se o navegador negar, cai na tela de pré-visualização.
+  useEffect(() => {
+    if (!autoJoin) return;
+    let cancelled = false;
+
+    async function start() {
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        } catch {
+          stream = null;
+        }
+      }
+
+      if (cancelled) {
+        stream?.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      if (!stream) {
+        setAutoJoining(false);
+        return;
+      }
+
+      stream.getVideoTracks().forEach((track) => (track.enabled = false));
+      setAutoJoining(false);
+      await handleJoin({
+        name: initialName,
+        stream,
+        camOn: false,
+        micOn: stream.getAudioTracks().length > 0,
+      });
+    }
+
+    void start();
+    return () => {
+      cancelled = true;
+    };
+    // Só na montagem: a sessão é recriada pelo `key` quando o canal muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const participantList = Object.values(participants).map((participant) => participant.isLocal ? { ...participant, isSpeaking: localSpeaking } : participant);
+  const isHost = Boolean(localIdRef.current) && hostId === localIdRef.current;
+
+  if (phase === 'pre-join' && autoJoining) {
+    return (
+      <main className="flex flex-col items-center justify-center px-6 text-center">
+        <p className="animate-fadeIn text-white/60">Entrando na chamada…</p>
+      </main>
+    );
+  }
+
+  if (phase === 'pre-join') {
+    return <PreJoin roomId={roomName} initialName={initialName} onCancel={onClose} onJoin={handleJoin} />;
+  }
+
+  if (phase === 'fatal-error') {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-4">
+        <ErrorBanner
+          title="Não foi possível entrar na sala"
+          message={fatalError?.message ?? 'Tente novamente em instantes.'}
+          onRetry={() => {
+            setFatalError(null);
+            setAutoJoining(false);
+            setPhase('pre-join');
+          }}
+        />
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl border border-surface-border px-5 py-2.5 text-sm font-semibold text-white/70 transition hover:bg-surface-card"
+        >
+          Sair da chamada
+        </button>
+      </main>
+    );
+  }
+
+  if (phase === 'left') {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-5 text-center">
+        <h1 className="text-2xl font-bold">Você saiu da sala</h1>
+        <p className="text-white/60 max-w-sm">
+          Você pode voltar a qualquer momento usando o mesmo link, enquanto outras pessoas
+          continuarem nela.
+        </p>
+        <div className="flex gap-3">
+          <a
+            href={`/sala/${roomId}`}
+            className="rounded-xl bg-theme-gradient transition hover:brightness-110 px-5 py-3 font-semibold text-white"
+          >
+            Entrar novamente
+          </a>
+          <a
+            href="/"
+            className="rounded-xl bg-surface-card hover:bg-surface-border border border-surface-border transition-colors px-5 py-3 font-semibold text-white"
+          >
+            Página inicial
+          </a>
+        </div>
+      </main>
+    );
+  }
+
+  if (phase === 'kicked') {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-5 text-center">
+        <h1 className="text-2xl font-bold">Você foi removido da sala</h1>
+        <p className="max-w-sm text-white/60">O anfitrião encerrou sua participação nesta chamada.</p>
+        <button type="button" onClick={onClose} className="rounded-xl bg-theme-gradient px-5 py-3 font-semibold text-white transition hover:brightness-110">
+          Voltar ao Sekai
+        </button>
+      </main>
+    );
+  }
+
+  const isConnecting = phase === 'connecting';
+
+  return (
+    <main className="min-h-screen flex flex-col bg-transparent">
+      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-surface-border">
+        <div className="flex items-center gap-2 text-sm text-white/60">
+          <span className="h-2 w-2 rounded-full bg-success animate-speaking" />
+          Sala <span className="font-medium text-white/80">{roomName}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <ThemePicker placement="down" align="right" />
+          {onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-white/75 transition hover:bg-surface-card hover:text-white"
+            >
+              Minimizar
+            </button>
+          )}
+        </div>
+      </header>
+
+      {pendingPrankPrompt && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="prank-download-title"
+            className="w-full max-w-sm rounded-2xl border border-surface-border bg-surface-card p-5 text-white shadow-2xl"
+          >
+            <h2 id="prank-download-title" className="text-lg font-semibold">Uma brincadeira da chamada</h2>
+            <p className="mt-2 text-sm leading-relaxed text-white/70">
+              {pendingPrankPrompt.senderName} quer enviar 10 arquivos de texto vazios chamados <code>eptein.txt</code>.
+              Nada será baixado sem sua confirmação.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingPrankPrompt(null)}
+                className="rounded-xl border border-surface-border px-4 py-2 text-sm text-white/75 transition hover:bg-surface-soft"
+              >
+                Recusar
+              </button>
+              <button
+                type="button"
+                onClick={acceptPrankDownload}
+                className="rounded-xl bg-theme-gradient px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
+              >
+                Aceitar download
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {banner && (
+        <div className="px-4 pt-3">
+          <div className="max-w-xl mx-auto">
+            <ErrorBanner title="Aviso de conexão" message={banner} onRetry={() => setBanner(null)} />
+          </div>
+        </div>
+      )}
+
+      <section
+        ref={presentationSectionRef}
+        className={focusedPresentationId
+          ? 'fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-black p-0'
+          : 'flex-1 overflow-hidden px-3 py-4 sm:px-6'}
+      >
+        {isConnecting ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-white/60 animate-fadeIn">Conectando à sala…</p>
+          </div>
+        ) : participantList.length <= 1 && !focusedPresentationId ? (
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
+            <div className="max-w-xs">
+              <ParticipantsGrid
+                participants={participantList}
+                muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
+                focusedParticipantId={focusedPresentationId}
+                onFocusPresentation={focusPresentation}
+                onExitPresentationFocus={exitPresentationFocus}
+              />
+            </div>
+            <p className="text-white/50 text-sm mt-2">
+              Você é o único aqui até agora. Compartilhe o link para convidar outras pessoas.
+            </p>
+          </div>
+        ) : (
+          <ParticipantsGrid
+            participants={participantList}
+            muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
+            focusedParticipantId={focusedPresentationId}
+            onFocusPresentation={focusPresentation}
+            onExitPresentationFocus={exitPresentationFocus}
+          />
+        )}
+      </section>
+
+      <footer className="px-3 sm:px-6 py-4 border-t border-surface-border">
+        <Controls
+          micOn={micOn}
+          deafened={deafened}
+          camOn={camOn}
+          sharingScreen={sharingScreen}
+          screenAudioAvailable={screenAudioAvailable}
+          screenAudioEnabled={screenAudioEnabled}
+          screenShareSettings={screenShareSettings}
+          onScreenShareSettingsChange={setScreenShareSettings}
+          participantCount={participantList.length}
+          onToggleMic={toggleMic}
+          onToggleDeafen={toggleDeafen}
+          onToggleCam={toggleCam}
+          onToggleScreenShare={toggleScreenShare}
+          onToggleScreenAudio={toggleSharedScreenAudio}
+          onLeave={handleLeave}
+          onCopyLink={handleCopyLink}
+          onToggleParticipants={toggleParticipantsPanel}
+          onToggleChat={toggleChatPanel}
+          chatUnreadCount={chatUnreadCount}
+          isHost={isHost}
+          micLockedByHost={micLockedByHost}
+        />
+        {sharingScreen && screenCaptureInfo && (
+          <p className="mt-2 text-center text-xs text-white/55">
+            Captura: {screenCaptureInfo}. O envio ajusta a banda para acompanhar sua conexão e manter a apresentação estável.
+          </p>
+        )}
+      </footer>
+
+      {showParticipants && (
+        <ParticipantsPanel participants={participantList} onClose={() => setShowParticipants(false)} onAddFriend={onAddFriend} />
+      )}
+      {showChat && (
+        <ChatPanel
+          messages={chatMessages}
+          currentUserId={localIdRef.current}
+          isHost={isHost}
+          hostName={participants[hostId]?.name ?? ''}
+          onClose={toggleChatPanel}
+          onSend={sendChatMessage}
+          onSendImage={sendChatImage}
+        />
+      )}
+    </main>
+  );
+}
+
+function getScreenVideoConstraints(settings: ScreenShareSettings): MediaTrackConstraints {
+  const width = Math.round(settings.height * 16 / 9);
+  return {
+    width: { ideal: width, max: width },
+    height: { ideal: settings.height, max: settings.height },
+    frameRate: { ideal: settings.frameRate, max: settings.frameRate },
+  };
+}
+
+function getScreenVideoProfile(settings: ScreenShareSettings): VideoSenderProfile & { width: number; height: number } {
+  const width = Math.round(settings.height * 16 / 9);
+  const pixelRate = width * settings.height * settings.frameRate;
+  const referencePixelRate = 1920 * 1080 * 60;
+  // Limite agregado para a malha P2P. Cada nova pessoa divide essa banda; um
+  // navegador ou conexão mais fracos ainda podem entregar menos que o pedido.
+  const totalBitrate = Math.min(24_000_000, Math.max(1_000_000, Math.round(pixelRate / referencePixelRate * 6_000_000)));
+  return {
+    width,
+    height: settings.height,
+    maxFramerate: settings.frameRate,
+    maxBitrate: totalBitrate,
+    totalBitrate,
+  };
+}
+
+function formatScreenCaptureSettings(settings: MediaTrackSettings, requested: ScreenShareSettings) {
+  const profile = getScreenVideoProfile(requested);
+  const dimensions = settings.width && settings.height
+    ? `${settings.width} × ${settings.height}`
+    : `${profile.width} × ${profile.height} (solicitado)`;
+  const frameRate = settings.frameRate ? `${Math.round(settings.frameRate)} fps` : `${profile.maxFramerate} fps (solicitado)`;
+  return `${dimensions} · ${frameRate}`;
+}
+
+async function fetchIceServers(): Promise<IceServerConfig[]> {
+  try {
+    const res = await fetch('/api/turn-credentials');
+    if (!res.ok) return [{ urls: 'stun:stun.l.google.com:19302' }];
+    const data = await res.json();
+    return data.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }];
+  } catch {
+    return [{ urls: 'stun:stun.l.google.com:19302' }];
+  }
+}
+
+function createRemoteParticipant(id: string, name = 'Convidado', avatarUrl?: string | null): Participant {
+  return {
+    id,
+    name,
+    avatarUrl,
+    micOn: true,
+    camOn: true,
+    isSpeaking: false,
+    isSharingScreen: false,
+    isLocal: false,
+    connectionState: 'connecting',
+  };
+}
+
+function getPusherEventUserId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const userId = (metadata as { user_id?: unknown }).user_id;
+  return typeof userId === 'string' && userId.length <= 100 ? userId : null;
+}
+
+function createChatMessageId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random()}`;
+}
+
+function normalizeChatMessage(
+  payload: unknown,
+  trustedSenderId: string | null,
+  trustedSenderName?: string
+): RoomChatMessage | null {
+  if (!payload || typeof payload !== 'object' || !trustedSenderId) return null;
+  const candidate = payload as Partial<RoomChatMessage>;
+  const text = typeof candidate.text === 'string' ? candidate.text.trim().slice(0, 500) : '';
+  let imageUrl: string | undefined;
+  if (typeof candidate.imageUrl === 'string') {
+    try {
+      const parsed = new URL(candidate.imageUrl);
+      if (parsed.protocol === 'https:' && parsed.hostname.endsWith('.blob.vercel-storage.com')) {
+        imageUrl = parsed.toString();
+      }
+    } catch {
+      // Ignora endereços que não são URLs válidas.
+    }
+  }
+  if (!text && !imageUrl) return null;
+
+  const sentAt = typeof candidate.sentAt === 'number' && Number.isFinite(candidate.sentAt)
+      && Math.abs(candidate.sentAt) <= 8_640_000_000_000_000
+    ? candidate.sentAt
+    : Date.now();
+
+  return {
+    id: typeof candidate.id === 'string' ? candidate.id.slice(0, 100) : `${trustedSenderId}-${sentAt}`,
+    senderId: trustedSenderId,
+    senderName: trustedSenderName?.trim().slice(0, 40) || 'Convidado',
+    text,
+    sentAt,
+    imageUrl,
+    isSystem: false,
+  };
+}
+
+function normalizeModerationEvent(payload: unknown): RoomModerationEvent | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const candidate = payload as Partial<RoomModerationEvent>;
+  if (
+    candidate.action !== 'kick' && candidate.action !== 'mute' && candidate.action !== 'unmute' && candidate.action !== 'promote' && candidate.action !== 'epstein'
+  ) return null;
+  if (typeof candidate.targetId !== 'string' || candidate.targetId.length > 100) return null;
+  return {
+    action: candidate.action,
+    targetId: candidate.targetId,
+    targetName: typeof candidate.targetName === 'string' ? candidate.targetName.trim().slice(0, 40) || 'Participante' : 'Participante',
+  };
+}
