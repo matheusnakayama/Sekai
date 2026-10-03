@@ -162,7 +162,9 @@ export default function RoomClient({
       const rms = Math.sqrt(sum / samples.length);
       if (rms > 0.035) { aboveThresholdSince ||= time; belowThresholdSince = 0; }
       else { belowThresholdSince ||= time; aboveThresholdSince = 0; }
-      const next = speaking ? !(time - belowThresholdSince > 260) : (time - aboveThresholdSince > 110);
+      // Um curto intervalo de confirmação evita que ruído de fundo ou pausas
+      // entre sílabas façam o anel piscar. A saída é mais lenta que a entrada.
+      const next = speaking ? !(time - belowThresholdSince > 620) : (time - aboveThresholdSince > 160);
       if (next !== speaking) { speaking = next; setLocalSpeaking(next); updateLocalParticipant({ isSpeaking: next }); }
       frame = window.requestAnimationFrame(sample);
     };
