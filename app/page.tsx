@@ -120,12 +120,82 @@ export default function Home() {
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
+  const [bankaiAudioBlocked, setBankaiAudioBlocked] = useState(false);
+  const bankaiAudioRef = useRef<HTMLAudioElement | null>(null);
+  const bankaiCooldownByServerRef = useRef(new Map<string, number>());
   const [showCreateServer, setShowCreateServer] = useState(false);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const channelListVersion = channels.map((channel) => channel.id).join(":");
+
+  const playBankaiSound = useCallback(async () => {
+    const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+    bankaiAudioRef.current = audio;
+    audio.volume = 0.85;
+    audio.currentTime = 0;
+    try {
+      await audio.play();
+      setBankaiAudioBlocked(false);
+    } catch {
+      // Alguns navegadores bloqueiam som iniciado por outro usuário até haver
+      // um clique local. O aviso persistente permite liberar a reprodução.
+      setBankaiAudioBlocked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserId || servers.length === 0) return;
+    let cancelled = false;
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function subscribeToServerBankai() {
+      const serverIds = [...new Set(servers.map((server) => server.id))];
+      const { data: textChannels, error } = await supabase
+        .from("channels")
+        .select("id, server_id")
+        .in("server_id", serverIds)
+        .eq("type", "text");
+
+      if (cancelled || error || !textChannels?.length) {
+        if (error) console.warn("Não foi possível ouvir os comandos BANKAI:", error.message);
+        return;
+      }
+
+      const channel = supabase.channel(`sekai-bankai:${currentUserId}`);
+      textChannels.forEach((textChannel) => {
+        channel.on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `channel_id=eq.${textChannel.id}`,
+        }, (event) => {
+          const message = event.new as { content?: string | null };
+          if (message.content?.trim().toLocaleUpperCase() !== ".BANKAI") return;
+          const now = Date.now();
+          const lastPlayed = bankaiCooldownByServerRef.current.get(textChannel.server_id) ?? 0;
+          if (now - lastPlayed < 2500) return;
+          bankaiCooldownByServerRef.current.set(textChannel.server_id, now);
+          void playBankaiSound();
+        });
+      });
+
+      realtimeChannel = channel;
+      channel.subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("A conexão do comando BANKAI foi interrompida:", status);
+        }
+      });
+    }
+
+    void subscribeToServerBankai();
+    return () => {
+      cancelled = true;
+      if (realtimeChannel) void supabase.removeChannel(realtimeChannel);
+    };
+  }, [channelListVersion, currentUserId, playBankaiSound, servers, supabase]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -932,6 +1002,7 @@ export default function Home() {
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Nova mensagem direta</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
       </button>}
+      {bankaiAudioBlocked && <button type="button" onClick={() => void playBankaiSound()} className="fixed bottom-5 right-5 z-[160] flex max-w-sm items-center gap-3 rounded-xl border border-discord-brand/40 bg-discord-bg-floating px-4 py-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-discord-brand/20 text-lg">🔊</span><span><span className="block text-sm font-semibold text-discord-header-primary">BANKAI recebido</span><span className="block text-xs text-discord-text-muted">Clique para reproduzir o áudio.</span></span></button>}
       </div>
     </div>
   );
