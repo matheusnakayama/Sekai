@@ -34,6 +34,7 @@ export interface VoiceMemberPreview {
   id: string;
   name: string;
   avatarUrl?: string | null;
+  isSpeaking?: boolean;
 }
 
 interface ChannelSidebarProps {
@@ -55,6 +56,7 @@ interface ChannelSidebarProps {
     presence: "online" | "idle" | "dnd" | "offline";
     isMuted?: boolean;
     isDeafened?: boolean;
+    isSpeaking?: boolean;
   };
   onToggleMute?: () => void;
   onToggleDeafen?: () => void;
@@ -203,7 +205,7 @@ export function ChannelSidebar({
                           <div className="ml-8 mt-0.5 space-y-1 border-l border-white/10 py-1 pl-2">
                             {(voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).map((member) => (
                               <div key={member.id} className="flex min-w-0 items-center gap-2">
-                                <div className="h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white">
+                                <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
                                   {member.avatarUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -237,20 +239,23 @@ export function ChannelSidebar({
 
       {/* Barra de chamada conectada (como no Discord) */}
       {connectedVoiceChannelId && (
-        <div className="flex items-center gap-2 border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-discord-online">Voz conectada</p>
-            <p className="truncate text-xs text-discord-text-muted">
-              {connectedVoiceChannelName ?? "Canal de voz"}
-            </p>
+        <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-discord-online"><Volume2 className="h-3.5 w-3.5"/>Voz conectada</p>
+              <p className="truncate pl-5 text-[11px] text-discord-text-muted">{connectedVoiceChannelName ?? "Canal de voz"}</p>
+            </div>
+            {onToggleMute && <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("rounded-md p-1.5 transition hover:bg-discord-bg-modifier-hover", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-4 w-4"/> : <Mic className="h-4 w-4"/>}</button>}
+            {onToggleDeafen && <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("rounded-md p-1.5 transition hover:bg-discord-bg-modifier-hover", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-4 w-4"/></button>}
+            <button
+              onClick={onDisconnectVoice}
+              title="Desconectar da chamada"
+              aria-label="Desconectar da chamada"
+              className="rounded-md p-1.5 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-danger"
+            >
+              <PhoneOff className="h-[18px] w-[18px]" />
+            </button>
           </div>
-          <button
-            onClick={onDisconnectVoice}
-            title="Desconectar da chamada"
-            className="rounded-md p-1.5 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-danger"
-          >
-            <PhoneOff className="h-[18px] w-[18px]" />
-          </button>
         </div>
       )}
 
@@ -266,7 +271,7 @@ export function ChannelSidebar({
             <button onClick={async () => { try { await navigator.clipboard.writeText(currentUser.userId); setUserIdCopied(true); window.setTimeout(() => setUserIdCopied(false), 1500); } catch { /* A API de clipboard pode estar bloqueada pelo navegador. */ } }} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal">{userIdCopied ? <Check size={14}/> : <Copy size={14}/>} {userIdCopied ? "ID copiado" : "Copiar ID do usuário"}</button>
           </div>
         </div>}
-        <button onClick={() => { setProfileMenuOpen((value) => !value); setPresenceMenuOpen(false); }} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className="relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand">
+        <button onClick={() => { setProfileMenuOpen((value) => !value); setPresenceMenuOpen(false); }} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className={`relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
           <span className="absolute inset-0 overflow-hidden rounded-full">
             {currentUser.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
