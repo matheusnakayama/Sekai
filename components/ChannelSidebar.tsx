@@ -125,7 +125,7 @@ export function ChannelSidebar({
   const presenceLabel = presenceOptions.find((item) => item.id === currentUser.presence)?.label ?? "Online";
 
   return (
-    <div className="flex h-full w-60 flex-col bg-discord-bg-dark">
+    <div className="server-view-enter flex h-full w-60 flex-col bg-discord-bg-dark">
       {/* Cabeçalho do servidor */}
       <button
         onClick={onOpenServerMenu}

@@ -30,6 +30,7 @@ export interface SlashCommand {
 interface ChatAreaProps {
   channelName: string;
   messages: ChatMessage[];
+  loading?: boolean;
   slashCommands: SlashCommand[];
   onSendMessage: (content: string, attachmentUrl?: string | null) => void;
   onUploadFile?: (file: File) => Promise<string>;
@@ -57,6 +58,7 @@ function formatTime(iso: string) {
 export function ChatArea({
   channelName,
   messages,
+  loading = false,
   slashCommands,
   onSendMessage,
   onUploadFile,
@@ -143,7 +145,7 @@ export function ChatArea({
   }
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-discord-bg-primary">
+    <div className="server-view-enter flex h-full flex-1 flex-col bg-discord-bg-primary">
       {/* Cabeçalho do canal */}
       <div className="flex h-12 items-center gap-2 border-b border-white/[0.07] bg-discord-bg-dark/35 px-4 shadow-sm">
         <Hash className="h-5 w-5 text-discord-text-muted" />
@@ -152,16 +154,29 @@ export function ChatArea({
 
       {/* Feed de mensagens */}
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.map((message) => (
+        {loading && !messages.length ? (
+          <div role="status" className="server-view-enter space-y-3 py-2">
+            <span className="text-xs text-discord-text-muted">Carregando mensagens…</span>
+            <div className="max-w-3xl animate-pulse space-y-2"><div className="h-5 w-2/3 rounded bg-white/[0.035]"/><div className="h-5 w-1/2 rounded bg-white/[0.025]"/></div>
+          </div>
+        ) : !messages.length ? (
+          <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
+        ) : messages.map((message) => {
+          const authorStatus = memberById.get(message.authorId)?.status;
+          const statusClass = authorStatus === "online" ? "status-online" : authorStatus === "idle" ? "status-idle" : authorStatus === "dnd" ? "status-dnd" : "status-offline";
+          return (
           <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]">
-            <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
-              {message.authorAvatarUrl ? (
-                <HoverGifImage src={message.authorAvatarUrl} alt="" isHovered={hoveredAuthorMessageId === message.id} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white">
-                  {message.authorName[0]?.toUpperCase()}
-                </div>
-              )}
+            <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
+              <span className="block h-full w-full overflow-hidden rounded-full">
+                {message.authorAvatarUrl ? (
+                  <HoverGifImage src={message.authorAvatarUrl} alt="" isHovered={hoveredAuthorMessageId === message.id} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-sm font-bold text-white">
+                    {message.authorName[0]?.toUpperCase()}
+                  </span>
+                )}
+              </span>
+              {authorStatus && <span aria-label={`Status: ${authorStatus}`} className={cn("status-dot !h-3.5 !w-3.5 !border-[3px] !border-discord-bg-primary", statusClass)} style={{ bottom: -2, right: -2 }} />}
             </button>
 
             <div className="min-w-0 flex-1">
@@ -210,7 +225,8 @@ export function ChatArea({
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {selectedProfile && <UserProfileCard

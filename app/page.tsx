@@ -104,6 +104,8 @@ export default function Home() {
   const [activeServerId, setActiveServerId] = useState<string>("");
   const [activeChannelId, setActiveChannelId] = useState<string>("");
   const [activeChannelType, setActiveChannelType] = useState<"text" | "voice">("text");
+  const [isServerLoading, setIsServerLoading] = useState(false);
+  const serverLoadSequence = useRef(0);
   const [inviteVoiceChannelId, setInviteVoiceChannelId] = useState<string | null>(null);
   // Chamada de voz: fica montada enquanto você estiver conectado, mesmo ao trocar de canal.
   const [voiceSession, setVoiceSession] = useState<{
@@ -304,38 +306,28 @@ export default function Home() {
   }, [currentUserId]);
 
   async function loadChannelsAndMembers() {
-    if (!activeServerId) return;
+    const serverId = activeServerId;
+    if (!serverId) return;
+    const sequence = ++serverLoadSequence.current;
 
-    // Dono? (bypassa toda checagem de permissão)
-    const { data: serverRow } = await supabase
-      .from("servers")
-      .select("owner_id")
-      .eq("id", activeServerId)
-      .single();
-    setIsOwner(serverRow?.owner_id === currentUserId);
+    // Carrega em paralelo o que não depende de outras consultas para a troca de servidor responder rápido.
+    const [serverResult, categoryResult, channelResult, memberResult] = await Promise.all([
+      supabase.from("servers").select("owner_id").eq("id", serverId).single(),
+      supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
+      supabase.from("channels").select("id, name, type, category_id, position").eq("server_id", serverId).order("position"),
+      supabase.from("members").select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status)").eq("server_id", serverId),
+    ]);
+    if (sequence !== serverLoadSequence.current) return;
 
-    // Categorias + canais
-    const { data: categories } = await supabase
-      .from("channel_categories")
-      .select("id, name, position")
-      .eq("server_id", activeServerId)
-      .order("position");
-
-    const categoryNameById = new Map((categories ?? []).map((c: any) => [c.id, c.name]));
-
-    const { data: channelRows } = await supabase
-      .from("channels")
-      .select("id, name, type, category_id, position")
-      .eq("server_id", activeServerId)
-      .order("position");
-
-    const mappedChannels: Channel[] = (channelRows ?? []).map((c: any) => ({
-      id: c.id,
-      name: c.name,
-      type: c.type,
-      categoryId: c.category_id,
-      categoryName: categoryNameById.get(c.category_id) ?? "SEM CATEGORIA",
+    const categoryNameById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, category.name]));
+    const mappedChannels: Channel[] = (channelResult.data ?? []).map((channel: any) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      categoryId: channel.category_id,
+      categoryName: categoryNameById.get(channel.category_id) ?? "SEM CATEGORIA",
     }));
+    setIsOwner(serverResult.data?.owner_id === currentUserId);
     setChannels(mappedChannels);
 
     const invitedChannel = inviteVoiceChannelId
@@ -346,35 +338,27 @@ export default function Home() {
       setActiveChannelType("voice");
       setInviteVoiceChannelId(null);
       window.history.replaceState({}, "", window.location.pathname);
-    } else if (mappedChannels[0] && !mappedChannels.some((c) => c.id === activeChannelId)) {
-      setActiveChannelId(mappedChannels[0].id);
-      setActiveChannelType(mappedChannels[0].type);
+    } else {
+      const nextChannel = mappedChannels.find((channel) => channel.id === activeChannelId) ?? mappedChannels[0];
+      setActiveChannelId(nextChannel?.id ?? "");
+      setActiveChannelType(nextChannel?.type ?? "text");
     }
+    setIsServerLoading(false);
 
-    // Membros + cargos (um membro pode ter vários cargos agora)
-    const { data: memberRows } = await supabase
-      .from("members")
-      .select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status)")
-      .eq("server_id", activeServerId);
+    const memberRows = memberResult.data ?? [];
+    const memberUserIds = [...new Set(memberRows.map((member: any) => member.user_id).filter(Boolean))];
+    const [badgeResult, memberRoleResult, allRoleResult] = await Promise.all([
+      memberUserIds.length
+        ? supabase.from("user_badges").select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds)
+        : Promise.resolve({ data: [] }),
+      supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, position, permissions)").eq("server_id", serverId),
+      supabase.from("roles").select("id,name,color,icon_url,position,is_default").eq("server_id", serverId).order("position", { ascending: false }),
+    ]);
+    if (sequence !== serverLoadSequence.current) return;
 
-    const memberUserIds = [...new Set((memberRows ?? []).map((member: any) => member.user_id).filter(Boolean))];
-    const { data: badgeRows } = memberUserIds.length
-      ? await supabase
-          .from("user_badges")
-          .select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
-          .in("user_id", memberUserIds)
-      : { data: [] };
-    const badgesByUser = mapUserBadgeRows(badgeRows);
-
-    const { data: memberRoleRows } = await supabase
-      .from("member_roles")
-      .select("user_id, roles(id, name, color, icon_url, position, permissions)")
-      .eq("server_id", activeServerId);
-    const { data: allServerRoles } = await supabase
-      .from("roles")
-      .select("id,name,color,icon_url,position,is_default")
-      .eq("server_id", activeServerId)
-      .order("position", { ascending: false });
+    const badgesByUser = mapUserBadgeRows(badgeResult.data);
+    const memberRoleRows = memberRoleResult.data;
+    const allServerRoles = allRoleResult.data;
     setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default).map((role: any) => ({
       id: role.id,
       name: role.name,
@@ -423,8 +407,24 @@ export default function Home() {
     setMyPermissions(aggregateRolePermissions(myRoles.map((r) => r.permissions)));
   }
 
+  function handleSelectServer(serverId: string) {
+    if (serverId === activeServerId) return;
+    serverLoadSequence.current += 1;
+    setIsServerLoading(Boolean(serverId));
+    setActiveServerId(serverId);
+    setActiveChannelId("");
+    setActiveChannelType("text");
+    setChannels([]);
+    setMembers([]);
+    setServerRoles([]);
+    setIsOwner(false);
+    setMyPermissions(0n);
+  }
+
   useEffect(() => {
-    loadChannelsAndMembers();
+    if (activeServerId) setIsServerLoading(true);
+    else setIsServerLoading(false);
+    void loadChannelsAndMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeServerId, currentUserId]);
 
@@ -628,7 +628,7 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
-  const { messages, sendMessage, toggleReaction, editMessage, deleteMessage } = useChannelMessages(
+  const { messages, loading: isChannelLoading, sendMessage, toggleReaction, editMessage, deleteMessage } = useChannelMessages(
     activeChannelType === "text" ? activeChannelId : "",
     currentUserId ?? ""
   );
@@ -841,13 +841,14 @@ export default function Home() {
       <ServerSidebar
         servers={servers}
         activeServerId={activeServerId}
-        onSelectServer={setActiveServerId}
+        onSelectServer={handleSelectServer}
         onCreateServer={() => setShowCreateServer(true)}
         onOpenHome={() => { setActiveChannelId(""); setChannels([]); }}
-        onServerContext={(serverId) => { setActiveServerId(serverId); setShowServerSettings(true); }}
+        onServerContext={(serverId) => { handleSelectServer(serverId); setShowServerSettings(true); }}
       />
 
       {activeServerId ? <ChannelSidebar
+        key={activeServerId}
         serverName={servers.find((s) => s.id === activeServerId)?.name ?? "Selecione um servidor"}
         channels={channels}
         activeChannelId={activeChannelId}
@@ -981,11 +982,34 @@ export default function Home() {
           unreadByUser={dmUnreadByUser}
           onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
+          currentUserProfile={{
+            display_name: myProfile?.displayName ?? "Você",
+            username: myProfile?.username,
+            avatar_url: myProfile?.avatarUrl ?? null,
+            banner_url: myProfile?.bannerUrl ?? null,
+            bio: myProfile?.bio ?? null,
+            custom_status: myProfile?.customStatus ?? null,
+            pronouns: myProfile?.pronouns ?? null,
+            profile_card_color: myProfile?.profileCardColor ?? null,
+            badges: myProfile?.badges ?? [],
+            status: myProfile?.presence ?? "offline",
+          }}
           onJoined={(serverId, channelId) => {
             if (channelId) setInviteVoiceChannelId(channelId);
             setActiveServerId(serverId);
           }}
         />
+      ) : isServerLoading ? (
+        <div role="status" className="server-view-enter flex min-h-0 min-w-0 flex-1 flex-col gap-4 bg-discord-bg-primary p-6">
+          <span className="text-xs font-medium text-discord-text-muted">Carregando conversa…</span>
+          <div className="max-w-3xl flex-1 animate-pulse space-y-3">
+            <div className="h-12 w-2/3 rounded-xl bg-white/[0.035]" />
+            <div className="h-8 w-1/2 rounded-lg bg-white/[0.025]" />
+            <div className="h-24 w-full rounded-xl bg-white/[0.025]" />
+          </div>
+        </div>
+      ) : !activeChannelId ? (
+        <div className="server-view-enter flex min-w-0 flex-1 items-center justify-center bg-discord-bg-primary px-6 text-sm text-discord-text-muted">Este servidor ainda não tem um canal selecionado.</div>
       ) : activeChannelType === "voice" ? (
         <VoiceRoom
           channelName={activeChannel?.name ?? ""}
@@ -998,8 +1022,10 @@ export default function Home() {
         />
       ) : (
         <ChatArea
+          key={activeChannelId}
           channelName={activeChannel?.name ?? ""}
           messages={messages}
+          loading={isChannelLoading}
           slashCommands={SLASH_COMMANDS}
           onSendMessage={handleSend}
           onUploadFile={uploadChannelImage}

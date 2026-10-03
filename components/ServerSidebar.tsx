@@ -41,7 +41,7 @@ function ServerIcon({
       {/* Indicador de pílula à esquerda (ativo = mais alta, hover = média) */}
       <span
         className={cn(
-          "absolute left-0 w-1 rounded-r-full bg-white transition-all duration-200",
+          "absolute left-0 w-1 rounded-r-full bg-white transition-all duration-150 ease-out",
           active ? "h-10" : hasUnread ? "h-2" : "h-0 group-hover:h-5"
         )}
       />
@@ -50,7 +50,7 @@ function ServerIcon({
         onClick={onClick}
         title={label}
         className={cn(
-          "flex h-12 w-12 items-center justify-center overflow-hidden transition-all duration-200",
+          "flex h-12 w-12 items-center justify-center overflow-hidden transition-[background-color,border-radius,transform,color] duration-150 ease-out active:scale-[0.96]",
           "bg-discord-bg-dark text-discord-text-normal hover:bg-discord-brand hover:bg-theme-gradient hover:text-white",
           active ? "rounded-2xl bg-discord-brand bg-theme-gradient text-white" : "rounded-3xl hover:rounded-2xl"
         )}

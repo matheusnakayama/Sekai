@@ -24,6 +24,7 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
   const supabase = createClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedChannelId, setLoadedChannelId] = useState("");
 
   const mapRow = useCallback(
     (row: RawMessageRow): ChatMessage => ({
@@ -41,8 +42,16 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
 
   // Carrega histórico + agrega reações
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId) {
+      setMessages([]);
+      setLoading(false);
+      setLoadedChannelId("");
+      return;
+    }
     let cancelled = false;
+    setMessages([]);
+    setLoading(true);
+    setLoadedChannelId("");
 
     async function load() {
       setLoading(true);
@@ -76,6 +85,7 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
 
       setMessages(mapped);
       setLoading(false);
+      setLoadedChannelId(channelId);
     }
 
     load();
@@ -187,5 +197,12 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
     setMessages((prev) => prev.filter((message) => message.id !== messageId));
   }, [supabase]);
 
-  return { messages, loading, sendMessage, toggleReaction, editMessage, deleteMessage };
+  return {
+    messages: channelId && loadedChannelId === channelId ? messages : [],
+    loading: loading || (!!channelId && loadedChannelId !== channelId),
+    sendMessage,
+    toggleReaction,
+    editMessage,
+    deleteMessage,
+  };
 }
