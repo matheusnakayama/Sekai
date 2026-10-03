@@ -6,6 +6,16 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
 import {
+  ServerAssetsPanel,
+  ServerAuditPanel,
+  ServerBansPanel,
+  ServerDirectoryPanel,
+  ServerIntegrationPanel,
+  ServerMetricsPanel,
+  ServerPreferencesPanel,
+  ServerTemplatePanel,
+} from "@/components/ServerSettingsAdvanced";
+import {
   PERMISSION_GROUPS,
   PERMISSION_LABELS,
   PERMISSIONS,
@@ -13,7 +23,17 @@ import {
   toBigInt,
 } from "@/lib/permissions";
 
-type Tab = "geral" | "cargos" | "canais" | "convites" | "membros";
+type Tab = "geral" | "tag" | "engajamento" | "impulso" | "emoji" | "stickers" | "soundboard" | "cargos" | "canais" | "membros" | "convites" | "acesso" | "integracoes" | "apps" | "seguranca" | "auditoria" | "banimentos" | "automod" | "comunidade" | "modelo";
+
+const SETTINGS_GROUPS: { title: string; items: [Tab, string][] }[] = [
+  { title: "Servidor", items: [["geral", "Perfil do servidor"], ["tag", "Tag do servidor"], ["engajamento", "Engajamento"], ["impulso", "Vantagens de impulso"]] },
+  { title: "Expressões", items: [["emoji", "Emoji"], ["stickers", "Figurinhas"], ["soundboard", "Painel de efeitos sonoros"]] },
+  { title: "Pessoas", items: [["membros", "Membros"], ["cargos", "Cargos"], ["convites", "Convites"], ["acesso", "Acesso"]] },
+  { title: "Apps", items: [["integracoes", "Integrações"], ["apps", "Diretório de apps"]] },
+  { title: "Moderação", items: [["seguranca", "Configurações de segurança"], ["auditoria", "Registro de auditoria"], ["banimentos", "Banimentos"], ["automod", "AutoMod"]] },
+  { title: "Comunidade", items: [["comunidade", "Habilitar comunidade"], ["modelo", "Modelo do servidor"]] },
+  { title: "Organização", items: [["canais", "Canais e categorias"]] },
+];
 
 interface ServerSettingsModalProps {
   serverId: string;
@@ -27,6 +47,7 @@ interface ServerSettingsModalProps {
     createInvite: boolean;
     kick: boolean;
     ban: boolean;
+    viewAudit?: boolean;
   };
   onClose: () => void;
   onChanged: () => void;
@@ -46,39 +67,32 @@ export function ServerSettingsModal({
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("geral");
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="flex h-[600px] w-full max-w-3xl overflow-hidden rounded-lg bg-discord-bg-secondary shadow-xl">
-        <div className="w-52 shrink-0 bg-discord-bg-darkest p-3">
-          <p className="mb-2 truncate px-2 text-xs font-bold uppercase text-discord-text-muted">{serverName}</p>
-          {(
-            [
-              ["geral", "Visão geral"],
-              ["cargos", "Cargos"],
-              ["canais", "Canais"],
-              ["convites", "Convites"],
-              ["membros", "Membros"],
-            ] as [Tab, string][]
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={cn(
-                "mb-0.5 w-full rounded px-2 py-1.5 text-left text-sm",
-                tab === id
-                  ? "bg-discord-bg-modifier-hover text-discord-header-primary"
-                  : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+  async function onAudit(action: string, target?: string, details?: Record<string, unknown>) {
+    const { error } = await supabase.from("server_audit_logs").insert({
+      server_id: serverId,
+      actor_id: currentUserId,
+      action,
+      target: target ?? null,
+      details: details ?? {},
+    });
+    if (error) console.warn("Não foi possível gravar o registro de auditoria:", error.message);
+  }
 
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-discord-header-primary capitalize">{tab}</h2>
-            <button onClick={onClose} className="text-discord-text-muted hover:text-discord-text-normal">
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-5">
+      <div className="flex h-[min(860px,96vh)] w-full max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-discord-bg-secondary shadow-2xl">
+        <aside className="flex w-[min(260px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:p-4">
+          <div className="mb-3 border-b border-white/[0.08] px-2 pb-3"><p className="truncate text-sm font-bold text-discord-header-primary">{serverName}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[.14em] text-discord-text-muted">Configurações</p></div>
+          <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            {SETTINGS_GROUPS.map((group) => <section key={group.title}><p className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted/80">{group.title}</p>{group.items.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={cn("mb-0.5 w-full rounded-lg px-2.5 py-2 text-left text-[13px] transition", tab === id ? "bg-discord-bg-modifier-hover text-discord-header-primary shadow-sm" : "text-discord-text-muted hover:bg-white/[0.04] hover:text-discord-text-normal")}>{label}</button>)}</section>)}
+          </nav>
+          <button onClick={onClose} className="mt-3 flex items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
+        </aside>
+
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-7">
+          <div className="mb-5 flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <span className="text-xs font-semibold text-discord-text-muted">{SETTINGS_GROUPS.flatMap((group) => group.items).find(([id]) => id === tab)?.[1]}</span>
+            <button onClick={onClose} aria-label="Fechar configurações" className="rounded-lg p-2 text-discord-text-muted transition hover:bg-white/5 hover:text-white">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -93,6 +107,20 @@ export function ServerSettingsModal({
               onDeleted={onDeleted}
             />
           )}
+          {tab === "tag" && <ServerPreferencesPanel serverId={serverId} section="tag" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {(tab === "engajamento" || tab === "impulso") && <ServerMetricsPanel serverId={serverId} serverName={serverName}/>}
+          {tab === "emoji" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="emoji" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "stickers" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="sticker" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "soundboard" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="sound" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "acesso" && <ServerPreferencesPanel serverId={serverId} section="access" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "seguranca" && <ServerPreferencesPanel serverId={serverId} section="security" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "automod" && <ServerPreferencesPanel serverId={serverId} section="automod" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "comunidade" && <ServerPreferencesPanel serverId={serverId} section="community" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "banimentos" && <ServerBansPanel serverId={serverId} canManage={isOwner || perms.ban} onAudit={onAudit}/>}
+          {tab === "auditoria" && <ServerAuditPanel serverId={serverId} canView={isOwner || !!perms.viewAudit}/>}
+          {tab === "modelo" && <ServerTemplatePanel serverId={serverId} serverName={serverName}/>}
+          {tab === "integracoes" && <ServerIntegrationPanel/>}
+          {tab === "apps" && <ServerDirectoryPanel/>}
           {tab === "cargos" && (
             <CargosTab serverId={serverId} canEdit={isOwner || perms.manageRoles} onChanged={onChanged} />
           )}
@@ -116,7 +144,7 @@ export function ServerSettingsModal({
               onChanged={onChanged}
             />
           )}
-        </div>
+        </main>
       </div>
     </div>
   );
