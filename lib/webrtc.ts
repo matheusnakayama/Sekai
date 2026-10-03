@@ -680,28 +680,49 @@ export class WebRTCManager {
   private watchSpeaking(id: string, stream: MediaStream) {
     const audioTrack = stream.getAudioTracks()[0];
     if (!audioTrack) return;
-    this.speakingWatchers.get(id)?.ctx.close().catch(() => {});
+    const previousWatcher = this.speakingWatchers.get(id);
+    if (previousWatcher) {
+      cancelAnimationFrame(previousWatcher.raf);
+      previousWatcher.ctx.close().catch(() => {});
+      this.speakingWatchers.delete(id);
+    }
     try {
       const ctx = new AudioContext();
       const source = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.78;
       source.connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
+      const watcher: SpeakingWatcher = { ctx, analyser, raf: 0 };
 
       let speaking = false;
+      let aboveThresholdSince = 0;
+      let belowThresholdSince = 0;
       const tick = () => {
+        if (this.speakingWatchers.get(id) !== watcher) return;
         analyser.getByteFrequencyData(data);
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        const nowSpeaking = avg > 12;
+        const now = performance.now();
+        if (!speaking) {
+          if (avg > 15) aboveThresholdSince ||= now;
+          else aboveThresholdSince = 0;
+        } else if (avg < 10) {
+          belowThresholdSince ||= now;
+        } else {
+          belowThresholdSince = 0;
+        }
+        const nowSpeaking = speaking
+          ? !(belowThresholdSince > 0 && now - belowThresholdSince > 620)
+          : aboveThresholdSince > 0 && now - aboveThresholdSince > 160;
         if (nowSpeaking !== speaking) {
           speaking = nowSpeaking;
           this.onSpeakingChange(id, speaking);
         }
-        raf = requestAnimationFrame(tick);
+        watcher.raf = requestAnimationFrame(tick);
       };
-      let raf = requestAnimationFrame(tick);
-      this.speakingWatchers.set(id, { ctx, analyser, raf });
+      this.speakingWatchers.set(id, watcher);
+      watcher.raf = requestAnimationFrame(tick);
     } catch {
       // API de áudio indisponível; indicador de "falando" simplesmente não aparecerá.
     }
