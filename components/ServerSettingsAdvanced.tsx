@@ -252,7 +252,17 @@ export function ServerAuditPanel({ serverId, canView }: { serverId: string; canV
   const [rows, setRows] = useState<any[]>([]);
   const [error, setError] = useState("");
   useEffect(() => { if (!canView) return; let cancelled = false; void (async () => { const { data, error: resultError } = await supabase.from("server_audit_logs").select("id,actor_id,action,target,details,created_at,profiles(username,display_name)").eq("server_id", serverId).order("created_at", { ascending: false }).limit(100); if (cancelled) return; setRows(data ?? []); setError(resultError?.message ?? ""); })(); return () => { cancelled = true; }; }, [serverId, supabase, canView]);
-  return <div className="mx-auto max-w-3xl"><Header title="Registro de auditoria" description="Ações administrativas recentes registradas no servidor."/>{!canView ? <Empty title="Sem permissão para visualizar" text="A permissão Ver registro de auditoria é necessária para abrir esta página."/> : error ? <p className="mb-3 text-sm text-red-300">{error}</p> : rows.length === 0 ? <Empty title="Sem atividades registradas" text="Alterações administrativas aparecerão aqui conforme forem feitas."/> : <div className="space-y-2">{rows.map((row) => <article key={row.id} className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-discord-header-primary">{row.action.replace(/[._]/g, " ")}</p><time className="text-xs text-discord-text-muted">{new Date(row.created_at).toLocaleString("pt-BR")}</time></div><p className="mt-1 text-sm text-discord-text-normal">{row.target || "Servidor"} <span className="text-discord-text-muted">por {row.profiles?.display_name || row.profiles?.username || "administrador"}</span></p></article>)}</div>}</div>;
+  const actionLabels: Record<string, string> = {
+    "member.kick": "Membro expulso",
+    "member.ban": "Membro banido",
+    "member.role.add": "Cargo atribuído",
+    "member.role.remove": "Cargo removido",
+    "role.create": "Cargo criado",
+    "role.update": "Cargo atualizado",
+    "role.delete": "Cargo excluído",
+    "role.permissions.update": "Permissões de cargo alteradas",
+  };
+  return <div className="mx-auto max-w-3xl"><Header title="Registro de auditoria" description="Ações administrativas recentes registradas no servidor."/>{!canView ? <Empty title="Sem permissão para visualizar" text="A permissão Ver registro de auditoria é necessária para abrir esta página."/> : error ? <p className="mb-3 text-sm text-red-300">{error}</p> : rows.length === 0 ? <Empty title="Sem atividades registradas" text="Alterações administrativas aparecerão aqui conforme forem feitas."/> : <div className="space-y-2">{rows.map((row) => <article key={row.id} className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-discord-header-primary">{actionLabels[row.action] || row.action.replace(/[._]/g, " ")}</p><time className="text-xs text-discord-text-muted">{new Date(row.created_at).toLocaleString("pt-BR")}</time></div><p className="mt-1 text-sm text-discord-text-normal">{row.target || "Servidor"} <span className="text-discord-text-muted">por {row.profiles?.display_name || row.profiles?.username || "administrador"}</span></p>{row.details?.role_name && <p className="mt-1 text-xs text-discord-text-muted">Cargo: {row.details.role_name}</p>}{row.details?.reason && <p className="mt-1 text-xs text-discord-text-muted">Motivo: {row.details.reason}</p>}</article>)}</div>}</div>;
 }
 
 export function ServerTemplatePanel({ serverId, serverName }: { serverId: string; serverName: string }) {
