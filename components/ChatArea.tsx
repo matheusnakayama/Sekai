@@ -8,6 +8,7 @@ import { HoverGifImage } from "@/components/HoverGifImage";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem } from "@/components/MemberList";
+import { PrankSimulation } from "@/components/PrankSimulation";
 
 export interface ChatMessage {
   id: string;
@@ -69,6 +70,7 @@ export function ChatArea({
   const [selectedProfile, setSelectedProfile] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
+  const [prankOpen, setPrankOpen] = useState(false);
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
 
   function openAuthorProfile(authorId: string, trigger: HTMLButtonElement) {
@@ -139,7 +141,16 @@ export function ChatArea({
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
               </div>
 
-              {editing?.id === message.id ? <div className="mt-1 flex gap-2"><input autoFocus value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="min-w-0 flex-1 rounded-lg bg-discord-bg-dark px-3 py-2 text-sm text-discord-text-normal outline-none ring-1 ring-brand-500"/><button title="Salvar" onClick={async () => { await onEditMessage?.(message.id, editing.content); setEditing(null); }} className="rounded-lg bg-discord-brand p-2 text-white"><Check size={16}/></button><button title="Cancelar" onClick={() => setEditing(null)} className="rounded-lg bg-discord-bg-secondary p-2"><X size={16}/></button></div> : <div className="prose prose-invert max-w-none text-sm text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal"><ReactMarkdown>{message.content}</ReactMarkdown></div>}
+              {editing?.id === message.id ? <div className="mt-1 flex gap-2"><input autoFocus value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="min-w-0 flex-1 rounded-lg bg-discord-bg-dark px-3 py-2 text-sm text-discord-text-normal outline-none ring-1 ring-brand-500"/><button title="Salvar" onClick={async () => { await onEditMessage?.(message.id, editing.content); setEditing(null); }} className="rounded-lg bg-discord-brand p-2 text-white"><Check size={16}/></button><button title="Cancelar" onClick={() => setEditing(null)} className="rounded-lg bg-discord-bg-secondary p-2"><X size={16}/></button></div> : (() => {
+                const prank = message.content.match(/^\[sekai-troll:([^\]]+)\]$/);
+                if (prank) return currentUserId === prank[1] ? (
+                  <div className="mt-2 flex max-w-md items-center justify-between gap-4 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 p-4">
+                    <div><p className="text-sm font-semibold text-discord-header-primary">Uma brincadeira chegou 🎉</p><p className="mt-1 text-xs text-discord-text-muted">É só uma animação. Nada será instalado ou alterado no seu dispositivo.</p></div>
+                    <button type="button" onClick={() => setPrankOpen(true)} className="shrink-0 rounded-lg bg-theme-gradient px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110">Abrir</button>
+                  </div>
+                ) : <p className="mt-1 text-xs italic text-discord-text-muted">Um convite para a brincadeira foi enviado a um membro.</p>;
+                return <div className="prose prose-invert max-w-none text-sm text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal"><ReactMarkdown>{message.content}</ReactMarkdown></div>;
+              })()}
 
               {message.attachmentUrl && (
                 <HoverGifImage
@@ -181,6 +192,8 @@ export function ChatArea({
         onMessage={onMessageMember ? () => onMessageMember(selectedProfile) : undefined}
         onAddFriend={onAddFriend ? () => onAddFriend(selectedProfile.id) : undefined}
       />}
+
+      {prankOpen && <PrankSimulation onClose={() => setPrankOpen(false)} />}
 
       {menu && <><button aria-label="Fechar menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setMenu(null)} /><div style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 130) }} className="fixed z-50 w-52 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl backdrop-blur-xl">
         {menu.message.authorId === currentUserId && <button onClick={() => { setEditing({ id: menu.message.id, content: menu.message.content }); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-white/10"><Pencil size={15}/>Editar mensagem</button>}
