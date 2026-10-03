@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
+import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
 
 export const metadata: Metadata = {
   title: "Sekai",
   description: "Comunicação em tempo real para você e seus amigos",
+  icons: {
+    icon: "/sekai-symbol.jpg",
+    shortcut: "/sekai-symbol.jpg",
+    apple: "/sekai-symbol.jpg",
+  },
 };
 
 export default function RootLayout({
@@ -24,7 +30,10 @@ export default function RootLayout({
         />
       </head>
       <body className="h-screen w-screen overflow-hidden bg-discord-bg-primary">
-        <DialogProvider>{children}</DialogProvider>
+        <DialogProvider>
+          {children}
+          <FloatingYoutubeCharm />
+        </DialogProvider>
       </body>
     </html>
   );
