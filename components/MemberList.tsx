@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
-import { HoverGifImage } from "@/components/HoverGifImage";
+import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
@@ -19,6 +19,12 @@ export interface MemberItem {
   customStatus?: string | null;
   avatarUrl?: string | null;
   bannerUrl?: string | null;
+  bannerPositionX?: number | null;
+  bannerPositionY?: number | null;
+  bannerZoom?: number | null;
+  avatarPositionX?: number | null;
+  avatarPositionY?: number | null;
+  avatarZoom?: number | null;
   profileCardColor?: string | null;
   badges?: CustomBadge[];
   status: "online" | "idle" | "dnd" | "offline";
@@ -172,9 +178,9 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
   return (
     <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover">
       <div className="relative h-8 w-8 shrink-0">
-       <div className="h-full w-full overflow-hidden rounded-full bg-discord-brand">
+       <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
-          <HoverGifImage src={member.avatarUrl} alt="" isHovered={hovered} className="h-full w-full object-cover" />
+          <CroppedProfileImage src={member.avatarUrl} alt="" className="rounded-full" isHovered={hovered} positionX={member.avatarPositionX} positionY={member.avatarPositionY} zoom={member.avatarZoom} />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
             {member.displayName[0]?.toUpperCase()}

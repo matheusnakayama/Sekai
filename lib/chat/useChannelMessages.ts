@@ -60,17 +60,19 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
         .from("messages")
         .select("id, channel_id, author_id, content, attachment_url, created_at, profiles(display_name, username, avatar_url)")
         .eq("channel_id", channelId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(100);
+      // Busca as mais recentes para respeitar o limite e exibe em ordem cronológica.
+      const chronologicalRows = [...(rows ?? [])].reverse();
 
       const { data: reactionRows } = await supabase
         .from("message_reactions")
         .select("message_id, user_id, emoji")
-        .in("message_id", (rows ?? []).map((r) => r.id));
+        .in("message_id", chronologicalRows.map((r) => r.id));
 
       if (cancelled) return;
 
-      const mapped = (rows ?? []).map((r) => mapRow(r as unknown as RawMessageRow));
+      const mapped = chronologicalRows.map((r) => mapRow(r as unknown as RawMessageRow));
       for (const msg of mapped) {
         const forThisMessage = (reactionRows ?? []).filter((rr) => rr.message_id === msg.id);
         const grouped = new Map<string, { count: number; reactedByMe: boolean }>();

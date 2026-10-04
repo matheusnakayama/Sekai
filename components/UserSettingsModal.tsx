@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, LogOut, Plus, Trash2,
   Monitor, Palette, Settings2, Shield, UserRound, X,
@@ -11,6 +11,9 @@ import { CustomBadgeList } from "@/components/CustomBadgeList";
 import type { CustomBadge } from "@/lib/badges";
 import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/useTheme";
+import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/ProfileImageModals";
+import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
+import { CroppedProfileImage } from "@/components/ProfileBanner";
 
 type Section = "perfil" | "aparencia" | "acessibilidade" | "privacidade" | "conta" | "insignias";
 type Presence = "online" | "idle" | "dnd" | "offline";
@@ -27,7 +30,13 @@ interface UserSettingsModalProps {
     bio?: string | null;
     customStatus?: string | null;
     avatarUrl?: string | null;
+    avatarPositionX?: number | null;
+    avatarPositionY?: number | null;
+    avatarZoom?: number | null;
     bannerUrl?: string | null;
+    bannerPositionX?: number | null;
+    bannerPositionY?: number | null;
+    bannerZoom?: number | null;
     profileCardColor?: string | null;
     presence?: Presence | null;
   };
@@ -47,6 +56,9 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
 const PROFILE_CARD_COLORS = ["#111216", "#202127", "#292d46", "#40244f", "#173c38", "#4a2632"];
 
 const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false };
+type ImageScope = "user" | "server";
+type ImageEditorTarget = { kind: ProfileImageKind; scope: ImageScope; src: string; file: File | null; crop: ImageCrop; pending: boolean };
+const DEFAULT_CROP: ImageCrop = { x: 50, y: 50, zoom: 100 };
 const PRESENCE: { id: Presence; label: string; description: string; color: string }[] = [
   { id: "online", label: "Online", description: "Disponível para conversar", color: "bg-emerald-400" },
   { id: "idle", label: "Ausente", description: "Mostrar como ausente", color: "bg-amber-400" },
@@ -84,11 +96,19 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   const [removeBanner, setRemoveBanner] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(initial.avatarUrl ?? "");
   const [bannerPreview, setBannerPreview] = useState(initial.bannerUrl ?? "");
+  const [avatarCrop, setAvatarCrop] = useState<ImageCrop>({ x: initial.avatarPositionX ?? 50, y: initial.avatarPositionY ?? 50, zoom: initial.avatarZoom ?? 100 });
+  const [bannerCrop, setBannerCrop] = useState<ImageCrop>({ x: initial.bannerPositionX ?? 50, y: initial.bannerPositionY ?? 50, zoom: initial.bannerZoom ?? 100 });
   const [serverDisplayName, setServerDisplayName] = useState(initial.displayName);
   const [serverAvatarFile, setServerAvatarFile] = useState<File | null>(null);
   const [serverBannerFile, setServerBannerFile] = useState<File | null>(null);
   const [serverAvatarPreview, setServerAvatarPreview] = useState("");
   const [serverBannerPreview, setServerBannerPreview] = useState("");
+  const [serverAvatarCrop, setServerAvatarCrop] = useState<ImageCrop>(DEFAULT_CROP);
+  const [serverBannerCrop, setServerBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
+  const [imagePicker, setImagePicker] = useState<{ kind: ProfileImageKind; scope: ImageScope } | null>(null);
+  const [imageEditor, setImageEditor] = useState<ImageEditorTarget | null>(null);
+  const [recentImages, setRecentImages] = useState<string[]>([]);
+  const temporaryImageUrls = useRef(new Set<string>());
   const [removeServerAvatar, setRemoveServerAvatar] = useState(false);
   const [removeServerBanner, setRemoveServerBanner] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
@@ -158,11 +178,13 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
 
   useEffect(() => {
     if (!serverId) return;
-    void supabase.from("members").select("nickname,avatar_url,banner_url").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data }) => {
+    void supabase.from("members").select("nickname,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,banner_url,banner_position_x,banner_position_y,banner_zoom").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data }) => {
       if (!data) return;
       setServerDisplayName(data.nickname ?? initial.displayName);
       setServerAvatarPreview(data.avatar_url ?? "");
       setServerBannerPreview(data.banner_url ?? "");
+      setServerAvatarCrop({ x: data.avatar_position_x ?? 50, y: data.avatar_position_y ?? 50, zoom: data.avatar_zoom ?? 100 });
+      setServerBannerCrop({ x: data.banner_position_x ?? 50, y: data.banner_position_y ?? 50, zoom: data.banner_zoom ?? 100 });
     });
   }, [initial.displayName, serverId, supabase, userId]);
 
@@ -177,11 +199,24 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
     if (badgeImagePreview.startsWith("blob:")) URL.revokeObjectURL(badgeImagePreview);
   }, [badgeImagePreview]);
 
+  useEffect(() => () => {
+    temporaryImageUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    temporaryImageUrls.current.clear();
+  }, []);
+
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) { if (event.key === "Escape" && !saving) onClose(); }
+    if (!imagePicker) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`sekai-recent-profile-images:${userId}:${imagePicker.kind}`) || "[]");
+      setRecentImages(Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string" && /^https?:\/\//i.test(item)).slice(0, 6) : []);
+    } catch { setRecentImages([]); }
+  }, [imagePicker, userId]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) { if (event.key === "Escape" && !saving && !imagePicker && !imageEditor) onClose(); }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose, saving]);
+  }, [imageEditor, imagePicker, onClose, saving]);
 
   const visibleNavigation = useMemo(() => NAV.filter((item) => item.id !== "insignias" || isBadgeManager), [isBadgeManager]);
   const currentSection = useMemo(() => visibleNavigation.find((item) => item.id === section) ?? visibleNavigation[0], [section, visibleNavigation]);
@@ -194,16 +229,79 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
     setPreferences((current) => ({ ...current, [key]: value }));
   }
 
-  function handleImagePick(file: File | undefined, kind: "avatar" | "banner") {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { setError("Escolha um arquivo de imagem."); return; }
-    if (file.size > 8 * 1024 * 1024) { setError("A imagem deve ter no máximo 8 MB."); return; }
+  function getImageCrop(kind: ProfileImageKind, scope: ImageScope) {
+    if (scope === "server") return kind === "avatar" ? serverAvatarCrop : serverBannerCrop;
+    return kind === "avatar" ? avatarCrop : bannerCrop;
+  }
+
+  function setImageCrop(kind: ProfileImageKind, scope: ImageScope, crop: ImageCrop) {
+    if (scope === "server") {
+      if (kind === "avatar") setServerAvatarCrop(crop); else setServerBannerCrop(crop);
+    } else if (kind === "avatar") setAvatarCrop(crop); else setBannerCrop(crop);
+  }
+
+  function setImageSelection(kind: ProfileImageKind, scope: ImageScope, file: File | null, url: string) {
+    if (scope === "server") {
+      if (kind === "avatar") { setServerAvatarFile(file); setServerAvatarPreview(url); setRemoveServerAvatar(false); }
+      else { setServerBannerFile(file); setServerBannerPreview(url); setRemoveServerBanner(false); }
+    } else if (kind === "avatar") { setAvatarFile(file); setAvatarPreview(url); setRemoveAvatar(false); }
+    else { setBannerFile(file); setBannerPreview(url); setRemoveBanner(false); }
+  }
+
+  function openImagePicker(kind: ProfileImageKind) {
     setError("");
-    if (profileScope === "server") {
-      if (kind === "avatar") { setServerAvatarFile(file); setRemoveServerAvatar(false); setServerAvatarPreview(URL.createObjectURL(file)); }
-      else { setServerBannerFile(file); setRemoveServerBanner(false); setServerBannerPreview(URL.createObjectURL(file)); }
-    } else if (kind === "avatar") { setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file)); }
-    else { setBannerFile(file); setRemoveBanner(false); setBannerPreview(URL.createObjectURL(file)); }
+    setImagePicker({ kind, scope: profileScope });
+  }
+
+  function selectProfileMedia(selection: SelectedProfileMedia) {
+    const target = imagePicker;
+    if (!target) return;
+    const { file } = selection;
+    if (file && file.type && !file.type.startsWith("image/")) { setError("Escolha um arquivo de imagem."); return; }
+    if (file && file.size > 8 * 1024 * 1024) { setError("A imagem deve ter no máximo 8 MB."); return; }
+    const src = file ? URL.createObjectURL(file) : selection.url;
+    if (file) temporaryImageUrls.current.add(src);
+    if (!src) return;
+    const previousUrl = target.scope === "server"
+      ? target.kind === "avatar" ? serverAvatarPreview : serverBannerPreview
+      : target.kind === "avatar" ? avatarPreview : bannerPreview;
+    const crop = src === previousUrl ? getImageCrop(target.kind, target.scope) : DEFAULT_CROP;
+    setImagePicker(null);
+    setImageEditor({ ...target, src, file, crop, pending: true });
+  }
+
+  function openCropEditor(kind: ProfileImageKind, scope: ImageScope) {
+    const src = scope === "server"
+      ? kind === "avatar" ? serverAvatarPreview : serverBannerPreview
+      : kind === "avatar" ? avatarPreview : bannerPreview;
+    if (!src) return;
+    const file = scope === "server" ? kind === "avatar" ? serverAvatarFile : serverBannerFile : kind === "avatar" ? avatarFile : bannerFile;
+    setImageEditor({ kind, scope, src, file, crop: getImageCrop(kind, scope), pending: false });
+  }
+
+  function closeCropEditor() {
+    if (imageEditor?.pending && imageEditor.src.startsWith("blob:")) {
+      URL.revokeObjectURL(imageEditor.src);
+      temporaryImageUrls.current.delete(imageEditor.src);
+    }
+    setImageEditor(null);
+  }
+
+  function applyCrop(crop: ImageCrop) {
+    if (!imageEditor) return;
+    setImageSelection(imageEditor.kind, imageEditor.scope, imageEditor.file, imageEditor.src);
+    setImageCrop(imageEditor.kind, imageEditor.scope, crop);
+    setImageEditor(null);
+  }
+
+  function rememberRecentImage(kind: ProfileImageKind, url: string | null) {
+    if (!url) return;
+    try {
+      const key = `sekai-recent-profile-images:${userId}:${kind}`;
+      const previous = JSON.parse(localStorage.getItem(key) || "[]");
+      const next = [url, ...(Array.isArray(previous) ? previous.filter((item) => item !== url) : [])].slice(0, 6);
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch { /* Falha ao salvar recentes não impede salvar o perfil. */ }
   }
 
   function handleBadgeImagePick(file: File | undefined) {
@@ -223,6 +321,8 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
       setSaving(true); setError(""); setNotice("");
       let avatarUrl = removeServerAvatar ? null : serverAvatarPreview || null;
       let bannerUrl = removeServerBanner ? null : serverBannerPreview || null;
+      const nextAvatarCrop = removeServerAvatar ? DEFAULT_CROP : serverAvatarCrop;
+      const nextBannerCrop = removeServerBanner ? DEFAULT_CROP : serverBannerCrop;
       for (const item of [{ file: serverAvatarFile, kind: "avatar" as const }, { file: serverBannerFile, kind: "banner" as const }]) {
         if (!item.file) continue;
         const path = `${userId}/server-profiles/${serverId}/${item.kind}-${Date.now()}.${uploadExtension(item.file)}`;
@@ -231,16 +331,17 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
         const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
         if (item.kind === "avatar") avatarUrl = url; else bannerUrl = url;
       }
-      const { error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, banner_url: bannerUrl }).eq("server_id", serverId).eq("user_id", userId);
+      const { error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, avatar_position_x: nextAvatarCrop.x, avatar_position_y: nextAvatarCrop.y, avatar_zoom: nextAvatarCrop.zoom, banner_url: bannerUrl, banner_position_x: nextBannerCrop.x, banner_position_y: nextBannerCrop.y, banner_zoom: nextBannerCrop.zoom }).eq("server_id", serverId).eq("user_id", userId);
       setSaving(false);
       if (serverUpdateError) { setError("Falha ao salvar perfil do servidor: " + serverUpdateError.message); return; }
+      rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl);
       onSaved(); onClose(); return;
     }
     if (!displayName.trim()) { setError("Informe um nome de exibição."); setSection("perfil"); return; }
     if (!/^[a-zA-Z0-9_.-]{2,32}$/.test(username.trim())) { setError("O nome de usuário deve ter de 2 a 32 caracteres: letras, números, ponto, hífen ou sublinhado."); setSection("perfil"); return; }
     setSaving(true); setError(""); setNotice("");
-    let avatarUrl = removeAvatar ? null : (initial.avatarUrl ?? null);
-    let bannerUrl = removeBanner ? null : (initial.bannerUrl ?? null);
+    let avatarUrl = removeAvatar ? null : (avatarPreview || initial.avatarUrl || null);
+    let bannerUrl = removeBanner ? null : (bannerPreview || initial.bannerUrl || null);
 
     for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }]) {
       if (!item.file) continue;
@@ -253,10 +354,19 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
 
     const { error: updateError } = await supabase.from("profiles").update({
       display_name: displayName.trim(), username: username.trim().toLowerCase(), pronouns: pronouns.trim() || null, bio: bio.trim() || null, custom_status: customStatus.trim() || null,
-      avatar_url: avatarUrl, banner_url: bannerUrl, status: presence, profile_card_color: profileCardColor,
+      avatar_url: avatarUrl,
+      avatar_position_x: removeAvatar ? 50 : avatarCrop.x,
+      avatar_position_y: removeAvatar ? 50 : avatarCrop.y,
+      avatar_zoom: removeAvatar ? 100 : avatarCrop.zoom,
+      banner_url: bannerUrl,
+      banner_position_x: removeBanner ? 50 : bannerCrop.x,
+      banner_position_y: removeBanner ? 50 : bannerCrop.y,
+      banner_zoom: removeBanner ? 100 : bannerCrop.zoom,
+      status: presence, profile_card_color: profileCardColor,
     }).eq("id", userId);
     setSaving(false);
     if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
+    rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl);
     onSaved(); onClose();
   }
 
@@ -382,16 +492,16 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
                 <div hidden={profileScope !== "user"}>
                 <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai.</p></div>
                 <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border border-white/10 shadow-lg shadow-black/10" style={{ backgroundColor: profileCardColor, transition: "background-color 180ms ease" }}>
-                  <div className="relative z-0 h-32 bg-theme-gradient bg-cover bg-center">
-                    {bannerPreview && <img key={bannerPreview} src={bannerPreview} alt="" className="profile-card-enter pointer-events-none absolute inset-0 h-full w-full object-cover"/>}
-                    <div className="absolute right-3 top-3 flex gap-2"><label className="settings-upload-control flex cursor-pointer items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>Trocar banner<input type="file" accept="image/gif,image/*" className="hidden" onChange={(e) => handleImagePick(e.target.files?.[0], "banner")}/></label>{bannerPreview && <button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button>}</div>
+                  <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
+                    {bannerPreview && <CroppedProfileImage src={bannerPreview} alt="" positionX={bannerCrop.x} positionY={bannerCrop.y} zoom={bannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
+                    <div className="absolute right-3 top-3 flex gap-2"><button type="button" onClick={() => openImagePicker("banner")} className="settings-upload-control flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>{bannerPreview ? "Trocar banner" : "Adicionar banner"}</button>{bannerPreview && <><button type="button" onClick={() => openCropEditor("banner", "user")} className="rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/70">Ajustar recorte</button><button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setBannerCrop(DEFAULT_CROP); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button></>}</div>
                   </div>
                   <div className="relative z-10 flex flex-wrap items-end justify-between gap-3 px-5 pb-5">
                     <div className="flex min-w-0 items-end gap-3">
-                      <div className="-mt-10 h-20 w-20 shrink-0 overflow-hidden rounded-full border-[5px] border-discord-bg-primary bg-discord-brand shadow-lg transition-transform duration-200 hover:scale-[1.04]">{avatarPreview ? <img key={avatarPreview} src={avatarPreview} alt="Prévia do avatar" className="profile-card-enter h-full w-full object-cover"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{displayName[0]?.toUpperCase()}</div>}</div>
+                      <div className="relative -mt-10 h-20 w-20 shrink-0 overflow-hidden rounded-full border-[5px] border-discord-bg-primary bg-discord-brand shadow-lg transition-transform duration-200 hover:scale-[1.04]">{avatarPreview ? <CroppedProfileImage src={avatarPreview} alt="Prévia do avatar" positionX={avatarCrop.x} positionY={avatarCrop.y} zoom={avatarCrop.zoom} className="profile-card-enter rounded-full"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{displayName[0]?.toUpperCase()}</div>}</div>
                       <div className="min-w-0 pb-1.5"><p className="max-w-[190px] truncate text-[15px] font-semibold tracking-tight text-discord-header-primary">{displayName || "Seu nome"}</p><p className="mt-0.5 max-w-[190px] truncate text-[11px] text-discord-text-muted">@{username || "seu_usuario"}{pronouns ? ` · ${pronouns}` : ""}</p>{customStatus ? <p className="mt-1 max-w-[190px] truncate text-[11px] text-discord-text-muted">{customStatus}</p> : <p className="mt-1 max-w-[190px] truncate text-[11px] italic text-discord-text-muted/70">Adicione um status</p>}</div>
                     </div>
-                    <div className="mb-1 flex shrink-0 gap-2"><label className="settings-upload-control cursor-pointer rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Trocar avatar<input type="file" accept="image/gif,image/*" className="hidden" onChange={(e) => handleImagePick(e.target.files?.[0], "avatar")}/></label>{avatarPreview && <button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(""); setRemoveAvatar(true); }} aria-label="Remover avatar" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button>}</div>
+                    <div className="mb-1 flex shrink-0 gap-2"><button type="button" onClick={() => openImagePicker("avatar")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{avatarPreview ? "Trocar avatar" : "Adicionar avatar"}</button>{avatarPreview && <><button type="button" onClick={() => openCropEditor("avatar", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar</button><button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(""); setAvatarCrop(DEFAULT_CROP); setRemoveAvatar(true); }} aria-label="Remover avatar" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                   </div>
                 </div>
                 <div className="grid gap-x-5 gap-y-1 md:grid-cols-2">
@@ -413,16 +523,16 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
                 {serverId && <div hidden={profileScope !== "server"}>
                   <div className="mb-6"><p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Personalização por servidor</p><h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Seu perfil neste servidor</h1><p className="mt-2 text-sm text-discord-text-muted">Use um nome, avatar ou banner diferente só aqui. GIF animado é aceito até 8 MB.</p></div>
                   <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-primary shadow-lg shadow-black/10">
-                    <div className="relative z-0 h-32 bg-theme-gradient bg-cover bg-center">
-                      {serverBannerPreview && <img key={serverBannerPreview} src={serverBannerPreview} alt="" className="profile-card-enter pointer-events-none absolute inset-0 h-full w-full object-cover"/>}
-                      <div className="absolute right-3 top-3 flex gap-2"><label className="settings-upload-control flex cursor-pointer items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white"><ImagePlus size={15}/>Trocar banner<input type="file" accept="image/gif,image/*" className="hidden" onChange={(e) => handleImagePick(e.target.files?.[0], "banner")}/></label>{serverBannerPreview && <button type="button" onClick={() => { setServerBannerFile(null); setServerBannerPreview(""); setRemoveServerBanner(true); }} aria-label="Remover banner do servidor" className="rounded-lg bg-black/50 p-2 text-white hover:bg-rose-500/80"><Trash2 size={15}/></button>}</div>
+                    <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
+                      {serverBannerPreview && <CroppedProfileImage src={serverBannerPreview} alt="" positionX={serverBannerCrop.x} positionY={serverBannerCrop.y} zoom={serverBannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
+                      <div className="absolute right-3 top-3 flex gap-2"><button type="button" onClick={() => openImagePicker("banner")} className="settings-upload-control flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white"><ImagePlus size={15}/>{serverBannerPreview ? "Trocar banner" : "Adicionar banner"}</button>{serverBannerPreview && <><button type="button" onClick={() => openCropEditor("banner", "server")} className="rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white">Ajustar recorte</button><button type="button" onClick={() => { setServerBannerFile(null); setServerBannerPreview(""); setServerBannerCrop(DEFAULT_CROP); setRemoveServerBanner(true); }} aria-label="Remover banner do servidor" className="rounded-lg bg-black/50 p-2 text-white hover:bg-rose-500/80"><Trash2 size={15}/></button></>}</div>
                     </div>
                     <div className="relative z-10 flex flex-wrap items-end justify-between gap-3 px-5 pb-5">
                       <div className="flex min-w-0 items-end gap-3">
-                        <div className="-mt-10 h-20 w-20 shrink-0 overflow-hidden rounded-full border-[5px] border-discord-bg-primary bg-discord-brand shadow-lg transition-transform duration-200 hover:scale-[1.04]">{serverAvatarPreview ? <img key={serverAvatarPreview} src={serverAvatarPreview} alt="Avatar do servidor" className="profile-card-enter h-full w-full object-cover"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{serverDisplayName[0]?.toUpperCase()}</div>}</div>
+                        <div className="relative -mt-10 h-20 w-20 shrink-0 overflow-hidden rounded-full border-[5px] border-discord-bg-primary bg-discord-brand shadow-lg transition-transform duration-200 hover:scale-[1.04]">{serverAvatarPreview ? <CroppedProfileImage src={serverAvatarPreview} alt="Avatar do servidor" positionX={serverAvatarCrop.x} positionY={serverAvatarCrop.y} zoom={serverAvatarCrop.zoom} className="profile-card-enter rounded-full"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{serverDisplayName[0]?.toUpperCase()}</div>}</div>
                         <div className="min-w-0 pb-1.5"><p className="max-w-[190px] truncate text-[15px] font-semibold tracking-tight text-discord-header-primary">{serverDisplayName || "Seu nome"}</p><p className="mt-0.5 max-w-[190px] truncate text-[11px] text-discord-text-muted">Seu nome neste servidor</p></div>
                       </div>
-                      <div className="mb-1 flex shrink-0 gap-2"><label className="settings-upload-control cursor-pointer rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Trocar avatar<input type="file" accept="image/gif,image/*" className="hidden" onChange={(e) => handleImagePick(e.target.files?.[0], "avatar")}/></label>{serverAvatarPreview && <button type="button" onClick={() => { setServerAvatarFile(null); setServerAvatarPreview(""); setRemoveServerAvatar(true); }} aria-label="Remover avatar do servidor" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-discord-text-muted hover:text-rose-300"><Trash2 size={14}/></button>}</div>
+                      <div className="mb-1 flex shrink-0 gap-2"><button type="button" onClick={() => openImagePicker("avatar")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{serverAvatarPreview ? "Trocar avatar" : "Adicionar avatar"}</button>{serverAvatarPreview && <><button type="button" onClick={() => openCropEditor("avatar", "server")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar</button><button type="button" onClick={() => { setServerAvatarFile(null); setServerAvatarPreview(""); setServerAvatarCrop(DEFAULT_CROP); setRemoveServerAvatar(true); }} aria-label="Remover avatar do servidor" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs text-discord-text-muted hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                     </div>
                   </div>
                   <Field label="Nome neste servidor" hint={`${serverDisplayName.length}/32`}><input value={serverDisplayName} maxLength={32} onChange={(e) => setServerDisplayName(e.target.value)} placeholder="Nome de exibição" className={inputClass}/></Field>
@@ -499,6 +609,8 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
           <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
+      {imagePicker && <ProfileImagePickerModal kind={imagePicker.kind} recentImages={recentImages} onSelect={selectProfileMedia} onClose={() => setImagePicker(null)}/>}
+      {imageEditor && <ProfileImageCropModal kind={imageEditor.kind} src={imageEditor.src} initialCrop={imageEditor.crop} onApply={applyCrop} onClose={closeCropEditor}/>}
     </div>
   );
 }

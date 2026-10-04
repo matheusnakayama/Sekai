@@ -129,7 +129,7 @@ export default function Home() {
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; bannerUrl?: string | null; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -150,7 +150,7 @@ export default function Home() {
     if (!currentUserId) return;
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status")
+      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profile_card_color, status")
       .eq("id", currentUserId)
       .single();
     if (data) {
@@ -166,7 +166,13 @@ export default function Home() {
         bio: data.bio,
         customStatus: data.custom_status,
         avatarUrl: data.avatar_url,
+        avatarPositionX: data.avatar_position_x ?? 50,
+        avatarPositionY: data.avatar_position_y ?? 50,
+        avatarZoom: data.avatar_zoom ?? 100,
         bannerUrl: data.banner_url,
+        bannerPositionX: data.banner_position_x ?? 50,
+        bannerPositionY: data.banner_position_y ?? 50,
+        bannerZoom: data.banner_zoom ?? 100,
         profileCardColor: data.profile_card_color,
         badges,
         presence: data.status,
@@ -315,7 +321,7 @@ export default function Home() {
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
       supabase.from("channels").select("id, name, type, category_id, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, banner_url, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, banner_url, profile_card_color, status)").eq("server_id", serverId),
+      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profile_card_color, status)").eq("server_id", serverId),
     ]);
     if (sequence !== serverLoadSequence.current) return;
 
@@ -386,7 +392,13 @@ export default function Home() {
         bio: m.profiles?.bio,
         customStatus: m.profiles?.custom_status,
         avatarUrl: m.avatar_url || m.profiles?.avatar_url,
+        avatarPositionX: m.avatar_url ? m.avatar_position_x ?? 50 : m.profiles?.avatar_position_x ?? 50,
+        avatarPositionY: m.avatar_url ? m.avatar_position_y ?? 50 : m.profiles?.avatar_position_y ?? 50,
+        avatarZoom: m.avatar_url ? m.avatar_zoom ?? 100 : m.profiles?.avatar_zoom ?? 100,
         bannerUrl: m.banner_url || m.profiles?.banner_url,
+        bannerPositionX: m.banner_url ? m.banner_position_x ?? 50 : m.profiles?.banner_position_x ?? 50,
+        bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
+        bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
         badges: badgesByUser.get(m.user_id) ?? [],
         status: m.profiles?.status ?? "offline",
@@ -877,8 +889,15 @@ export default function Home() {
           username: myProfile?.username,
           displayName: currentMember?.displayName ?? "Você",
           avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl,
+          avatarPositionX: currentMember?.avatarPositionX ?? myProfile?.avatarPositionX ?? 50,
+          avatarPositionY: currentMember?.avatarPositionY ?? myProfile?.avatarPositionY ?? 50,
+          avatarZoom: currentMember?.avatarZoom ?? myProfile?.avatarZoom ?? 100,
           bannerUrl: currentMember?.bannerUrl ?? myProfile?.bannerUrl,
+          bannerPositionX: currentMember?.bannerPositionX ?? myProfile?.bannerPositionX ?? 50,
+          bannerPositionY: currentMember?.bannerPositionY ?? myProfile?.bannerPositionY ?? 50,
+          bannerZoom: currentMember?.bannerZoom ?? myProfile?.bannerZoom ?? 100,
           profileCardColor: myProfile?.profileCardColor,
+          badges: myProfile?.badges ?? [],
           bio: myProfile?.bio,
           customStatus: myProfile?.customStatus,
           presence: myProfile?.presence ?? "online",
@@ -982,11 +1001,18 @@ export default function Home() {
           unreadByUser={dmUnreadByUser}
           onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
+          onOpenSettings={() => setShowUserSettings(true)}
           currentUserProfile={{
             display_name: myProfile?.displayName ?? "Você",
             username: myProfile?.username,
             avatar_url: myProfile?.avatarUrl ?? null,
+            avatar_position_x: myProfile?.avatarPositionX ?? 50,
+            avatar_position_y: myProfile?.avatarPositionY ?? 50,
+            avatar_zoom: myProfile?.avatarZoom ?? 100,
             banner_url: myProfile?.bannerUrl ?? null,
+            banner_position_x: myProfile?.bannerPositionX ?? 50,
+            banner_position_y: myProfile?.bannerPositionY ?? 50,
+            banner_zoom: myProfile?.bannerZoom ?? 100,
             bio: myProfile?.bio ?? null,
             custom_status: myProfile?.customStatus ?? null,
             pronouns: myProfile?.pronouns ?? null,

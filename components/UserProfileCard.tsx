@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Check, ChevronDown, MoreHorizontal, MessageCircle, Shield, UserPlus, UserMinus } from "lucide-react";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
-import { HoverGifImage } from "@/components/HoverGifImage";
 import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
+import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import type { CustomBadge } from "@/lib/badges";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,12 @@ export interface ProfileCardUser {
   customStatus?: string | null;
   avatarUrl?: string | null;
   bannerUrl?: string | null;
+  bannerPositionX?: number | null;
+  bannerPositionY?: number | null;
+  bannerZoom?: number | null;
+  avatarPositionX?: number | null;
+  avatarPositionY?: number | null;
+  avatarZoom?: number | null;
   profileCardColor?: string | null;
   badges?: CustomBadge[];
   assignedRoles?: RoleBadge[];
@@ -30,6 +36,7 @@ export interface ProfileCardUser {
 export interface ProfileCardPosition {
   left: number;
   top: number;
+  anchor?: HTMLElement;
 }
 
 interface ProfileRoleOption extends RoleBadge {
@@ -39,7 +46,7 @@ interface ProfileRoleOption extends RoleBadge {
 export function getProfileCardPosition(anchor: HTMLElement, preferRight = false): ProfileCardPosition {
   const bounds = anchor.getBoundingClientRect();
   const width = Math.min(300, window.innerWidth - 24);
-  const height = Math.min(620, window.innerHeight - 24);
+  const estimatedHeight = Math.min(380, window.innerHeight - 24);
   const roomRight = window.innerWidth - bounds.right - 12;
   const roomLeft = bounds.left - 12;
   const placeRight = preferRight && roomRight >= width;
@@ -48,10 +55,17 @@ export function getProfileCardPosition(anchor: HTMLElement, preferRight = false)
     : roomLeft >= width
       ? bounds.left - width - 12
       : Math.max(12, Math.min(bounds.right + 12, window.innerWidth - width - 12));
+  const preferredTop = bounds.top - 24;
+  const top = preferredTop + estimatedHeight <= window.innerHeight - 12
+    ? preferredTop
+    : bounds.top - estimatedHeight - 12 >= 12
+      ? bounds.top - estimatedHeight - 12
+      : Math.max(12, window.innerHeight - estimatedHeight - 12);
 
   return {
     left: Math.max(12, Math.min(left, window.innerWidth - width - 12)),
-    top: Math.max(12, Math.min(bounds.top - 24, window.innerHeight - height - 12)),
+    top: Math.max(12, Math.min(top, window.innerHeight - estimatedHeight - 12)),
+    anchor,
   };
 }
 
@@ -90,8 +104,50 @@ export function UserProfileCard({
   const cardRef = useRef<HTMLElement>(null);
   const [rolePanelOpen, setRolePanelOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [resolvedPosition, setResolvedPosition] = useState(position);
   const isOtherUser = profile.id !== currentUserId;
   const username = profile.username || profile.id.slice(0, 8);
+
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const updatePosition = () => {
+      const anchor = position.anchor;
+      const bounds = anchor?.isConnected ? anchor.getBoundingClientRect() : undefined;
+      const cardHeight = card.getBoundingClientRect().height;
+      const maxTop = window.innerHeight - cardHeight - 12;
+      let top = position.top;
+      let left = position.left;
+
+      if (bounds) {
+        const preferredTop = bounds.top - 24;
+        const roomBelow = preferredTop + cardHeight <= window.innerHeight - 12;
+        const roomAbove = bounds.top - cardHeight - 12 >= 12;
+        top = roomBelow
+          ? preferredTop
+          : roomAbove
+            ? bounds.top - cardHeight - 12
+            : Math.max(12, maxTop);
+      }
+
+      const maxLeft = Math.max(12, window.innerWidth - card.getBoundingClientRect().width - 12);
+      left = Math.max(12, Math.min(left, maxLeft));
+      top = Math.max(12, Math.min(top, maxTop));
+
+      setResolvedPosition((current) => current.left === left && current.top === top ? current : { ...position, left, top });
+    };
+
+    setResolvedPosition(position);
+    updatePosition();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePosition);
+    observer?.observe(card);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [position, profile]);
 
   useEffect(() => {
     const closeOnOutsideClick = (event: PointerEvent) => {
@@ -113,14 +169,16 @@ export function UserProfileCard({
       ref={cardRef}
       role="dialog"
       aria-label={`Perfil de ${profile.displayName}`}
-      style={{ left: position.left, top: position.top }}
+      style={{ left: resolvedPosition.left, top: resolvedPosition.top, backgroundColor: profile.profileCardColor || "#0b0b0d" }}
       className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(300px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-[22px] border border-white/[0.11] bg-[#0b0b0d] text-white shadow-[0_24px_80px_rgba(0,0,0,.62)]"
     >
-      <header
-        className="relative h-[66px] bg-theme-gradient bg-cover bg-center"
-        style={profile.bannerUrl ? { backgroundImage: `linear-gradient(90deg,rgba(0,0,0,.16),rgba(0,0,0,.16)),url("${profile.bannerUrl}")` } : undefined}
+      <ProfileBanner
+        src={profile.bannerUrl}
+        positionX={profile.bannerPositionX}
+        positionY={profile.bannerPositionY}
+        zoom={profile.bannerZoom}
+        className="h-24"
       >
-        <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/10 to-black/30" />
         <div className="absolute right-3 top-3 flex items-center gap-2">
           {isOtherUser && onAddFriend && (
             <button
@@ -155,13 +213,13 @@ export function UserProfileCard({
             </div>
           )}
         </div>
-      </header>
+      </ProfileBanner>
 
       <div className="px-4 pb-4">
-        <div className="relative mt-11 h-[78px] w-[78px]">
-          <div className="h-full w-full overflow-hidden rounded-full border-[4px] border-[#0b0b0d] bg-discord-brand shadow-[0_8px_24px_rgba(0,0,0,.5)]">
+        <div className="relative -mt-9 h-[68px] w-[68px]">
+          <div className="relative h-full w-full overflow-hidden rounded-full border-4 border-[#0b0b0d] bg-discord-brand shadow-[0_8px_24px_rgba(0,0,0,.5)]">
             {profile.avatarUrl ? (
-              <HoverGifImage src={profile.avatarUrl} alt="" className="h-full w-full object-cover" />
+              <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" positionX={profile.avatarPositionX} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
             ) : (
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
@@ -169,7 +227,7 @@ export function UserProfileCard({
           <span className={cn("status-dot !bottom-0.5 !right-0.5 !h-4 !w-4 !border-[3px] !border-[#0b0b0d]", STATUS_CLASS[profile.status])} />
         </div>
 
-        <div className="mt-1.5">
+        <div className="mt-2">
           <h2 className="truncate font-sans text-[21px] font-semibold leading-7 tracking-tight text-white">{profile.displayName}</h2>
           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-white/70">
             <span className="truncate">@{username}</span>

@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
+import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { PrankSimulation } from "@/components/PrankSimulation";
@@ -89,6 +90,9 @@ export function ChatArea({
   const [prankOpen, setPrankOpen] = useState(false);
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
   const composerRef = useRef<HTMLInputElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const previousLastMessageId = useRef<string | null>(null);
+  const wasAtBottom = useRef(true);
   const lastMentionNonce = useRef(0);
 
   useEffect(() => {
@@ -103,6 +107,30 @@ export function ChatArea({
     window.requestAnimationFrame(() => composerRef.current?.focus());
     onMentionHandled?.(mentionRequest.nonce);
   }, [mentionRequest, onMentionHandled]);
+
+  useEffect(() => {
+    if (loading) return;
+    const container = messagesScrollRef.current;
+    if (!container) return;
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      previousLastMessageId.current = null;
+      return;
+    }
+
+    const firstHistoryRender = previousLastMessageId.current === null;
+    const newMessageArrived = previousLastMessageId.current !== lastMessage.id;
+    if (firstHistoryRender) {
+      container.scrollTop = container.scrollHeight;
+      wasAtBottom.current = true;
+    } else if (newMessageArrived && (wasAtBottom.current || lastMessage.authorId === currentUserId)) {
+      const behavior = document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth";
+      container.scrollTo({ top: container.scrollHeight, behavior });
+      wasAtBottom.current = true;
+    }
+    previousLastMessageId.current = lastMessage.id;
+  }, [messages, loading, currentUserId]);
 
   function openAuthorProfile(authorId: string, trigger: HTMLButtonElement) {
     const member = memberById.get(authorId);
@@ -153,7 +181,14 @@ export function ChatArea({
       </div>
 
       {/* Feed de mensagens */}
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div
+        ref={messagesScrollRef}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          wasAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
+        }}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+      >
         {loading && !messages.length ? (
           <div role="status" className="server-view-enter space-y-3 py-2">
             <span className="text-xs text-discord-text-muted">Carregando mensagens…</span>
@@ -167,9 +202,17 @@ export function ChatArea({
           return (
           <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]">
             <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
-              <span className="block h-full w-full overflow-hidden rounded-full">
+              <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
-                  <HoverGifImage src={message.authorAvatarUrl} alt="" isHovered={hoveredAuthorMessageId === message.id} className="h-full w-full object-cover" />
+                  <CroppedProfileImage
+                    src={message.authorAvatarUrl}
+                    alt=""
+                    className="rounded-full"
+                    isHovered={hoveredAuthorMessageId === message.id}
+                    positionX={memberById.get(message.authorId)?.avatarPositionX}
+                    positionY={memberById.get(message.authorId)?.avatarPositionY}
+                    zoom={memberById.get(message.authorId)?.avatarZoom}
+                  />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-sm font-bold text-white">
                     {message.authorName[0]?.toUpperCase()}

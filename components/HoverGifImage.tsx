@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type SyntheticEvent } from "react";
+import { useState, type CSSProperties, type SyntheticEvent } from "react";
 
 const posterCache = new Map<string, string>();
 const FALLBACK_GIF_POSTER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' fill='%2340444b'/%3E%3Ccircle cx='64' cy='47' r='23' fill='%237b8089'/%3E%3Cpath d='M18 128c4-31 21-47 46-47s42 16 46 47' fill='%237b8089'/%3E%3C/svg%3E";
@@ -13,11 +13,15 @@ export function HoverGifImage({
   src,
   alt,
   className,
+  style,
+  onImageLoad,
   isHovered,
 }: {
   src: string;
   alt: string;
   className?: string;
+  style?: CSSProperties;
+  onImageLoad?: (width: number, height: number) => void;
   /** When omitted, animation follows hover directly on the image. */
   isHovered?: boolean;
 }) {
@@ -37,6 +41,7 @@ export function HoverGifImage({
 
     const image = event.currentTarget;
     if (!image.naturalWidth || !image.naturalHeight) return;
+    onImageLoad?.(image.naturalWidth, image.naturalHeight);
     const scale = Math.min(1, 256 / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -82,7 +87,15 @@ export function HoverGifImage({
         onMouseLeave={() => setLocalHover(false)}
         onFocus={() => setLocalHover(true)}
         onBlur={() => setLocalHover(false)}
+        onLoad={(event) => {
+          // The generic fallback is square and must not replace the source GIF's
+          // real aspect ratio while its first frame is being captured.
+          if (!gif || imageSource !== FALLBACK_GIF_POSTER) {
+            onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+          }
+        }}
         className={className}
+        style={style}
       />
     </>
   );

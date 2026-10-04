@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ThemePicker from "@/components/ThemePicker";
+import { CustomBadgeList } from "@/components/CustomBadgeList";
+import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
+import type { CustomBadge } from "@/lib/badges";
 
 export interface Channel {
   id: string;
@@ -47,7 +50,14 @@ interface ChannelSidebarProps {
     displayName: string;
     avatarUrl?: string | null;
     bannerUrl?: string | null;
+    bannerPositionX?: number | null;
+    bannerPositionY?: number | null;
+    bannerZoom?: number | null;
+    avatarPositionX?: number | null;
+    avatarPositionY?: number | null;
+    avatarZoom?: number | null;
     profileCardColor?: string | null;
+    badges?: CustomBadge[];
     bio?: string | null;
     customStatus?: string | null;
     presence: "online" | "idle" | "dnd" | "offline";
@@ -258,10 +268,10 @@ export function ChannelSidebar({
 
       {/* Painel do usuário */}
       <div ref={profileMenuRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
-        {profileMenuOpen && <div className={`profile-card-enter absolute bottom-[calc(100%+10px)] left-2 z-[150] w-[min(300px,80vw)] overflow-hidden rounded-2xl border border-white/10 shadow-2xl ${currentUser.profileCardColor ? "" : "bg-discord-bg-secondary"}`} style={{ backgroundColor: currentUser.profileCardColor || undefined }}>
-          <div className="relative h-24 bg-theme-gradient bg-cover bg-center" style={currentUser.bannerUrl ? { backgroundImage: `linear-gradient(90deg,rgba(0,0,0,.15),rgba(0,0,0,.15)),url("${currentUser.bannerUrl}")` } : undefined}/>
-          <div className="relative px-4 pb-4"><div className="-mt-9 flex items-end justify-between"><div className="h-[68px] w-[68px] overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{currentUser.avatarUrl ? <img src={currentUser.avatarUrl} alt="" className="h-full w-full object-cover"/> : <div className="grid h-full place-items-center text-xl font-bold text-white">{currentUser.displayName[0]?.toUpperCase()}</div>}</div><button onClick={() => { setProfileMenuOpen(false); onOpenSettings?.(); }} className="mb-1 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:brightness-125">Editar perfil</button></div>
-            <div className="mt-3"><p className="truncate font-bold text-discord-header-primary">{currentUser.displayName}</p><p className="truncate text-xs text-discord-text-muted">@{currentUser.username || currentUser.userId.slice(0, 8)}</p>{currentUser.customStatus && <p className="mt-2 rounded-lg bg-black/15 px-3 py-2 text-sm text-discord-text-normal">{currentUser.customStatus}</p>}{currentUser.bio && <p className="mt-2 line-clamp-3 text-xs leading-5 text-discord-text-muted">{currentUser.bio}</p>}</div>
+        {profileMenuOpen && <div className={`profile-card-enter absolute bottom-[calc(100%+10px)] left-2 z-[150] w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-[22px] border border-white/10 shadow-2xl ${currentUser.profileCardColor ? "" : "bg-discord-bg-secondary"}`} style={{ backgroundColor: currentUser.profileCardColor || undefined }}>
+          <ProfileBanner src={currentUser.bannerUrl} positionX={currentUser.bannerPositionX} positionY={currentUser.bannerPositionY} zoom={currentUser.bannerZoom} className="h-24" />
+          <div className="relative px-4 pb-4"><div className="-mt-9 flex items-end justify-between"><div className="relative h-[68px] w-[68px] shrink-0 overflow-hidden rounded-full border-4 border-discord-bg-secondary bg-discord-brand shadow-lg">{currentUser.avatarUrl ? <CroppedProfileImage src={currentUser.avatarUrl} alt="" className="rounded-full" positionX={currentUser.avatarPositionX} positionY={currentUser.avatarPositionY} zoom={currentUser.avatarZoom}/> : <div className="grid h-full place-items-center text-xl font-bold text-white">{currentUser.displayName[0]?.toUpperCase()}</div>}</div><button onClick={() => { setProfileMenuOpen(false); onOpenSettings?.(); }} className="mb-1 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:brightness-125">Editar perfil</button></div>
+            <div className="mt-3"><p className="truncate font-bold text-discord-header-primary">{currentUser.displayName}</p><div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><p className="truncate text-xs text-discord-text-muted">@{currentUser.username || currentUser.userId.slice(0, 8)}</p><CustomBadgeList badges={currentUser.badges} limit={5} size="small"/></div>{currentUser.customStatus && <p className="mt-2 rounded-lg bg-black/15 px-3 py-2 text-sm text-discord-text-normal">{currentUser.customStatus}</p>}{currentUser.bio && <p className="mt-2 line-clamp-3 text-xs leading-5 text-discord-text-muted">{currentUser.bio}</p>}</div>
             <div className="relative mt-4"><button onClick={() => setPresenceMenuOpen((value) => !value)} className="flex w-full items-center gap-3 rounded-lg bg-black/15 px-3 py-2.5 text-left transition hover:bg-discord-bg-modifier-hover"><Circle size={13} className="fill-current" style={{ color: presenceColor(currentUser.presence) }}/><span className="flex-1 text-sm text-discord-text-normal">{presenceLabel}</span><ChevronRight size={15} className="text-discord-text-muted"/></button>
               {presenceMenuOpen && <div className="absolute bottom-[calc(100%+8px)] left-0 z-[160] w-full rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl">{presenceOptions.map((option) => <button key={option.id} onClick={() => { onPresenceChange?.(option.id); setPresenceMenuOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover"><Circle size={11} className="fill-current" style={{ color: presenceColor(option.id) }}/>{option.label}{currentUser.presence === option.id && <Check size={14} className="ml-auto text-discord-brand"/>}</button>)}</div>}
             </div>
@@ -272,7 +282,7 @@ export function ChannelSidebar({
           <span className="absolute inset-0 overflow-hidden rounded-full">
             {currentUser.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={currentUser.avatarUrl} alt="" className="h-full w-full object-cover" />
+              <CroppedProfileImage src={currentUser.avatarUrl} alt="" className="rounded-full" positionX={currentUser.avatarPositionX} positionY={currentUser.avatarPositionY} zoom={currentUser.avatarZoom} />
             ) : (
               <span className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
                 {currentUser.displayName[0]?.toUpperCase()}

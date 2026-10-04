@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile } from "lucide-react";
+import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useDialogs } from "@/components/DialogProvider";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
+import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { ProfileCardPosition, ProfileCardUser } from "@/components/UserProfileCard";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
@@ -18,11 +19,12 @@ interface FriendHomeProps {
   onDirectMessageOpened?: () => void;
   unreadByUser?: Record<string, number>;
   onMarkDirectRead?: (userId: string) => void;
+  onOpenSettings?: () => void;
   onlineUserIds?: string[];
-  currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; banner_url?: string | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[]; status?: string | null };
+  currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[]; status?: string | null };
 }
 
-type Profile = { id: string; username: string; display_name: string | null; avatar_url: string | null; status: string | null; banner_url?: string | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[] };
+type Profile = { id: string; username: string; display_name: string | null; avatar_url: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; status: string | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[] };
 type Friendship = { id: string; sender_id: string; receiver_id: string; status: "pending" | "accepted"; sender?: Profile; receiver?: Profile };
 type ServerInvite = { id: string; sender_id: string; server_id: string; server_name: string; channel_id: string | null; status: "pending" | "accepted"; sender?: Profile };
 type DirectMessage = { id: string; sender_id: string; receiver_id: string; content: string; attachment_url: string | null; created_at: string };
@@ -39,7 +41,7 @@ function explainDatabaseError(error: { code?: string; message: string }, feature
   return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
 }
 
-export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onlineUserIds = [], currentUserProfile }: FriendHomeProps) {
+export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onlineUserIds = [], currentUserProfile }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [username, setUsername] = useState("");
@@ -74,7 +76,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   const loadFriends = useCallback(async () => {
     const [{ data, error }, { data: inviteRows }] = await Promise.all([
       supabase.from("friendships")
-      .select("id,sender_id,receiver_id,status,sender:profiles!friendships_sender_id_fkey(id,username,display_name,avatar_url,status,banner_url,bio,custom_status,pronouns,profile_card_color),receiver:profiles!friendships_receiver_id_fkey(id,username,display_name,avatar_url,status,banner_url,bio,custom_status,pronouns,profile_card_color)")
+      .select("id,sender_id,receiver_id,status,sender:profiles!friendships_sender_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color),receiver:profiles!friendships_receiver_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color)")
       .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
       .order("created_at", { ascending: false }),
       supabase.from("friend_server_invites")
@@ -112,7 +114,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`).order("created_at", { ascending: false }).limit(100);
     const ids = Array.from(new Set((data ?? []).map((row) => row.sender_id === currentUserId ? row.receiver_id : row.sender_id))).filter((id) => id !== currentUserId);
     if (!ids.length) { setRecentProfiles([]); return; }
-    const { data: profiles } = await supabase.from("profiles").select("id,username,display_name,avatar_url,status,banner_url,bio,custom_status,pronouns,profile_card_color").in("id", ids);
+    const { data: profiles } = await supabase.from("profiles").select("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color").in("id", ids);
     setRecentProfiles((profiles ?? []) as Profile[]);
   }, [currentUserId, supabase]);
 
@@ -132,7 +134,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       return;
     }
     let cancelled = false;
-    void supabase.from("profiles").select("id,username,display_name,avatar_url,status,banner_url,bio,custom_status,pronouns,profile_card_color").eq("id", openUserId).maybeSingle().then(({ data }) => {
+    void supabase.from("profiles").select("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color").eq("id", openUserId).maybeSingle().then(({ data }) => {
       if (!cancelled && data) { setSelectedFriend(data as Profile); onMarkDirectRead?.(data.id); }
       onDirectMessageOpened?.();
     });
@@ -168,10 +170,16 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }, [selectedFriend?.id]);
   useEffect(() => {
     const element = dmScrollRef.current;
-    if (element && dmWasAtBottom.current) {
-      element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+    const lastMessage = dmMessages[dmMessages.length - 1];
+    const sentByCurrentUser = lastMessage?.sender_id === currentUserId;
+    if (element && (dmWasAtBottom.current || sentByCurrentUser)) {
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth",
+      });
+      dmWasAtBottom.current = true;
     }
-  }, [dmMessages]);
+  }, [currentUserId, dmMessages]);
   useEffect(() => {
     if (!selectedFriend) return;
     const channel = supabase.channel(`sekai-dm:${currentUserId}:${selectedFriend.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "sekai_direct_messages" }, (event) => {
@@ -296,7 +304,13 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
         bio: profile.bio,
         customStatus: profile.custom_status,
         avatarUrl: profile.avatar_url,
+        avatarPositionX: profile.avatar_position_x,
+        avatarPositionY: profile.avatar_position_y,
+        avatarZoom: profile.avatar_zoom,
         bannerUrl: profile.banner_url,
+        bannerPositionX: profile.banner_position_x,
+        bannerPositionY: profile.banner_position_y,
+        bannerZoom: profile.banner_zoom,
         profileCardColor: profile.profile_card_color,
         badges: profile.badges,
         status,
@@ -312,7 +326,13 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       username: currentUserProfile?.username || "voce",
       display_name: currentUserProfile?.display_name || "Você",
       avatar_url: currentUserProfile?.avatar_url ?? null,
+      avatar_position_x: currentUserProfile?.avatar_position_x ?? 50,
+      avatar_position_y: currentUserProfile?.avatar_position_y ?? 50,
+      avatar_zoom: currentUserProfile?.avatar_zoom ?? 100,
       banner_url: currentUserProfile?.banner_url ?? null,
+      banner_position_x: currentUserProfile?.banner_position_x ?? 50,
+      banner_position_y: currentUserProfile?.banner_position_y ?? 50,
+      banner_zoom: currentUserProfile?.banner_zoom ?? 100,
       bio: currentUserProfile?.bio ?? null,
       custom_status: currentUserProfile?.custom_status ?? null,
       pronouns: currentUserProfile?.pronouns ?? null,
@@ -333,6 +353,14 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       <div className="mx-3 my-4 border-t border-black/20"/>
       <div className="flex items-center justify-between px-4 pb-2 text-[11px] font-bold uppercase tracking-wide text-discord-text-muted">Mensagens diretas <button title="Adicionar amigo" onClick={() => { setSelectedFriend(null); setTab("all"); }}><UserPlus size={15}/></button></div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2">{visibleConversations.map((profile) => <button key={profile.id} onClick={() => openConversation(profile)} className={`relative flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition ${selectedFriend?.id === profile.id ? "bg-discord-bg-modifier-hover" : "hover:bg-discord-bg-modifier-hover/60"}`}><FriendAvatar profile={profile} size="sm"/><span className="truncate text-sm font-medium text-discord-text-normal">{profile.display_name || profile.username}</span>{!!unreadByUser[profile.id] && <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 text-center text-[10px] font-bold text-white">{unreadByUser[profile.id]}</span>}</button>)}{!visibleConversations.length && <p className="px-3 py-5 text-xs text-discord-text-muted">{conversationSearch ? "Nenhuma conversa encontrada." : "Suas conversas diretas aparecerão aqui."}</p>}</div>
+      <div className="mx-3 border-t border-white/[0.07]" />
+      <footer className="flex h-[60px] shrink-0 items-center gap-2 bg-discord-bg-darkest px-2">
+        <button type="button" onClick={(event) => openMiniProfile(ownProfile(), event.currentTarget)} aria-label="Abrir seu perfil" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-discord-bg-modifier-hover">
+          <FriendAvatar profile={ownProfile()} size="sm" />
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-discord-header-primary">{currentUserProfile?.display_name || "Você"}</span><span className="block truncate text-xs text-discord-text-muted">{currentUserProfile?.custom_status || `@${currentUserProfile?.username || "voce"}`}</span></span>
+        </button>
+        <button type="button" onClick={onOpenSettings} title="Configurações de usuário" aria-label="Abrir configurações de usuário" className="rounded-md p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"><Settings size={18}/></button>
+      </footer>
     </aside>
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {selectedFriend && activeFriend ? <div key={activeFriend.id} className="server-view-enter relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -387,9 +415,9 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           {message && <p role="alert" className="mx-5 -mt-2 mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
         </section>
         {profilePanelOpen && <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(86vw,320px)] shrink-0 flex-col overflow-y-auto border-l border-black/20 bg-discord-bg-secondary shadow-2xl xl:static xl:z-auto xl:w-[320px] xl:shadow-none">
-          <div className="relative h-28 shrink-0 bg-discord-bg-dark" style={activeFriend.banner_url ? { backgroundImage: `url("${activeFriend.banner_url}")`, backgroundPosition: "center", backgroundSize: "cover" } : { backgroundColor: activeFriend.profile_card_color || "#202127" }}>
+          <ProfileBanner src={activeFriend.banner_url} positionX={activeFriend.banner_position_x} positionY={activeFriend.banner_position_y} zoom={activeFriend.banner_zoom} className="aspect-[3.125/1] w-full shrink-0" style={{ backgroundColor: activeFriend.profile_card_color || "#202127" }}>
             <button onClick={() => setProfilePanelOpen(false)} title="Fechar perfil" aria-label="Fechar perfil" className="absolute right-3 top-3 rounded-full bg-black/40 p-1.5 text-white/80 hover:bg-black/65 hover:text-white xl:hidden"><X size={17}/></button>
-          </div>
+          </ProfileBanner>
           <div className="relative flex-1 px-4 pb-5">
             <div className="-mt-10 mb-3 flex items-end justify-between">
               <FriendAvatar profile={activeFriend} size="profile" isHovered={hoveredDmProfileId === activeFriend.id}/>
@@ -457,7 +485,7 @@ function FriendAvatar({ profile, size = "md", showStatus = true, isHovered = fal
   const name = profile?.display_name || profile?.username || "Usuário";
   return <span className="relative inline-flex shrink-0 overflow-visible align-middle">
     <span className={`relative flex ${dimensions} items-center justify-center overflow-hidden rounded-full bg-discord-bg-dark font-semibold text-white`}>
-      {profile?.avatar_url ? <HoverGifImage src={profile.avatar_url} alt={`${name} avatar`} isHovered={isHovered} className="h-full w-full object-cover"/> : name[0]?.toUpperCase()}
+      {profile?.avatar_url ? <CroppedProfileImage src={profile.avatar_url} alt={`${name} avatar`} isHovered={isHovered} positionX={profile.avatar_position_x} positionY={profile.avatar_position_y} zoom={profile.avatar_zoom}/> : name[0]?.toUpperCase()}
     </span>
     {showStatus && profile?.status && <span role="img" aria-label={profile.status === "online" ? "Online" : profile.status === "idle" ? "Ausente" : profile.status === "dnd" ? "Não perturbe" : "Offline"} className={`absolute z-10 ${dotSize} rounded-full border-[3px] border-discord-bg-primary ${statusColor}`} style={{ bottom: -2, right: -2}}/>}
   </span>;
