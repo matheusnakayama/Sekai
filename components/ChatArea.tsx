@@ -43,12 +43,14 @@ interface ChatAreaProps {
   members?: MemberItem[];
   onAddFriend?: (userId: string) => void;
   onMessageMember?: (member: MemberItem) => void;
+  onQuickMessageMember?: (member: MemberItem, content: string) => Promise<void>;
   mentionRequest?: { displayName: string; nonce: number } | null;
   onMentionHandled?: (nonce: number) => void;
   canKickMembers?: boolean;
   onKickMember?: (member: MemberItem) => void;
   roles?: ServerRoleOption[];
   canManageRoles?: boolean;
+  canManageSelfRoles?: boolean;
   onToggleMemberRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
 }
 
@@ -71,12 +73,14 @@ export function ChatArea({
   members = [],
   onAddFriend,
   onMessageMember,
+  onQuickMessageMember,
   mentionRequest,
   onMentionHandled,
   canKickMembers = false,
   onKickMember,
   roles = [],
   canManageRoles = false,
+  canManageSelfRoles = false,
   onToggleMemberRole,
 }: ChatAreaProps) {
   const [draft, setDraft] = useState("");
@@ -278,10 +282,11 @@ export function ChatArea({
         currentUserId={currentUserId ?? ""}
         onClose={() => setSelectedProfile(null)}
         onMessage={onMessageMember ? () => onMessageMember(selectedProfile) : undefined}
+        onQuickMessage={onQuickMessageMember ? (content) => onQuickMessageMember(selectedProfile, content) : undefined}
         onAddFriend={onAddFriend ? () => onAddFriend(selectedProfile.id) : undefined}
         onKick={canKickMembers && onKickMember ? () => onKickMember(selectedProfile) : undefined}
         roles={roles}
-        canManageRoles={canManageRoles && selectedProfile.id !== currentUserId}
+        canManageRoles={canManageRoles && (selectedProfile.id !== currentUserId || canManageSelfRoles)}
         assignedRoleIds={selectedProfile.roleIds ?? []}
         onToggleRole={onToggleMemberRole ? (role, assigned) => onToggleMemberRole(selectedProfile, role, assigned) : undefined}
       />}

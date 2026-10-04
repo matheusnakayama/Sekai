@@ -2,10 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import type { RoleBadge } from "@/components/RoleBadgeList";
+import { RoleInsignia } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
-import type { ProfileCardPosition } from "@/components/UserProfileCard";
+import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
 import { UserPlus } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
@@ -28,8 +29,12 @@ export interface MemberItem {
   profileCardColor?: string | null;
   badges?: CustomBadge[];
   status: "online" | "idle" | "dnd" | "offline";
+  roleId?: string;
   roleName: string;
   roleColor?: string; // hex, ex: "#f23f43" para Admin
+  roleIconUrl?: string | null;
+  roleInsigniaUrl?: string | null;
+  rolePosition?: number;
   roleIds?: string[];
   assignedRoles?: RoleBadge[];
 }
@@ -52,8 +57,11 @@ interface MemberListProps {
   onChangeNickname?: (member: MemberItem) => void;
   onMentionMember?: (member: MemberItem) => void;
   onMessageMember?: (member: MemberItem) => void;
+  onQuickMessageMember?: (member: MemberItem, content: string) => Promise<void>;
+  immediateMutualServer?: MutualServer | null;
   roles?: ServerRoleOption[];
   canManageRoles?: boolean;
+  canManageSelfRoles?: boolean;
   onToggleRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
 }
 
@@ -64,7 +72,7 @@ const STATUS_CLASS: Record<MemberItem["status"], string> = {
   offline: "status-offline",
 };
 
-export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, roles = [], canManageRoles = false, onToggleRole }: MemberListProps) {
+export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; trigger: HTMLButtonElement } | null>(null);
@@ -83,18 +91,18 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
     event.stopPropagation();
     setContextMenu({ x: event.clientX, y: event.clientY, member, trigger });
   }
-  // Offline fica sempre por último; dentro dos online, agrupa por cargo
-  const online = members.filter((m) => m.status !== "offline");
-  const offline = members.filter((m) => m.status === "offline");
-
-  const groupsOnline = groupByRole(online);
+  // O Discord agrupa todos os membros pelo cargo mais alto, inclusive offline.
+  const groups = groupByRole(members);
 
   return (
     <>
     <div className="h-full w-60 overflow-y-auto bg-discord-bg-dark px-2 py-2">
-      {groupsOnline.map(({ roleName, members: roleMembers }) => (
-        <section key={roleName} className="mb-3">
-          <div className="flex items-center px-2 py-2">
+      {groups.map(({ id, roleName, roleColor, roleInsigniaUrl, members: roleMembers }) => (
+        <section key={id} className="mb-3">
+          <div className="flex min-w-0 items-center gap-1.5 px-2 py-2">
+            {roleName.toLocaleLowerCase() !== "@everyone" && roleName.toLocaleLowerCase() !== "everyone" && roleName !== "Membro" && (
+              <RoleInsignia role={{ id, name: roleName, color: roleColor, insigniaUrl: roleInsigniaUrl }} size="small" />
+            )}
             <p className="min-w-0 flex-1 truncate text-xs font-medium text-discord-text-muted">
               {roleName} — {roleMembers.length}
             </p>
@@ -107,18 +115,6 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         </section>
       ))}
 
-      {offline.length > 0 && (
-        <section className="mt-2">
-          <div className="flex items-center px-2 py-2">
-            <p className="text-xs font-medium text-discord-text-muted">Offline — {offline.length}</p>
-          </div>
-          <div className="space-y-0.5 opacity-55">
-            {offline.map((m) => (
-              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
-            ))}
-          </div>
-        </section>
-      )}
     </div>
       {selected && <UserProfileCard
         profile={selected}
@@ -126,10 +122,12 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         currentUserId={currentUserId}
         onClose={() => setSelected(null)}
         onMessage={onMessageMember ? () => onMessageMember(selected) : undefined}
+        onQuickMessage={onQuickMessageMember ? (content) => onQuickMessageMember(selected, content) : undefined}
         onAddFriend={() => onAddFriend(selected.id)}
         onKick={canKick && onKickMember ? () => onKickMember(selected) : undefined}
         roles={roles}
-        canManageRoles={canManageRoles && selected.id !== currentUserId}
+        canManageRoles={canManageRoles && (selected.id !== currentUserId || canManageSelfRoles)}
+        immediateMutualServer={immediateMutualServer}
         assignedRoleIds={selected.roleIds ?? []}
         onToggleRole={onToggleRole ? (role, assigned) => onToggleRole(selected, role, assigned) : undefined}
       />}
@@ -142,6 +140,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           y={contextMenu.y}
           roles={roles}
           canManageRoles={canManageRoles}
+          canManageSelfRoles={canManageSelfRoles}
           canManageNicknames={canManageNicknames}
           canTimeout={canTimeout}
           canKick={canKick}
@@ -162,21 +161,30 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
   );
 }
 
-function groupByRole(members: MemberItem[]): { roleName: string; members: MemberItem[] }[] {
-  const map = new Map<string, { roleName: string; members: MemberItem[] }>();
+function groupByRole(members: MemberItem[]): { id: string; roleName: string; roleColor?: string; roleIconUrl?: string | null; roleInsigniaUrl?: string | null; rolePosition: number; members: MemberItem[] }[] {
+  const map = new Map<string, { id: string; roleName: string; roleColor?: string; roleIconUrl?: string | null; roleInsigniaUrl?: string | null; rolePosition: number; members: MemberItem[] }>();
   for (const m of members) {
-    const group = map.get(m.roleName) ?? { roleName: m.roleName, members: [] };
+    const id = m.roleId ?? m.roleName;
+    const group = map.get(id) ?? {
+      id,
+      roleName: m.roleName,
+      roleColor: m.roleColor,
+      roleIconUrl: m.roleIconUrl,
+      roleInsigniaUrl: m.roleInsigniaUrl,
+      rolePosition: m.rolePosition ?? 0,
+      members: [],
+    };
     group.members.push(m);
-    map.set(m.roleName, group);
+    map.set(id, group);
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => b.rolePosition - a.rolePosition);
 }
 
 function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
   const [hovered, setHovered] = useState(false);
 
   return (
-    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover">
+    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover", member.status === "offline" && "opacity-45 hover:opacity-80")}>
       <div className="relative h-8 w-8 shrink-0">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
@@ -191,7 +199,9 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
       </div>
 
       <span className="flex min-w-0 flex-1 flex-col justify-center">
-        <span className="min-w-0 truncate text-sm font-medium leading-5" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
+        <span className="flex min-w-0 items-center gap-1.5 leading-5">
+          <span className="min-w-0 truncate text-sm font-medium" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
+        </span>
         {member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
       </span>
       {!isSelf && <UserPlus className="ml-auto h-4 w-4 shrink-0 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}

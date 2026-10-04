@@ -202,6 +202,16 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     setDmDraft("");
   }
 
+  async function sendQuickDirectMessage(profile: ProfileCardUser, content: string) {
+    if (profile.id === currentUserId) throw new Error("Não é possível enviar uma mensagem para a própria conta.");
+    const { error } = await supabase.from("sekai_direct_messages").insert({
+      sender_id: currentUserId,
+      receiver_id: profile.id,
+      content: content.trim(),
+    });
+    if (error) throw new Error(explainDatabaseError(error, "messages"));
+  }
+
   async function uploadDmImage(file?: File) {
     if (!file || !selectedFriend) return;
     if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) { setMessage("Escolha uma imagem de até 5 MB."); return; }
@@ -459,6 +469,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       position={miniProfile.position}
       currentUserId={currentUserId}
       onClose={() => setMiniProfile(null)}
+      onQuickMessage={(content) => sendQuickDirectMessage(miniProfile.profile, content)}
       onMessage={miniProfile.profile.id !== currentUserId && miniProfileContact ? () => openConversation(miniProfileContact) : undefined}
     />}
   </div>;

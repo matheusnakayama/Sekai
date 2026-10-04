@@ -21,6 +21,28 @@ import { FriendsHome } from "@/components/FriendsHome";
 import type { Participant } from "@/lib/types";
 
 type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void };
+type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
+
+function channelCacheKey(userId: string, serverId: string) {
+  return `${userId}:${serverId}`;
+}
+
+function readCachedChannels(userId: string, serverId: string): Channel[] | null {
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(`sekai-channels:${userId}:${serverId}`) || "null");
+    if (!Array.isArray(cached)) return null;
+    return cached.filter((channel: any) =>
+      channel && typeof channel.id === "string" && typeof channel.name === "string" &&
+      (channel.type === "text" || channel.type === "voice")
+    );
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedChannels(userId: string, serverId: string, channels: Channel[]) {
+  try { window.localStorage.setItem(`sekai-channels:${userId}:${serverId}`, JSON.stringify(channels)); } catch { /* Cache local é opcional. */ }
+}
 
 function LoginScreen() {
   const supabase = createClient();
@@ -94,6 +116,10 @@ export default function Home() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [servers, setServers] = useState<ServerItem[]>([]);
+  const serversRef = useRef<ServerItem[]>([]);
+  const serverListRequestSequence = useRef(0);
+  const serverChannelsCache = useRef(new Map<string, Channel[]>());
+  const serverMessageSettingsCache = useRef(new Map<string, ServerMessageSettings>());
   const [channels, setChannels] = useState<Channel[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [mentionRequest, setMentionRequest] = useState<{ displayName: string; nonce: number } | null>(null);
@@ -101,6 +127,7 @@ export default function Home() {
   const [serverRoles, setServerRoles] = useState<ServerRoleOption[]>([]);
   const [myPermissions, setMyPermissions] = useState<bigint>(0n);
   const [isOwner, setIsOwner] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [activeServerId, setActiveServerId] = useState<string>("");
   const [activeChannelId, setActiveChannelId] = useState<string>("");
   const [activeChannelType, setActiveChannelType] = useState<"text" | "voice">("text");
@@ -217,6 +244,17 @@ export default function Home() {
   }, [supabase]);
 
   useEffect(() => {
+    let cancelled = false;
+    setIsPlatformAdmin(false);
+    if (!currentUserId) return () => { cancelled = true; };
+    void supabase.rpc("is_sekai_admin").then(({ data, error }) => {
+      if (cancelled) return;
+      setIsPlatformAdmin(!error && data === true);
+    });
+    return () => { cancelled = true; };
+  }, [currentUserId, supabase]);
+
+  useEffect(() => {
     if (!currentUserId) {
       setOnlineUserIds([]);
       return;
@@ -256,21 +294,120 @@ export default function Home() {
 
   async function loadServers() {
     if (!currentUserId) return [];
-    const { data } = await supabase
-      .from("members")
-      .select("servers(id, name, icon_url)")
-      .eq("user_id", currentUserId);
+    const requestSequence = ++serverListRequestSequence.current;
 
-    const list = (data ?? [])
-      .map((row: any) => row.servers)
-      .filter(Boolean)
-      .map((s: any) => ({ id: s.id, name: s.name, iconUrl: s.icon_url }));
+    if (isPlatformAdmin) {
+      let rows: any[] | null = null;
+      let lastError: { message: string } | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const result = await supabase.from("servers").select("id, name, icon_url").order("name");
+        if (!result.error) {
+          rows = result.data ?? [];
+          break;
+        }
+        lastError = result.error;
+        if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 180 * (attempt + 1)));
+      }
+      if (!rows) {
+        console.error("Não foi possível carregar os servidores administráveis:", lastError?.message);
+        return serversRef.current;
+      }
+      const list = rows.map((server: any) => ({ id: server.id, name: server.name, iconUrl: server.icon_url }));
+      if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
+      serversRef.current = list;
+      setServers(list);
+      try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(list)); } catch { /* Cache local é apenas uma melhoria de abertura. */ }
+      return list;
+    }
+
+    let rows: any[] | null = null;
+    let lastError: { message: string } | null = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await supabase
+        .from("members")
+        .select("server_id, servers(id, name, icon_url)")
+        .eq("user_id", currentUserId);
+      if (!result.error) {
+        rows = result.data ?? [];
+        break;
+      }
+      lastError = result.error;
+      if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 180 * (attempt + 1)));
+    }
+
+    if (!rows) {
+      console.error("Não foi possível carregar os servidores do usuário:", lastError?.message);
+      return serversRef.current;
+    }
+
+    // Depois de resgatar um convite, a escrita pode aparecer alguns instantes
+    // depois em uma leitura concorrente. Preserve a lista em tela e tente ler
+    // novamente antes de interpretar uma resposta vazia como perda de acesso.
+    if (rows.length === 0 && serversRef.current.length > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
+      const retry = await supabase
+        .from("members")
+        .select("server_id, servers(id, name, icon_url)")
+        .eq("user_id", currentUserId);
+      if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
+      if (retry.error) {
+        console.error("Não foi possível confirmar a lista de servidores:", retry.error.message);
+        return serversRef.current;
+      }
+      if (retry.data?.length) rows = retry.data;
+      else return serversRef.current;
+    }
+
+    let list = rows.flatMap((row: any) => {
+      const joinedServers = Array.isArray(row.servers) ? row.servers : row.servers ? [row.servers] : [];
+      return joinedServers.filter((server: any) => server?.id).map((server: any) => ({
+        id: server.id,
+        name: server.name,
+        iconUrl: server.icon_url,
+      }));
+    });
+    const memberServerIds = [...new Set(rows.map((row: any) => row.server_id).filter(Boolean))] as string[];
+    if (memberServerIds.length && list.length === 0) {
+      const fallback = await supabase.from("servers").select("id, name, icon_url").in("id", memberServerIds);
+      if (fallback.error) {
+        console.error("Não foi possível resolver os servidores associados:", fallback.error.message);
+        return serversRef.current;
+      }
+      list = (fallback.data ?? []).map((server: any) => ({ id: server.id, name: server.name, iconUrl: server.icon_url }));
+    }
+
+    if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
+    serversRef.current = list;
     setServers(list);
+    try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(list)); } catch { /* Cache local é apenas uma melhoria de abertura. */ }
     return list;
   }
 
   useEffect(() => {
+    if (!currentUserId || !isPlatformAdmin) return;
+    void loadServers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId, isPlatformAdmin]);
+
+  useEffect(() => {
     if (!currentUserId) return;
+
+    let cachedServers: ServerItem[] | null = null;
+    try {
+      const value = JSON.parse(window.localStorage.getItem(`sekai-server-list:${currentUserId}`) || "null");
+      if (Array.isArray(value)) {
+        cachedServers = value.filter((server: any) => server && typeof server.id === "string" && typeof server.name === "string");
+      }
+    } catch { /* Um cache inválido é ignorado e refeito a partir do banco. */ }
+    if (cachedServers) {
+      serversRef.current = cachedServers;
+      setServers(cachedServers);
+    } else {
+      serversRef.current = [];
+      setServers([]);
+    }
+
     async function openRequestedChannelOrDefaultServer() {
       const list = await loadServers();
       const params = new URLSearchParams(window.location.search);
@@ -279,6 +416,17 @@ export default function Home() {
         const { data: joinedServerId, error } = await supabase.rpc("redeem_invite", { p_code: inviteCode });
         if (!error && joinedServerId) {
           const requestedChannelId = params.get("voiceChannel");
+          const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
+          if (joinedServer) {
+            const optimisticList = [...serversRef.current.filter((server) => server.id !== joinedServer.id), {
+              id: joinedServer.id,
+              name: joinedServer.name,
+              iconUrl: joinedServer.icon_url,
+            }];
+            serversRef.current = optimisticList;
+            setServers(optimisticList);
+            try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(optimisticList)); } catch { /* Cache local opcional. */ }
+          }
           setActiveServerId(joinedServerId as string);
           if (requestedChannelId) setInviteVoiceChannelId(requestedChannelId);
           await loadServers();
@@ -311,29 +459,50 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
+  useEffect(() => {
+    if (!authChecked || currentUserId) return;
+    serverListRequestSequence.current += 1;
+    serversRef.current = [];
+    serverChannelsCache.current.clear();
+    serverMessageSettingsCache.current.clear();
+    setServers([]);
+    setActiveServerId("");
+    setActiveChannelId("");
+    setChannels([]);
+    setMembers([]);
+  }, [authChecked, currentUserId]);
+
   async function loadChannelsAndMembers() {
     const serverId = activeServerId;
-    if (!serverId) return;
+    if (!serverId || !currentUserId) return;
     const sequence = ++serverLoadSequence.current;
 
-    // Carrega em paralelo o que não depende de outras consultas para a troca de servidor responder rápido.
-    const [serverResult, categoryResult, channelResult, memberResult] = await Promise.all([
-      supabase.from("servers").select("owner_id").eq("id", serverId).single(),
-      supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      supabase.from("channels").select("id, name, type, category_id, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profile_card_color, status)").eq("server_id", serverId),
-    ]);
+    // Libera os canais assim que sua própria consulta termina. Categoria,
+    // proprietário e membros não seguram mais a navegação.
+    const channelResult = await supabase
+      .from("channels")
+      .select("id, name, type, category_id, position")
+      .eq("server_id", serverId)
+      .order("position");
     if (sequence !== serverLoadSequence.current) return;
+    if (channelResult.error) {
+      console.error("Não foi possível carregar os canais do servidor:", channelResult.error.message);
+      setIsServerLoading(false);
+      return;
+    }
 
-    const categoryNameById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, category.name]));
+    const cachedKey = channelCacheKey(currentUserId, serverId);
+    const cachedChannels = serverChannelsCache.current.get(cachedKey) ?? readCachedChannels(currentUserId, serverId) ?? [];
+    const cachedCategoryNames = new Map<string | null, string>(cachedChannels.map((channel): [string | null, string] => [channel.categoryId, channel.categoryName]));
     const mappedChannels: Channel[] = (channelResult.data ?? []).map((channel: any) => ({
       id: channel.id,
       name: channel.name,
       type: channel.type,
       categoryId: channel.category_id,
-      categoryName: categoryNameById.get(channel.category_id) ?? "SEM CATEGORIA",
+      categoryName: cachedCategoryNames.get(channel.category_id) ?? "SEM CATEGORIA",
     }));
-    setIsOwner(serverResult.data?.owner_id === currentUserId);
+    serverChannelsCache.current.set(cachedKey, mappedChannels);
+    writeCachedChannels(currentUserId, serverId, mappedChannels);
     setChannels(mappedChannels);
 
     const invitedChannel = inviteVoiceChannelId
@@ -351,18 +520,43 @@ export default function Home() {
     }
     setIsServerLoading(false);
 
+    const [serverResult, categoryResult, memberResult] = await Promise.all([
+      supabase.from("servers").select("owner_id").eq("id", serverId).single(),
+      supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
+      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, profile_card_color, status)").eq("server_id", serverId),
+    ]);
+    if (sequence !== serverLoadSequence.current) return;
+    setIsOwner(serverResult.data?.owner_id === currentUserId);
+
+    if (!categoryResult.error) {
+      const categoryNameById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, category.name]));
+      const categorizedChannels = mappedChannels.map((channel) => ({
+        ...channel,
+        categoryName: channel.categoryId ? categoryNameById.get(channel.categoryId) ?? "SEM CATEGORIA" : "SEM CATEGORIA",
+      }));
+      serverChannelsCache.current.set(cachedKey, categorizedChannels);
+      writeCachedChannels(currentUserId, serverId, categorizedChannels);
+      setChannels((current) => current.map((channel) => {
+        const updated = categorizedChannels.find((item) => item.id === channel.id);
+        return updated ?? channel;
+      }));
+    }
+
+    if (memberResult.error) {
+      console.error("Não foi possível carregar os membros do servidor:", memberResult.error.message);
+      return;
+    }
     const memberRows = memberResult.data ?? [];
     const memberUserIds = [...new Set(memberRows.map((member: any) => member.user_id).filter(Boolean))];
-    const [badgeResult, memberRoleResult, allRoleResult] = await Promise.all([
-      memberUserIds.length
+    const badgeRequest = memberUserIds.length
         ? supabase.from("user_badges").select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds)
-        : Promise.resolve({ data: [] }),
-      supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, position, permissions)").eq("server_id", serverId),
-      supabase.from("roles").select("id,name,color,icon_url,position,is_default").eq("server_id", serverId).order("position", { ascending: false }),
+        : Promise.resolve({ data: [], error: null });
+    const [memberRoleResult, allRoleResult] = await Promise.all([
+      supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, insignia_url, position, permissions, is_default)").eq("server_id", serverId),
+      supabase.from("roles").select("id,name,color,icon_url,insignia_url,position,is_default").eq("server_id", serverId).order("position", { ascending: false }),
     ]);
     if (sequence !== serverLoadSequence.current) return;
 
-    const badgesByUser = mapUserBadgeRows(badgeResult.data);
     const memberRoleRows = memberRoleResult.data;
     const allServerRoles = allRoleResult.data;
     setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default).map((role: any) => ({
@@ -370,20 +564,24 @@ export default function Home() {
       name: role.name,
       color: role.color,
       iconUrl: role.icon_url,
+      insigniaUrl: role.insignia_url,
       position: role.position,
     })));
 
     const rolesByUser = new Map<string, any[]>();
     (memberRoleRows ?? []).forEach((row: any) => {
       const list = rolesByUser.get(row.user_id) ?? [];
-      if (row.roles) list.push(row.roles);
+      const role = Array.isArray(row.roles) ? row.roles[0] : row.roles;
+      if (role) list.push(role);
       rolesByUser.set(row.user_id, list);
     });
 
-    const list: MemberItem[] = (memberRows ?? []).map((m: any) => {
+    const existingBadgesByUser = new Map<string, CustomBadge[]>(members.map((member): [string, CustomBadge[]] => [member.id, member.badges ?? []]));
+    const list: MemberItem[] = memberRows.map((m: any) => {
       const roles = rolesByUser.get(m.user_id) ?? [];
       const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
-      const topRole = sortedRoles[0];
+      const visibleRoles = sortedRoles.filter((role) => !role.is_default);
+      const topRole = visibleRoles[0] ?? sortedRoles[0];
       return {
         id: m.user_id,
         displayName: m.nickname || m.profiles?.display_name || m.profiles?.username || "Usuário",
@@ -400,16 +598,21 @@ export default function Home() {
         bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
         bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
-        badges: badgesByUser.get(m.user_id) ?? [],
+        badges: existingBadgesByUser.get(m.user_id) ?? [],
         status: m.profiles?.status ?? "offline",
+        roleId: topRole?.id,
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
-        roleIds: roles.map((role) => role.id),
-        assignedRoles: sortedRoles.map((role) => ({
+        roleIconUrl: topRole?.icon_url,
+        roleInsigniaUrl: topRole?.insignia_url,
+        rolePosition: topRole?.position ?? 0,
+        roleIds: visibleRoles.map((role) => role.id),
+        assignedRoles: visibleRoles.map((role) => ({
           id: role.id,
           name: role.name,
           color: role.color,
           iconUrl: role.icon_url,
+          insigniaUrl: role.insignia_url,
         })),
       };
     });
@@ -417,16 +620,26 @@ export default function Home() {
 
     const myRoles = rolesByUser.get(currentUserId ?? "") ?? [];
     setMyPermissions(aggregateRolePermissions(myRoles.map((r) => r.permissions)));
+
+    const badgeResult = await badgeRequest;
+    if (sequence !== serverLoadSequence.current || badgeResult.error) return;
+    const badgesByUser = mapUserBadgeRows(badgeResult.data);
+    setMembers((current) => current.map((member) => ({ ...member, badges: badgesByUser.get(member.id) ?? [] })));
   }
 
   function handleSelectServer(serverId: string) {
     if (serverId === activeServerId) return;
+    const cachedChannels = serverId && currentUserId
+      ? serverChannelsCache.current.get(channelCacheKey(currentUserId, serverId)) ?? readCachedChannels(currentUserId, serverId) ?? undefined
+      : undefined;
+    if (serverId && currentUserId && cachedChannels) serverChannelsCache.current.set(channelCacheKey(currentUserId, serverId), cachedChannels);
     serverLoadSequence.current += 1;
-    setIsServerLoading(Boolean(serverId));
+    setIsServerLoading(Boolean(serverId && !cachedChannels));
     setActiveServerId(serverId);
-    setActiveChannelId("");
-    setActiveChannelType("text");
-    setChannels([]);
+    const firstCachedChannel = cachedChannels?.[0];
+    setActiveChannelId(firstCachedChannel?.id ?? "");
+    setActiveChannelType(firstCachedChannel?.type ?? "text");
+    setChannels(cachedChannels ?? []);
     setMembers([]);
     setServerRoles([]);
     setIsOwner(false);
@@ -434,11 +647,30 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (activeServerId) setIsServerLoading(true);
-    else setIsServerLoading(false);
+    const cachedChannels = activeServerId && currentUserId
+      ? serverChannelsCache.current.get(channelCacheKey(currentUserId, activeServerId)) ?? readCachedChannels(currentUserId, activeServerId) ?? undefined
+      : undefined;
+    if (activeServerId && cachedChannels) {
+      serverChannelsCache.current.set(channelCacheKey(currentUserId ?? "", activeServerId), cachedChannels);
+      setChannels(cachedChannels);
+      const currentChannel = cachedChannels.find((channel) => channel.id === activeChannelId) ?? cachedChannels[0];
+      setActiveChannelId(currentChannel?.id ?? "");
+      setActiveChannelType(currentChannel?.type ?? "text");
+    }
+    setIsServerLoading(Boolean(activeServerId && !cachedChannels));
     void loadChannelsAndMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeServerId, currentUserId]);
+  }, [activeServerId, currentUserId, isPlatformAdmin]);
+
+  useEffect(() => {
+    if (!activeServerId) return;
+    let cancelled = false;
+    const serverId = activeServerId;
+    void supabase.from("server_preferences").select("settings").eq("server_id", serverId).maybeSingle().then(({ data, error }) => {
+      if (!cancelled && !error) serverMessageSettingsCache.current.set(serverId, (data?.settings ?? {}) as ServerMessageSettings);
+    });
+    return () => { cancelled = true; };
+  }, [activeServerId, supabase]);
 
   useEffect(() => {
     if (!activeServerId || !currentUserId) return;
@@ -482,7 +714,7 @@ export default function Home() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [activeServerId, channels, currentUserId, supabase]);
 
-  const canManageChannels = isOwner || hasPermission(myPermissions, "MANAGE_CHANNELS");
+  const canManageChannels = isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_CHANNELS");
 
   const handleVoiceParticipantsChange = useCallback((participants: Participant[]) => {
     setVoiceParticipants(participants);
@@ -621,7 +853,7 @@ export default function Home() {
   }
 
   async function handleToggleMemberRole(member: MemberItem, role: ServerRoleOption, assigned: boolean) {
-    if (!activeServerId || member.id === currentUserId) return;
+    if (!activeServerId) return;
     const { error } = await supabase.rpc("assign_server_member_role", {
       p_server_id: activeServerId,
       p_user_id: member.id,
@@ -632,7 +864,7 @@ export default function Home() {
       await dialogs.notify({
         title: "Não foi possível alterar o cargo",
         message: error.message.includes("assign_server_member_role")
-          ? "Aplique db/server_member_actions_audit.sql no SQL Editor do Supabase e tente novamente."
+          ? "Aplique db/platform_admin_server_management.sql no SQL Editor do Supabase depois das migrações indicadas no início do arquivo e tente novamente."
           : error.message,
       });
       return;
@@ -640,9 +872,22 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
+  async function handleQuickDirectMessage(member: MemberItem, content: string) {
+    if (!currentUserId || member.id === currentUserId) throw new Error("Não é possível enviar uma mensagem para a própria conta.");
+    const { error } = await supabase.from("sekai_direct_messages").insert({
+      sender_id: currentUserId,
+      receiver_id: member.id,
+      content: content.trim(),
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  const currentMember = members.find((m) => m.id === currentUserId);
   const { messages, loading: isChannelLoading, sendMessage, toggleReaction, editMessage, deleteMessage } = useChannelMessages(
     activeChannelType === "text" ? activeChannelId : "",
-    currentUserId ?? ""
+    currentUserId ?? "",
+    currentMember?.displayName ?? myProfile?.displayName ?? "Você",
+    currentMember?.avatarUrl ?? myProfile?.avatarUrl ?? null,
   );
 
   async function joinVoiceChannel(channel: Channel) {
@@ -738,6 +983,19 @@ export default function Home() {
 
     const { data: serverId, error } = await supabase.rpc("redeem_invite", { p_code: code });
     if (error) throw new Error(error.message);
+    if (serverId && currentUserId) {
+      const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", serverId).maybeSingle();
+      if (joinedServer) {
+        const optimisticList = [...serversRef.current.filter((server) => server.id !== joinedServer.id), {
+          id: joinedServer.id,
+          name: joinedServer.name,
+          iconUrl: joinedServer.icon_url,
+        }];
+        serversRef.current = optimisticList;
+        setServers(optimisticList);
+        try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(optimisticList)); } catch { /* Cache local opcional. */ }
+      }
+    }
     await loadServers();
     if (serverId) setActiveServerId(serverId as string);
   }
@@ -794,8 +1052,9 @@ export default function Home() {
     }
     try {
       if (activeServerId && content) {
-        const { data: preferenceRow } = await supabase.from("server_preferences").select("settings").eq("server_id", activeServerId).maybeSingle();
-        const settings = (preferenceRow?.settings ?? {}) as { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
+        // Preferências são carregadas ao entrar no servidor. O banco continua
+        // sendo a validação final para mensagens e modo lento via RLS.
+        const settings = serverMessageSettingsCache.current.get(activeServerId) ?? {};
         if (settings.autoModEnabled) {
           const mentionLimit = Number(settings.mentionLimit ?? 0);
           const mentions = (content.match(/@/g) ?? []).length;
@@ -810,9 +1069,9 @@ export default function Home() {
         }
         const slowmodeSeconds = Math.max(0, Number(settings.slowmodeSeconds ?? 0));
         if (slowmodeSeconds > 0) {
-          const { data: recent } = await supabase.from("messages").select("created_at").eq("channel_id", activeChannelId).eq("author_id", currentUserId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-          if (recent?.created_at) {
-            const remaining = Math.ceil(slowmodeSeconds - (Date.now() - new Date(recent.created_at).getTime()) / 1000);
+          const recent = [...messages].reverse().find((message) => message.authorId === currentUserId);
+          if (recent?.createdAt) {
+            const remaining = Math.ceil(slowmodeSeconds - (Date.now() - new Date(recent.createdAt).getTime()) / 1000);
             if (remaining > 0) { await dialogs.notify({ title: "Modo lento", message: `Aguarde ${remaining} segundo(s) antes de enviar outra mensagem.` }); return; }
           }
         }
@@ -833,7 +1092,6 @@ export default function Home() {
   }
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
-  const currentMember = members.find((m) => m.id === currentUserId);
 
   if (!authChecked) return null;
   if (!currentUserId) return <LoginScreen />;
@@ -887,7 +1145,7 @@ export default function Home() {
         currentUser={{
           userId: currentUserId,
           username: myProfile?.username,
-          displayName: currentMember?.displayName ?? "Você",
+          displayName: currentMember?.displayName ?? myProfile?.displayName ?? "Você",
           avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl,
           avatarPositionX: currentMember?.avatarPositionX ?? myProfile?.avatarPositionX ?? 50,
           avatarPositionY: currentMember?.avatarPositionY ?? myProfile?.avatarPositionY ?? 50,
@@ -946,19 +1204,29 @@ export default function Home() {
           serverId={activeServerId}
           serverName={servers.find((s) => s.id === activeServerId)?.name ?? ""}
           currentUserId={currentUserId ?? ""}
-          isOwner={isOwner}
+          isOwner={isOwner || isPlatformAdmin}
           perms={{
-            manageGuild: hasPermission(myPermissions, "MANAGE_GUILD"),
-            manageRoles: hasPermission(myPermissions, "MANAGE_ROLES"),
-            manageChannels: hasPermission(myPermissions, "MANAGE_CHANNELS"),
-            createInvite: hasPermission(myPermissions, "CREATE_INSTANT_INVITE"),
-            kick: hasPermission(myPermissions, "KICK_MEMBERS"),
-            ban: hasPermission(myPermissions, "BAN_MEMBERS"),
-            viewAudit: hasPermission(myPermissions, "VIEW_AUDIT_LOG"),
+            manageGuild: isPlatformAdmin || hasPermission(myPermissions, "MANAGE_GUILD"),
+            manageRoles: isPlatformAdmin || hasPermission(myPermissions, "MANAGE_ROLES"),
+            manageChannels: isPlatformAdmin || hasPermission(myPermissions, "MANAGE_CHANNELS"),
+            createInvite: isPlatformAdmin || hasPermission(myPermissions, "CREATE_INSTANT_INVITE"),
+            kick: isPlatformAdmin || hasPermission(myPermissions, "KICK_MEMBERS"),
+            ban: isPlatformAdmin || hasPermission(myPermissions, "BAN_MEMBERS"),
+            viewAudit: isPlatformAdmin || hasPermission(myPermissions, "VIEW_AUDIT_LOG"),
           }}
           onClose={() => setShowServerSettings(false)}
           onDeleted={() => {
             setShowServerSettings(false);
+            if (currentUserId) {
+              serverChannelsCache.current.delete(channelCacheKey(currentUserId, activeServerId));
+              try { window.localStorage.removeItem(`sekai-channels:${currentUserId}:${activeServerId}`); } catch { /* Cache local opcional. */ }
+            }
+            const remainingServers = serversRef.current.filter((server) => server.id !== activeServerId);
+            serversRef.current = remainingServers;
+            setServers(remainingServers);
+            if (currentUserId) {
+              try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(remainingServers)); } catch { /* Cache local opcional. */ }
+            }
             setActiveServerId("");
             setActiveChannelId("");
             setChannels([]);
@@ -968,6 +1236,10 @@ export default function Home() {
           onChanged={() => {
             loadServers();
             loadChannelsAndMembers();
+            serverMessageSettingsCache.current.delete(activeServerId);
+            void supabase.from("server_preferences").select("settings").eq("server_id", activeServerId).maybeSingle().then(({ data, error }) => {
+              if (!error) serverMessageSettingsCache.current.set(activeServerId, (data?.settings ?? {}) as ServerMessageSettings);
+            });
           }}
         />
       )}
@@ -1059,16 +1331,18 @@ export default function Home() {
           currentUserId={currentUserId}
           onEditMessage={editMessage}
           onDeleteMessage={deleteMessage}
-          canManageMessages={isOwner || hasPermission(myPermissions, "MANAGE_MESSAGES")}
+          canManageMessages={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_MESSAGES")}
           members={members}
           onAddFriend={handleAddFriend}
           onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+          onQuickMessageMember={handleQuickDirectMessage}
           mentionRequest={mentionRequest}
           onMentionHandled={(nonce) => setMentionRequest((current) => current?.nonce === nonce ? null : current)}
-          canKickMembers={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
+          canKickMembers={isOwner || isPlatformAdmin || hasPermission(myPermissions, "KICK_MEMBERS")}
           onKickMember={handleKickMember}
           roles={serverRoles}
-          canManageRoles={isOwner || hasPermission(myPermissions, "MANAGE_ROLES")}
+          canManageRoles={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_ROLES")}
+          canManageSelfRoles={isOwner || isPlatformAdmin}
           onToggleMemberRole={handleToggleMemberRole}
         />
       )}
@@ -1077,18 +1351,21 @@ export default function Home() {
         members={members}
         currentUserId={currentUserId}
         onAddFriend={handleAddFriend}
-        canKick={isOwner || hasPermission(myPermissions, "KICK_MEMBERS")}
-        canBan={isOwner || hasPermission(myPermissions, "BAN_MEMBERS")}
-        canTimeout={isOwner || hasPermission(myPermissions, "MODERATE_MEMBERS") || hasPermission(myPermissions, "MUTE_MEMBERS")}
-        canManageNicknames={isOwner || hasPermission(myPermissions, "MANAGE_NICKNAMES")}
+        canKick={isOwner || isPlatformAdmin || hasPermission(myPermissions, "KICK_MEMBERS")}
+        canBan={isOwner || isPlatformAdmin || hasPermission(myPermissions, "BAN_MEMBERS")}
+        canTimeout={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MODERATE_MEMBERS") || hasPermission(myPermissions, "MUTE_MEMBERS")}
+        canManageNicknames={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_NICKNAMES")}
         onKickMember={handleKickMember}
         onBanMember={handleBanMember}
         onTimeoutMember={handleTimeoutMember}
         onChangeNickname={handleChangeMemberNickname}
         onMentionMember={handleMentionMember}
         onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+        onQuickMessageMember={handleQuickDirectMessage}
+        immediateMutualServer={servers.find((server) => server.id === activeServerId) ?? null}
         roles={serverRoles}
-        canManageRoles={isOwner || hasPermission(myPermissions, "MANAGE_ROLES")}
+        canManageRoles={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_ROLES")}
+        canManageSelfRoles={isOwner || isPlatformAdmin}
         onToggleRole={handleToggleMemberRole}
       />}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">

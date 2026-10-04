@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ChatMessage } from "@/components/ChatArea";
 
@@ -20,11 +20,18 @@ interface RawMessageRow {
  * 2) Escutar novas mensagens/reações via WebSocket (Supabase Realtime)
  * 3) Expor sendMessage() e toggleReaction(), que respeitam o RLS do banco
  */
-export function useChannelMessages(channelId: string, currentUserId: string) {
+export function useChannelMessages(
+  channelId: string,
+  currentUserId: string,
+  currentUserName = "Você",
+  currentUserAvatarUrl: string | null = null,
+) {
   const supabase = createClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadedChannelId, setLoadedChannelId] = useState("");
+  const activeChannelIdRef = useRef(channelId);
+  activeChannelIdRef.current = channelId;
 
   const mapRow = useCallback(
     (row: RawMessageRow): ChatMessage => ({
@@ -85,7 +92,11 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
         msg.reactions = Array.from(grouped.entries()).map(([emoji, v]) => ({ emoji, ...v }));
       }
 
-      setMessages(mapped);
+      setMessages((previous) => {
+        const loadedIds = new Set(mapped.map((message) => message.id));
+        const arrivedWhileLoading = previous.filter((message) => !loadedIds.has(message.id));
+        return [...mapped, ...arrivedWhileLoading].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      });
       setLoading(false);
       setLoadedChannelId(channelId);
     }
@@ -99,6 +110,7 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
   // Assina eventos em tempo real (WebSocket) para o canal atual
   useEffect(() => {
     if (!channelId) return;
+    let active = true;
 
     const channel = supabase
       .channel(`room:${channelId}`)
@@ -107,12 +119,47 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
         { event: "INSERT", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
         async (payload) => {
           const row = payload.new as RawMessageRow;
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("display_name, username, avatar_url")
-            .eq("id", row.author_id)
-            .single();
-          setMessages((prev) => [...prev, mapRow({ ...row, profiles: profile ?? undefined })]);
+          const ownProfile = row.author_id === currentUserId
+            ? { display_name: currentUserName, username: currentUserName, avatar_url: currentUserAvatarUrl }
+            : null;
+          if (!active || activeChannelIdRef.current !== channelId) return;
+
+          // Insira primeiro para o Realtime não esperar outra ida ao banco só
+          // para resolver o nome/avatar. O perfil de outras pessoas é
+          // preenchido em segundo plano quando a consulta terminar.
+          const incoming = mapRow({ ...row, profiles: ownProfile ?? undefined });
+          setMessages((previous) => {
+            if (previous.some((message) => message.id === incoming.id)) return previous;
+            if (incoming.authorId === currentUserId) {
+              const pendingIndex = previous.findIndex((message) =>
+                message.id.startsWith("pending:") &&
+                message.authorId === incoming.authorId &&
+                message.content === incoming.content &&
+                message.attachmentUrl === incoming.attachmentUrl
+              );
+              if (pendingIndex >= 0) {
+                const next = [...previous];
+                next[pendingIndex] = incoming;
+                return next.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+              }
+            }
+            return [...previous, incoming].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+          });
+          if (!ownProfile) {
+            void supabase
+              .from("profiles")
+              .select("display_name, username, avatar_url")
+              .eq("id", row.author_id)
+              .maybeSingle()
+              .then(({ data: profile }) => {
+                if (!active || activeChannelIdRef.current !== channelId || !profile) return;
+                setMessages((previous) => previous.map((message) => message.id === row.id ? {
+                  ...message,
+                  authorName: profile.display_name || profile.username || message.authorName,
+                  authorAvatarUrl: profile.avatar_url,
+                } : message));
+              });
+          }
         }
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` }, (payload) => {
@@ -147,23 +194,57 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      active = false;
+      void supabase.removeChannel(channel);
     };
-  }, [channelId, currentUserId, supabase, mapRow]);
+  }, [channelId, currentUserId, currentUserName, currentUserAvatarUrl, supabase, mapRow]);
 
   const sendMessage = useCallback(
     async (content: string, attachmentUrl?: string | null) => {
       // A policy "messages_insert_own" garante author_id = auth.uid(),
       // send_messages = true e que o usuário não está mutado.
-      const { error } = await supabase.from("messages").insert({
-        channel_id: channelId,
-        author_id: currentUserId,
+      const pendingId = `pending:${crypto.randomUUID()}`;
+      const optimistic: ChatMessage = {
+        id: pendingId,
+        authorId: currentUserId,
+        authorName: currentUserName,
+        authorAvatarUrl: currentUserAvatarUrl,
         content,
-        attachment_url: attachmentUrl ?? null,
-      });
-      if (error) throw error;
+        attachmentUrl: attachmentUrl ?? null,
+        createdAt: new Date().toISOString(),
+        reactions: [],
+      };
+      if (activeChannelIdRef.current === channelId) {
+        setMessages((previous) => [...previous, optimistic]);
+      }
+
+      try {
+        const { data, error } = await supabase.from("messages").insert({
+          channel_id: channelId,
+          author_id: currentUserId,
+          content,
+          attachment_url: attachmentUrl ?? null,
+        }).select("id, channel_id, author_id, content, attachment_url, created_at").single();
+        if (error) throw error;
+        if (!data) throw new Error("O servidor não confirmou o envio da mensagem.");
+        if (activeChannelIdRef.current !== channelId) return;
+
+        const confirmed: ChatMessage = { ...optimistic, id: data.id, createdAt: data.created_at };
+        setMessages((previous) => {
+          if (previous.some((message) => message.id === data.id)) {
+            return previous.filter((message) => message.id !== pendingId);
+          }
+          return previous.map((message) => message.id === pendingId ? confirmed : message)
+            .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+        });
+      } catch (error) {
+        if (activeChannelIdRef.current === channelId) {
+          setMessages((previous) => previous.filter((message) => message.id !== pendingId));
+        }
+        throw error;
+      }
     },
-    [channelId, currentUserId, supabase]
+    [channelId, currentUserId, currentUserName, currentUserAvatarUrl, supabase]
   );
 
   const toggleReaction = useCallback(
@@ -200,7 +281,9 @@ export function useChannelMessages(channelId: string, currentUserId: string) {
   }, [supabase]);
 
   return {
-    messages: channelId && loadedChannelId === channelId ? messages : [],
+    messages: channelId && loadedChannelId === channelId
+      ? messages
+      : messages.filter((message) => message.id.startsWith("pending:")),
     loading: loading || (!!channelId && loadedChannelId !== channelId),
     sendMessage,
     toggleReaction,

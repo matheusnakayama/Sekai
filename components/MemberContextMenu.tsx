@@ -24,6 +24,7 @@ interface MemberContextMenuProps {
   y: number;
   roles: ServerRoleOption[];
   canManageRoles: boolean;
+  canManageSelfRoles?: boolean;
   canManageNicknames: boolean;
   canTimeout: boolean;
   canKick: boolean;
@@ -47,6 +48,7 @@ export function MemberContextMenu({
   y,
   roles,
   canManageRoles,
+  canManageSelfRoles = false,
   canManageNicknames,
   canTimeout,
   canKick,
@@ -64,6 +66,7 @@ export function MemberContextMenu({
 }: MemberContextMenuProps) {
   const [rolesOpen, setRolesOpen] = useState(false);
   const isSelf = member.id === currentUserId;
+  const canChangeRoles = canManageRoles && (!isSelf || canManageSelfRoles);
   const menuWidth = 240;
   const menuHeight = Math.min(540, window.innerHeight - 16);
   const left = Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8));
@@ -130,7 +133,7 @@ export function MemberContextMenu({
           <div className="mb-1 ml-2 max-h-44 overflow-y-auto border-l border-white/[0.09] pl-1">
             {roles.length ? roles.map((role) => {
               const assigned = member.roleIds?.includes(role.id) ?? false;
-              const disabled = !canManageRoles || isSelf || !onToggleRole;
+              const disabled = !canChangeRoles || !onToggleRole;
               return (
                 <button
                   key={role.id}
@@ -138,7 +141,7 @@ export function MemberContextMenu({
                   role="menuitemcheckbox"
                   aria-checked={assigned}
                   disabled={disabled}
-                  title={isSelf ? "Não é possível alterar os próprios cargos por este menu" : !canManageRoles ? "Requer a permissão Gerenciar cargos" : undefined}
+                  title={!canChangeRoles ? (isSelf ? "Somente o dono do servidor ou um CEO pode alterar os próprios cargos" : "Requer a permissão Gerenciar cargos") : undefined}
                   onClick={run(onToggleRole ? () => onToggleRole(role, assigned) : undefined)}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35"
                 >
@@ -148,7 +151,7 @@ export function MemberContextMenu({
                 </button>
               );
             }) : <p className="px-2 py-2 text-xs text-white/40">Nenhum cargo personalizado</p>}
-            {!canManageRoles && <p className="px-2 pb-2 text-[10px] text-white/35">Você não tem permissão para alterar cargos.</p>}
+            {!canChangeRoles && <p className="px-2 pb-2 text-[10px] text-white/35">{isSelf ? "Somente o dono do servidor ou um CEO pode alterar os próprios cargos." : "Você não tem permissão para alterar cargos."}</p>}
           </div>
         )}
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { Plus, Compass } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface ServerItem {
@@ -36,6 +38,14 @@ function ServerIcon({
   children: React.ReactNode;
   label: string;
 }) {
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number; maxWidth: number } | null>(null);
+
+  function showTooltip(button: HTMLButtonElement) {
+    const bounds = button.getBoundingClientRect();
+    const left = Math.min(bounds.right + 12, Math.max(8, window.innerWidth - 180));
+    setTooltipPosition({ left, top: bounds.top + bounds.height / 2, maxWidth: Math.max(120, window.innerWidth - left - 16) });
+  }
+
   return (
     <div className="group relative flex items-center justify-center">
       {/* Indicador de pílula à esquerda (ativo = mais alta, hover = média) */}
@@ -48,7 +58,11 @@ function ServerIcon({
 
       <button
         onClick={onClick}
-        title={label}
+        aria-label={label}
+        onMouseEnter={(event) => showTooltip(event.currentTarget)}
+        onMouseLeave={() => setTooltipPosition(null)}
+        onFocus={(event) => showTooltip(event.currentTarget)}
+        onBlur={() => setTooltipPosition(null)}
         className={cn(
           "flex h-12 w-12 items-center justify-center overflow-hidden transition-[background-color,border-radius,transform,color] duration-150 ease-out active:scale-[0.96]",
           "bg-discord-bg-dark text-discord-text-normal hover:bg-discord-brand hover:bg-theme-gradient hover:text-white",
@@ -63,6 +77,18 @@ function ServerIcon({
           {mentionCount > 99 ? "99+" : mentionCount}
         </span>
       ) : null}
+
+      {tooltipPosition && createPortal(
+        <div
+          role="tooltip"
+          style={{ left: tooltipPosition.left, top: tooltipPosition.top, maxWidth: tooltipPosition.maxWidth }}
+          className="server-name-tooltip-enter pointer-events-none fixed z-[500] -translate-y-1/2 rounded-md bg-[#111214] px-3 py-2 text-sm font-semibold leading-5 text-[#f2f3f5] shadow-[0_8px_24px_rgba(0,0,0,.45)]"
+        >
+          <span aria-hidden="true" className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 bg-[#111214]" />
+          <span className="relative block truncate">{label}</span>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

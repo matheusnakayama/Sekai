@@ -334,11 +334,14 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
   const [roleColor, setRoleColor] = useState(ROLE_COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [iconUploading, setIconUploading] = useState(false);
+  const [insigniaUploading, setInsigniaUploading] = useState(false);
   const [createRoleOpen, setCreateRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleColor, setNewRoleColor] = useState(ROLE_COLORS[0]);
   const [newRoleIconFile, setNewRoleIconFile] = useState<File | null>(null);
   const [newRoleIconPreview, setNewRoleIconPreview] = useState<string | null>(null);
+  const [newRoleInsigniaFile, setNewRoleInsigniaFile] = useState<File | null>(null);
+  const [newRoleInsigniaPreview, setNewRoleInsigniaPreview] = useState<string | null>(null);
   const [creatingRole, setCreatingRole] = useState(false);
   const [createRoleError, setCreateRoleError] = useState("");
   const [draggedRoleId, setDraggedRoleId] = useState<string | null>(null);
@@ -346,7 +349,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
 
   async function load() {
     const [{ data: roleRows }, { data: memberRows }, { data: assignments }] = await Promise.all([
-      supabase.from("roles").select("id, name, color, icon_url, position, permissions, is_default").eq("server_id", serverId).order("position", { ascending: false }),
+      supabase.from("roles").select("id, name, color, icon_url, insignia_url, position, permissions, is_default").eq("server_id", serverId).order("position", { ascending: false }),
       supabase.from("members").select("user_id, profiles(display_name, username)").eq("server_id", serverId),
       supabase.from("member_roles").select("user_id, role_id").eq("server_id", serverId),
     ]);
@@ -354,7 +357,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     (assignments ?? []).forEach((assignment: any) => roleCounts.set(assignment.role_id, (roleCounts.get(assignment.role_id) ?? 0) + 1));
     const memberships = new Map<string, string[]>();
     (assignments ?? []).forEach((assignment: any) => memberships.set(assignment.user_id, [...(memberships.get(assignment.user_id) ?? []), assignment.role_id]));
-    const nextRoles = (roleRows ?? []).map((role: any) => ({ ...role, iconUrl: role.icon_url ?? null, memberCount: roleCounts.get(role.id) ?? 0 }));
+    const nextRoles = (roleRows ?? []).map((role: any) => ({ ...role, iconUrl: role.icon_url ?? null, insigniaUrl: role.insignia_url ?? null, memberCount: roleCounts.get(role.id) ?? 0 }));
     setRoles(nextRoles);
     setMembers((memberRows ?? []).map((member: any) => ({ ...member, roleIds: memberships.get(member.user_id) ?? [] })));
     setSelectedRoleId((current) => current && nextRoles.some((role: any) => role.id === current) ? current : nextRoles[0]?.id ?? null);
@@ -373,14 +376,27 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     reader.readAsDataURL(file);
   }
 
-  async function removeStoredRoleIcon(iconUrl?: string | null) {
-    if (!iconUrl) return;
+  function handleNewRoleInsigniaChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (!ROLE_ICON_TYPES.has(file.type)) { setNewRoleInsigniaFile(null); setNewRoleInsigniaPreview(null); setCreateRoleError("Escolha uma insígnia PNG, JPG, WebP ou GIF."); return; }
+    if (file.size > MAX_ROLE_ICON_SIZE) { setNewRoleInsigniaFile(null); setNewRoleInsigniaPreview(null); setCreateRoleError("A insígnia do cargo deve ter no máximo 5 MB."); return; }
+    setCreateRoleError("");
+    setNewRoleInsigniaFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setNewRoleInsigniaPreview(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  }
+
+  async function removeStoredRoleAsset(assetUrl: string | null | undefined, folder: "role-icons" | "role-insignias") {
+    if (!assetUrl) return;
     const marker = "/storage/v1/object/public/server-assets/";
-    const markerIndex = iconUrl.indexOf(marker);
+    const markerIndex = assetUrl.indexOf(marker);
     if (markerIndex < 0) return;
     let path: string;
-    try { path = decodeURIComponent(iconUrl.slice(markerIndex + marker.length).split("?")[0]); } catch { return; }
-    if (!path.startsWith(`${serverId}/role-icons/`)) return;
+    try { path = decodeURIComponent(assetUrl.slice(markerIndex + marker.length).split("?")[0]); } catch { return; }
+    if (!path.startsWith(`${serverId}/${folder}/`)) return;
     await supabase.storage.from("server-assets").remove([path]);
   }
 
@@ -400,9 +416,24 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
 
     const iconUrl = supabase.storage.from("server-assets").getPublicUrl(path).data.publicUrl;
     const { error: updateError } = await supabase.from("roles").update({ icon_url: iconUrl }).eq("id", roleId).eq("server_id", serverId);
-    if (updateError) { await removeStoredRoleIcon(iconUrl); return { error: updateError.message }; }
-    await removeStoredRoleIcon(previousIconUrl);
+    if (updateError) { await removeStoredRoleAsset(iconUrl, "role-icons"); return { error: updateError.message }; }
+    await removeStoredRoleAsset(previousIconUrl, "role-icons");
     return { iconUrl };
+  }
+
+  async function persistRoleInsignia(roleId: string, file: File, previousUrl?: string | null): Promise<{ insigniaUrl?: string; error?: string }> {
+    if (!ROLE_ICON_TYPES.has(file.type)) return { error: "Escolha uma insígnia PNG, JPG, WebP ou GIF." };
+    if (file.size > MAX_ROLE_ICON_SIZE) return { error: "A insígnia do cargo deve ter no máximo 5 MB." };
+    const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+    const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const path = `${serverId}/role-insignias/${roleId}/${uniqueName}.${extension}`;
+    const { error: uploadError } = await supabase.storage.from("server-assets").upload(path, file, { upsert: false, contentType: file.type, cacheControl: "31536000" });
+    if (uploadError) return { error: uploadError.message };
+    const insigniaUrl = supabase.storage.from("server-assets").getPublicUrl(path).data.publicUrl;
+    const { error: updateError } = await supabase.from("roles").update({ insignia_url: insigniaUrl }).eq("id", roleId).eq("server_id", serverId);
+    if (updateError) { await removeStoredRoleAsset(insigniaUrl, "role-insignias"); return { error: updateError.message }; }
+    await removeStoredRoleAsset(previousUrl, "role-insignias");
+    return { insigniaUrl };
   }
 
   async function handleSelectedRoleIconChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -426,8 +457,35 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     const { error: updateError } = await supabase.from("roles").update({ icon_url: null }).eq("id", selectedRole.id).eq("server_id", serverId);
     setIconUploading(false);
     if (updateError) { setError(`Não foi possível remover a imagem: ${updateError.message}`); return; }
-    await removeStoredRoleIcon(selectedRole.icon_url);
+    await removeStoredRoleAsset(selectedRole.icon_url, "role-icons");
     await onAudit("role.icon.remove", selectedRole.name, { role_id: selectedRole.id });
+    await load();
+    onChanged();
+  }
+
+  async function handleSelectedRoleInsigniaChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !selectedRole || selectedRole.is_default || !canEdit) return;
+    setInsigniaUploading(true);
+    setError("");
+    const result = await persistRoleInsignia(selectedRole.id, file, selectedRole.insignia_url);
+    setInsigniaUploading(false);
+    if (result.error) { setError(`Não foi possível salvar a insígnia: ${result.error}`); return; }
+    await onAudit("role.insignia.update", selectedRole.name, { role_id: selectedRole.id });
+    await load();
+    onChanged();
+  }
+
+  async function removeSelectedRoleInsignia() {
+    if (!selectedRole || selectedRole.is_default || !canEdit) return;
+    setInsigniaUploading(true);
+    setError("");
+    const { error: updateError } = await supabase.from("roles").update({ insignia_url: null }).eq("id", selectedRole.id).eq("server_id", serverId);
+    setInsigniaUploading(false);
+    if (updateError) { setError(`Não foi possível remover a insígnia: ${updateError.message}`); return; }
+    await removeStoredRoleAsset(selectedRole.insignia_url, "role-insignias");
+    await onAudit("role.insignia.remove", selectedRole.name, { role_id: selectedRole.id });
     await load();
     onChanged();
   }
@@ -483,6 +541,10 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
       const iconResult = await persistRoleIcon(data.id, newRoleIconFile);
       if (iconResult.error) await dialogs.notify({ title: "Cargo criado sem imagem", message: `O cargo foi salvo, mas a imagem não pôde ser enviada: ${iconResult.error}` });
     }
+    if (newRoleInsigniaFile && data?.id) {
+      const insigniaResult = await persistRoleInsignia(data.id, newRoleInsigniaFile);
+      if (insigniaResult.error) await dialogs.notify({ title: "Cargo criado sem insígnia", message: `O cargo foi salvo, mas a insígnia não pôde ser enviada: ${insigniaResult.error}` });
+    }
     await onAudit("role.create", cleanName, { role_id: data?.id });
     await load();
     if (data) setSelectedRoleId(data.id);
@@ -490,6 +552,8 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     setNewRoleColor(ROLE_COLORS[0]);
     setNewRoleIconFile(null);
     setNewRoleIconPreview(null);
+    setNewRoleInsigniaFile(null);
+    setNewRoleInsigniaPreview(null);
     setCreateRoleOpen(false);
     setCreateRoleError("");
     setCreatingRole(false);
@@ -593,16 +657,17 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
         {canEdit && <button type="button" aria-expanded={createRoleOpen} onClick={() => { setCreateRoleOpen((open) => !open); setCreateRoleError(""); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"><Plus size={16}/>Criar cargo</button>}
       </div>
       {createRoleOpen && canEdit && <form onSubmit={(event) => { event.preventDefault(); void handleCreateRole(); }} className="mb-4 rounded-xl border border-discord-brand/25 bg-discord-brand/[0.06] p-4 shadow-sm">
-        <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Novo cargo</h3><p className="mt-1 text-xs text-discord-text-muted">Defina um nome, uma cor e, se quiser, um pequeno ícone para a lista de membros.</p></div>
+        <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Novo cargo</h3><p className="mt-1 text-xs text-discord-text-muted">Defina o nome, a cor, o ícone circular e a insígnia que aparecerá junto ao cargo.</p></div>
         <label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input autoFocus value={newRoleName} maxLength={80} onChange={(event) => setNewRoleName(event.target.value)} placeholder="Ex.: Equipe, VAMP, Moderador" className="mt-1.5 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70"/></label>
         <div className="mt-4"><p className="mb-2 text-xs font-semibold text-discord-text-muted">Cor do cargo</p><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" aria-label={`Selecionar cor ${color}`} aria-pressed={newRoleColor.toLowerCase() === color.toLowerCase()} onClick={() => setNewRoleColor(color)} className={cn("grid h-7 w-7 place-items-center rounded-full border-2 transition hover:scale-110", newRoleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{newRoleColor.toLowerCase() === color.toLowerCase() && <Check size={13} className="text-white drop-shadow"/>}</button>)}</div></div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleIconChange}/><ImageIcon size={15} className="text-discord-brand"/>{newRoleIconFile ? "Trocar imagem" : "Adicionar imagem (opcional)"}</label>
-          {newRoleIconFile && <span className="max-w-48 truncate text-xs text-discord-text-muted">{newRoleIconFile.name}</span>}
-          <div className="ml-auto"><RoleBadgeList roles={[{ id: "new-role-preview", name: newRoleName.trim() || "Novo cargo", color: newRoleColor, iconUrl: newRoleIconPreview }]} size="medium"/></div>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleIconChange}/><ImageIcon size={15} className="text-discord-brand"/>{newRoleIconFile ? "Trocar ícone" : "Ícone circular"}</label>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleInsigniaChange}/><ShieldCheck size={15} className="text-discord-brand"/>{newRoleInsigniaFile ? "Trocar insígnia" : "Insígnia do cargo"}</label>
+          {(newRoleIconFile || newRoleInsigniaFile) && <span className="max-w-48 truncate text-xs text-discord-text-muted">{[newRoleIconFile?.name, newRoleInsigniaFile?.name].filter(Boolean).join(" · ")}</span>}
+          <div className="ml-auto"><RoleBadgeList roles={[{ id: "new-role-preview", name: newRoleName.trim() || "Novo cargo", color: newRoleColor, iconUrl: newRoleIconPreview, insigniaUrl: newRoleInsigniaPreview }]} size="medium"/></div>
         </div>
         {createRoleError && <p role="alert" className="mt-3 text-xs text-red-300">{createRoleError}</p>}
-        <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCreateRoleOpen(false); setNewRoleName(""); setNewRoleIconFile(null); setNewRoleIconPreview(null); setCreateRoleError(""); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Cancelar</button><button type="submit" disabled={creatingRole} className="rounded-lg bg-discord-brand px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{creatingRole ? "Criando…" : "Criar cargo"}</button></div>
+        <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => { setCreateRoleOpen(false); setNewRoleName(""); setNewRoleIconFile(null); setNewRoleIconPreview(null); setNewRoleInsigniaFile(null); setNewRoleInsigniaPreview(null); setCreateRoleError(""); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Cancelar</button><button type="submit" disabled={creatingRole} className="rounded-lg bg-discord-brand px-4 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{creatingRole ? "Criando…" : "Criar cargo"}</button></div>
       </form>}
       <p className="mb-4 text-xs leading-5 text-discord-text-muted">O membro usa a cor do cargo mais alto que possui. Selecione um cargo para editar sua aparência, permissões e membros.</p>
 
@@ -628,13 +693,18 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
               <h4 className="mb-4 text-sm font-semibold text-discord-header-primary">Identidade do cargo</h4>
               <label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input value={roleName} disabled={!canEdit || selectedRole.is_default} maxLength={80} onChange={(event) => setRoleName(event.target.value)} className="mt-2 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70 disabled:opacity-60"/></label>
               <div className="mt-5 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-discord-bg-primary p-3">
-                <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.04] text-discord-text-muted">{selectedRole.iconUrl ? <img src={selectedRole.iconUrl} alt="" className="h-full w-full object-cover"/> : <ImageIcon size={18}/>}</span>
-                <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-discord-text-normal">Ícone do cargo</span><span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">PNG, JPG, WebP ou GIF · até 5 MB</span></span>
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-discord-text-muted">{selectedRole.iconUrl ? <img src={selectedRole.iconUrl} alt="" className="h-full w-full object-contain"/> : <ImageIcon size={18}/>}</span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-discord-text-normal">Imagem circular do cargo</span><span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">Aparece no círculo antes do nome · até 5 MB</span></span>
                 {canEdit && !selectedRole.is_default && <div className="flex shrink-0 items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/[0.1] px-2.5 py-2 text-[11px] font-semibold text-discord-text-normal transition hover:bg-white/[0.06]">{iconUploading ? "Enviando…" : selectedRole.iconUrl ? "Trocar" : "Enviar imagem"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={iconUploading} onChange={handleSelectedRoleIconChange}/></label>{selectedRole.iconUrl && <button type="button" disabled={iconUploading} onClick={() => void removeSelectedRoleIcon()} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50" aria-label="Remover ícone do cargo"><Trash2 size={14}/></button>}</div>}
+              </div>
+              <div className="mt-3 flex items-center gap-3 rounded-xl border border-white/[0.07] bg-discord-bg-primary p-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-discord-bg-secondary text-discord-text-muted">{selectedRole.insigniaUrl ? <img src={selectedRole.insigniaUrl} alt="" className="h-full w-full object-contain"/> : <ShieldCheck size={18}/>}</span>
+                <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-discord-text-normal">Insígnia do cargo</span><span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">Aparece após o nome do cargo no perfil e antes do título na lista · até 5 MB</span></span>
+                {canEdit && !selectedRole.is_default && <div className="flex shrink-0 items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/[0.1] px-2.5 py-2 text-[11px] font-semibold text-discord-text-normal transition hover:bg-white/[0.06]">{insigniaUploading ? "Enviando…" : selectedRole.insigniaUrl ? "Trocar" : "Enviar"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={insigniaUploading} onChange={handleSelectedRoleInsigniaChange}/></label>{selectedRole.insigniaUrl && <button type="button" disabled={insigniaUploading} onClick={() => void removeSelectedRoleInsignia()} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50" aria-label="Remover insígnia do cargo"><Trash2 size={14}/></button>}</div>}
               </div>
               <div className="mt-5"><div className="mb-3 flex items-center gap-2 text-xs font-semibold text-discord-text-muted"><Palette size={15}/>Cor do cargo</div><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" disabled={!canEdit || selectedRole.is_default} aria-label={`Selecionar cor ${color}`} aria-pressed={roleColor.toLowerCase() === color.toLowerCase()} onClick={() => setRoleColor(color)} className={cn("grid h-8 w-8 place-items-center rounded-full border-2 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50", roleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{roleColor.toLowerCase() === color.toLowerCase() && <Check size={15} className="text-white drop-shadow"/>}</button>)}</div></div>
             </div>
-            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Prévia</p><RoleBadgeList roles={[{ id: selectedRole.id, name: roleName || selectedRole.name, color: roleColor, iconUrl: selectedRole.iconUrl }]} size="medium"/></div>
+            <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Prévia no mini perfil</p><RoleBadgeList roles={[{ id: selectedRole.id, name: roleName || selectedRole.name, color: roleColor, iconUrl: selectedRole.iconUrl, insigniaUrl: selectedRole.insigniaUrl }]} size="medium" layout="profile"/></div>
             {canEdit && !selectedRole.is_default && <button type="button" onClick={() => void saveRoleAppearance()} disabled={saving} className="rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">{saving ? "Salvando…" : "Salvar alterações"}</button>}
             {selectedRole.is_default && <p className="text-xs leading-5 text-discord-text-muted">O cargo padrão não pode ser renomeado ou removido. Suas permissões ainda podem ser configuradas na aba Permissões.</p>}
           </div>}
@@ -651,7 +721,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
                   const checked = (toBigInt(selectedRole.permissions) & PERMISSIONS[bit]) !== 0n;
                   return <div key={bit} className="flex items-start gap-4 px-4 py-3.5 transition hover:bg-white/[0.025]">
                     <div className="min-w-0 flex-1"><h5 className="text-sm font-medium text-discord-text-normal">{PERMISSION_LABELS[bit]}</h5><p className="mt-1 max-w-2xl text-xs leading-5 text-discord-text-muted">{PERMISSION_DESCRIPTIONS[bit]}</p></div>
-                    <button type="button" role="switch" aria-checked={checked} aria-label={`${PERMISSION_LABELS[bit]}: ${checked ? "ativada" : "desativada"}`} disabled={!canEdit} onClick={() => void togglePermission(bit)} className={cn("relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand focus-visible:ring-offset-2 focus-visible:ring-offset-discord-bg-secondary disabled:cursor-not-allowed disabled:opacity-50", checked ? "border-discord-brand bg-discord-brand" : "border-white/[0.16] bg-discord-bg-dark")}><span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform", checked ? "translate-x-[22px]" : "translate-x-0.5")}/></button>
+                    <button type="button" role="switch" aria-checked={checked} aria-label={`${PERMISSION_LABELS[bit]}: ${checked ? "ativada" : "desativada"}`} disabled={!canEdit} onClick={() => void togglePermission(bit)} className={cn("relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand focus-visible:ring-offset-2 focus-visible:ring-offset-discord-bg-secondary disabled:cursor-not-allowed disabled:opacity-50", checked ? "border-discord-brand bg-discord-brand" : "border-white/[0.16] bg-discord-bg-dark")}><span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-[left]" style={{ left: checked ? "calc(100% - 17px)" : "1px" }}/></button>
                   </div>;
                 })}</div>
               </section>;
