@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useId } from "react";
 import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,13 +24,17 @@ export function PresenceIndicator({
   className,
   borderColor,
   cutoutColor = "#232428",
+  hollowSymbols = false,
 }: {
   presence: Presence;
   size?: number;
   className?: string;
   borderColor?: string;
   cutoutColor?: string;
+  hollowSymbols?: boolean;
 }) {
+  const maskId = useId().replace(/:/g, "");
+
   return (
     <span
       role="img"
@@ -40,14 +44,23 @@ export function PresenceIndicator({
       style={{
         width: size,
         height: size,
-        backgroundColor: PRESENCE_COLORS[presence],
+        backgroundColor: hollowSymbols && (presence === "idle" || presence === "dnd") ? "transparent" : PRESENCE_COLORS[presence],
         borderColor: borderColor ?? "transparent",
         borderStyle: "solid",
-        "--presence-cutout": cutoutColor,
-      } as CSSProperties}
+      }}
     >
-      {presence === "idle" && <Moon aria-hidden="true" className="h-[70%] w-[70%]" fill={cutoutColor} stroke={cutoutColor} strokeWidth={1} />}
-      {presence === "dnd" && <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full bg-white" />}
+      {presence === "idle" && (hollowSymbols ? (
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute inset-0 h-full w-full">
+          <defs><mask id={`${maskId}-idle`}><rect width="24" height="24" fill="white"/><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6.5 6.5 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" fill="black"/></mask></defs>
+          <circle cx="12" cy="12" r="11" fill={PRESENCE_COLORS.idle} mask={`url(#${maskId}-idle)`}/>
+        </svg>
+      ) : <Moon aria-hidden="true" className="h-[70%] w-[70%]" fill={cutoutColor} stroke={cutoutColor} strokeWidth={1} />)}
+      {presence === "dnd" && (hollowSymbols ? (
+        <svg aria-hidden="true" viewBox="0 0 16 16" className="absolute inset-0 h-full w-full">
+          <defs><mask id={`${maskId}-dnd`}><rect width="16" height="16" fill="white"/><rect x="4" y="7" width="8" height="2" rx="1" fill="black"/></mask></defs>
+          <circle cx="8" cy="8" r="7.5" fill={PRESENCE_COLORS.dnd} mask={`url(#${maskId}-dnd)`}/>
+        </svg>
+      ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full bg-white" />)}
       {presence === "offline" && <span aria-hidden="true" className="h-[46%] w-[46%] rounded-full" style={{ backgroundColor: cutoutColor }} />}
     </span>
   );

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
@@ -111,12 +112,34 @@ export function ChannelSidebar({
   const [presenceMenuOpen, setPresenceMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [userIdCopied, setUserIdCopied] = useState(false);
+  const [profileMenuPosition, setProfileMenuPosition] = useState<{ left: number; bottom: number } | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileMenuCardRef = useRef<HTMLDivElement>(null);
+
+  const updateProfileMenuPosition = useCallback(() => {
+    const footer = profileMenuRef.current;
+    if (!footer) return;
+    const bounds = footer.getBoundingClientRect();
+    const width = Math.min(300, window.innerWidth - 24);
+    setProfileMenuPosition({
+      left: Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12)),
+      bottom: Math.max(12, window.innerHeight - bounds.top + 10),
+    });
+  }, []);
+
+  function toggleProfileMenu() {
+    if (!profileMenuOpen) updateProfileMenuPosition();
+    else {
+      setPresenceMenuOpen(false);
+      setAccountMenuOpen(false);
+    }
+    setProfileMenuOpen((open) => !open);
+  }
 
   useEffect(() => {
     if (!profileMenuOpen) return;
     function closeOnOutside(event: PointerEvent) {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
+      if (!profileMenuRef.current?.contains(event.target as Node) && !profileMenuCardRef.current?.contains(event.target as Node)) {
         setProfileMenuOpen(false);
         setPresenceMenuOpen(false);
         setAccountMenuOpen(false);
@@ -129,6 +152,17 @@ export function ChannelSidebar({
     document.addEventListener("keydown", closeOnEscape);
     return () => { document.removeEventListener("pointerdown", closeOnOutside); document.removeEventListener("keydown", closeOnEscape); };
   }, [profileMenuOpen]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const reposition = () => updateProfileMenuPosition();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [profileMenuOpen, updateProfileMenuPosition]);
 
   const presenceOptions = [
     { id: "online" as const, label: "Online" },
@@ -273,10 +307,11 @@ export function ChannelSidebar({
 
       {/* Painel do usuário */}
       <div ref={profileMenuRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
-        {profileMenuOpen && (
+        {profileMenuOpen && profileMenuPosition && typeof document !== "undefined" && createPortal(
           <div
-            className="profile-card-enter absolute bottom-[calc(100%+10px)] left-2 z-[150] w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-[16px] border shadow-[0_16px_48px_rgba(0,0,0,.55)]"
-            style={{ backgroundColor: profilePalette.surface, borderColor: profilePalette.border, color: profilePalette.text }}
+            ref={profileMenuCardRef}
+            className="profile-card-enter fixed z-[1000] w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-[16px] border shadow-[0_16px_48px_rgba(0,0,0,.55)]"
+            style={{ left: profileMenuPosition.left, bottom: profileMenuPosition.bottom, backgroundColor: profilePalette.surface, borderColor: profilePalette.border, color: profilePalette.text }}
           >
             <ProfileBanner src={currentUser.bannerUrl} positionX={currentUser.bannerPositionX} positionY={currentUser.bannerPositionY} zoom={currentUser.bannerZoom} className="h-24 !bg-black" />
             <div className="relative px-4 pb-4">
@@ -306,11 +341,11 @@ export function ChannelSidebar({
 
               <div className="relative mt-3 rounded-xl p-1" style={{ backgroundColor: profilePalette.inset }}>
                 <button type="button" aria-expanded={presenceMenuOpen} onClick={() => setPresenceMenuOpen((value) => !value)} className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition hover:bg-black/5">
-                  <PresenceIndicator presence={currentUser.presence} size={16} cutoutColor={profilePalette.surface} />
+                  <PresenceIndicator presence={currentUser.presence} size={16} cutoutColor={profilePalette.surface} hollowSymbols />
                   <span className="flex-1 text-sm">{presenceLabel}</span>
                   <ChevronRight size={16} className="opacity-70" />
                 </button>
-                {presenceMenuOpen && <div className="absolute bottom-[calc(100%+8px)] left-0 z-[160] w-full rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 text-discord-text-normal shadow-2xl">{presenceOptions.map((option) => <button key={option.id} type="button" onClick={() => { onPresenceChange?.(option.id); setPresenceMenuOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-discord-bg-modifier-hover"><PresenceIndicator presence={option.id} size={16} />{option.label}{currentUser.presence === option.id && <Check size={14} className="ml-auto text-discord-brand"/>}</button>)}</div>}
+                {presenceMenuOpen && <div className="absolute bottom-[calc(100%+8px)] left-0 z-[160] w-full rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 text-discord-text-normal shadow-2xl">{presenceOptions.map((option) => <button key={option.id} type="button" onClick={() => { onPresenceChange?.(option.id); setPresenceMenuOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-discord-bg-modifier-hover"><PresenceIndicator presence={option.id} size={16} hollowSymbols />{option.label}{currentUser.presence === option.id && <Check size={14} className="ml-auto text-discord-brand"/>}</button>)}</div>}
               </div>
 
               <div className="mt-3 rounded-xl p-1" style={{ backgroundColor: profilePalette.inset }}>
@@ -327,9 +362,10 @@ export function ChannelSidebar({
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
-        <button onClick={() => { setProfileMenuOpen((value) => !value); setPresenceMenuOpen(false); }} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className={`relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
+        <button onClick={toggleProfileMenu} aria-label="Abrir menu do perfil" aria-expanded={profileMenuOpen} className={`relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
           <span className="absolute inset-0 overflow-hidden rounded-full">
             {currentUser.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -343,7 +379,7 @@ export function ChannelSidebar({
           <PresenceIndicator presence={currentUser.presence} size={13} borderColor="rgb(var(--d-darkest))" className="absolute bottom-0 right-0 border-2" />
         </button>
 
-        <button onClick={() => setProfileMenuOpen((value) => !value)} aria-expanded={profileMenuOpen} className="profile-footer-name min-w-0 flex-1 rounded-md py-1 text-left">
+        <button onClick={toggleProfileMenu} aria-expanded={profileMenuOpen} className="profile-footer-name min-w-0 flex-1 rounded-md py-1 text-left">
           <p className="truncate text-sm font-semibold text-discord-header-primary">{currentUser.displayName}</p>
           <p className="profile-footer-subline relative h-4 truncate text-xs text-discord-text-muted">
             <span className="profile-footer-status absolute inset-0 truncate">{currentUser.customStatus || presenceLabel}</span>
