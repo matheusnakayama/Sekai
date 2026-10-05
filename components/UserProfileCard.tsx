@@ -9,7 +9,8 @@ import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import type { CustomBadge } from "@/lib/badges";
-import { cn } from "@/lib/utils";
+import { cn, getProfilePalette } from "@/lib/utils";
+import { PresenceIndicator } from "@/components/PresenceIndicator";
 
 export interface ProfileCardUser {
   id: string;
@@ -132,13 +133,6 @@ export function getProfileCardPosition(anchor: HTMLElement, preferRight = false)
   };
 }
 
-const STATUS_CLASS: Record<ProfileCardUser["status"], string> = {
-  online: "status-online",
-  idle: "status-idle",
-  dnd: "status-dnd",
-  offline: "status-offline",
-};
-
 export function UserProfileCard({
   profile,
   position,
@@ -186,6 +180,7 @@ export function UserProfileCard({
   const [resolvedPosition, setResolvedPosition] = useState(position);
   const isOtherUser = profile.id !== currentUserId;
   const username = profile.username || profile.id.slice(0, 8);
+  const profilePalette = getProfilePalette(profile.profileCardColor);
   const cachedMutualServers = isOtherUser && currentUserId
     ? mutualServersCache.get(`${currentUserId}:${profile.id}`)
     : undefined;
@@ -344,8 +339,8 @@ export function UserProfileCard({
       ref={cardRef}
       role="dialog"
       aria-label={`Perfil de ${profile.displayName}`}
-      style={{ left: resolvedPosition.left, top: resolvedPosition.top, backgroundColor: profile.profileCardColor || "#0b0b0d" }}
-      className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(300px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-[22px] border border-white/[0.11] bg-[#0b0b0d] text-white shadow-[0_24px_80px_rgba(0,0,0,.62)]"
+      style={{ left: resolvedPosition.left, top: resolvedPosition.top, backgroundColor: profilePalette.surface, color: profilePalette.text, borderColor: profilePalette.border }}
+      className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(300px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-[22px] border shadow-[0_24px_80px_rgba(0,0,0,.62)]"
     >
       <ProfileBanner
         src={profile.bannerUrl}
@@ -402,29 +397,29 @@ export function UserProfileCard({
 
       <div className="px-4 pb-4">
         <div className="relative -mt-9 h-[68px] w-[68px]">
-          <div className="relative h-full w-full overflow-hidden rounded-full border-4 border-[#0b0b0d] bg-discord-brand shadow-[0_8px_24px_rgba(0,0,0,.5)]">
+          <div className="relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand" style={{ borderColor: profilePalette.surface }}>
             {profile.avatarUrl ? (
               <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" positionX={profile.avatarPositionX} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
             ) : (
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
           </div>
-          <span className={cn("status-dot !bottom-0.5 !right-0.5 !h-4 !w-4 !border-[3px] !border-[#0b0b0d]", STATUS_CLASS[profile.status])} />
+          <PresenceIndicator presence={profile.status} size={16} borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} className="absolute bottom-0.5 right-0.5 border-[3px]" />
         </div>
 
         <div className="mt-2">
-          <h2 className="truncate font-sans text-[21px] font-semibold leading-7 tracking-tight text-white">{profile.displayName}</h2>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-white/70">
+          <h2 className="truncate font-sans text-[21px] font-semibold leading-7 tracking-tight">{profile.displayName}</h2>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px]" style={{ color: profilePalette.muted }}>
             <span className="truncate">@{username}</span>
             {profile.pronouns && <><span aria-hidden="true">·</span><span>{profile.pronouns}</span></>}
             <CustomBadgeList badges={profile.badges} limit={5} size="medium" />
           </div>
 
           {mutualServers.length > 0 && (
-            <div className="mt-3 flex min-w-0 items-center gap-2 text-[11px] text-white/60" aria-label={`${mutualServers.length} servidores em comum`}>
+            <div className="mt-3 flex min-w-0 items-center gap-2 text-[11px]" style={{ color: profilePalette.muted }} aria-label={`${mutualServers.length} servidores em comum`}>
               <span className="flex shrink-0 -space-x-1.5">
                 {mutualServers.slice(0, 3).map((server) => (
-                  <span key={server.id} title={server.name} className="grid h-5 w-5 place-items-center overflow-hidden rounded-full border-2 border-[#0b0b0d] bg-[#35363c] text-[8px] font-bold text-white/80">
+                  <span key={server.id} title={server.name} className="grid h-5 w-5 place-items-center overflow-hidden rounded-full border-2 bg-[#35363c] text-[8px] font-bold text-white/80" style={{ borderColor: profilePalette.surface }}>
                     {server.iconUrl ? <img src={server.iconUrl} alt="" className="h-full w-full object-cover" /> : server.name.slice(0, 1).toUpperCase()}
                   </span>
                 ))}
@@ -436,15 +431,15 @@ export function UserProfileCard({
 
           {profile.customStatus && (
             <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] px-3 py-2.5">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/70"><Activity size={16} /></span>
-              <span className="min-w-0 truncate text-xs font-semibold text-white/90">{profile.customStatus}</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: profilePalette.inset, color: profilePalette.muted }}><Activity size={16} /></span>
+              <span className="min-w-0 truncate text-xs font-semibold">{profile.customStatus}</span>
             </div>
           )}
 
           {profile.bio && (
             <div className="mt-3 border-t border-white/[0.08] pt-3">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Sobre mim</p>
-              <p className="whitespace-pre-wrap break-words text-[13px] leading-5 text-white/80">{profile.bio}</p>
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-[.12em]" style={{ color: profilePalette.muted }}>Sobre mim</p>
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{profile.bio}</p>
             </div>
           )}
 
@@ -467,7 +462,7 @@ export function UserProfileCard({
 
           {isOtherUser && onQuickMessage && (
             <>
-              <form onSubmit={(event) => void submitQuickMessage(event)} className="mt-4 flex h-11 items-center gap-2 rounded-xl border border-white/[0.12] bg-[#171719] px-3 transition focus-within:border-white/[0.24]">
+              <form onSubmit={(event) => void submitQuickMessage(event)} className="mt-4 flex h-11 items-center gap-2 rounded-xl border px-3 transition focus-within:border-white/[0.24]" style={{ backgroundColor: profilePalette.inset, borderColor: profilePalette.isLight ? "rgba(0,0,0,.14)" : "rgba(255,255,255,.12)" }}>
                 <input
                   aria-label={`Mensagem direta para @${username}`}
                   autoComplete="off"
@@ -475,9 +470,10 @@ export function UserProfileCard({
                   value={quickMessage}
                   onChange={(event) => setQuickMessage(event.target.value)}
                   placeholder={`Mensagem @${username}`}
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/45"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:opacity-60"
+                  style={{ color: profilePalette.text }}
                 />
-                <button type="submit" disabled={!quickMessage.trim() || sendingQuickMessage} aria-label="Enviar mensagem direta" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white/55 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35">
+                <button type="submit" disabled={!quickMessage.trim() || sendingQuickMessage} aria-label="Enviar mensagem direta" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-35" style={{ color: profilePalette.muted }}>
                   <SendHorizontal size={16} />
                 </button>
               </form>
