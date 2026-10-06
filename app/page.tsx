@@ -207,12 +207,16 @@ export default function Home() {
     }
   }
 
-  async function handlePresenceChange(presence: "online" | "idle" | "dnd" | "offline") {
-    if (!currentUserId) return;
-    const { error } = await supabase.from("profiles").update({ status: presence }).eq("id", currentUserId);
-    if (error) return;
+  async function handlePresenceChange(presence: "online" | "idle" | "dnd" | "offline"): Promise<boolean> {
+    if (!currentUserId) return false;
+    const { data, error } = await supabase.from("profiles").update({ status: presence }).eq("id", currentUserId).select("id").maybeSingle();
+    if (error || !data) {
+      console.error("Não foi possível atualizar o status de presença.", error);
+      return false;
+    }
     setMyProfile((profile) => profile ? { ...profile, presence } : profile);
-    await loadChannelsAndMembers();
+    void loadChannelsAndMembers();
+    return true;
   }
 
   useEffect(() => {
@@ -288,7 +292,10 @@ export default function Home() {
     const onlineIds = new Set(onlineUserIds);
     setMembers((current) => current.map((member) => ({
       ...member,
-      status: onlineIds.has(member.id) ? "online" : "offline",
+      // O estado ao vivo determina se está conectado; o perfil escolhe o estado ativo.
+      status: onlineIds.has(member.id)
+        ? (member.profilePresence === "idle" || member.profilePresence === "dnd" ? member.profilePresence : "online")
+        : "offline",
     })));
   }, [onlineUserIds]);
 
@@ -599,7 +606,12 @@ export default function Home() {
         bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
         badges: existingBadgesByUser.get(m.user_id) ?? [],
-        status: m.profiles?.status ?? "offline",
+        profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
+          ? m.profiles.status
+          : "offline",
+        status: onlineUserIds.includes(m.user_id)
+          ? (m.profiles?.status === "idle" || m.profiles?.status === "dnd" ? m.profiles.status : "online")
+          : "offline",
         roleId: topRole?.id,
         roleName: topRole?.name ?? "Membro",
         roleColor: topRole?.color,
@@ -1274,6 +1286,7 @@ export default function Home() {
           onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onOpenSettings={() => setShowUserSettings(true)}
+          onPresenceChange={handlePresenceChange}
           currentUserProfile={{
             display_name: myProfile?.displayName ?? "Você",
             username: myProfile?.username,

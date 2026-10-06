@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Palette } from "lucide-react";
 import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/useTheme";
@@ -20,29 +21,61 @@ function gradientOf(stops: string[]) {
 export default function ThemePicker({ placement = "down", align = "right", className }: ThemePickerProps) {
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    const anchor = buttonRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+    const width = Math.min(288, window.innerWidth - 24);
+    const height = menuRef.current?.getBoundingClientRect().height ?? Math.min(420, window.innerHeight * 0.7);
+    const alignedLeft = align === "right" ? anchor.right - width : anchor.left;
+    let top = placement === "up" ? anchor.top - height - 8 : anchor.bottom + 8;
+    if (top + height > window.innerHeight - 12) top = anchor.top - height - 8;
+    if (top < 12) top = Math.min(12, window.innerHeight - height - 12);
+    setPosition({
+      left: Math.max(12, Math.min(alignedLeft, window.innerWidth - width - 12)),
+      top: Math.max(12, top),
+    });
+  }, [align, placement]);
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
+    const reposition = () => updatePosition();
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
     };
-  }, [open]);
+  }, [open, updatePosition]);
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open, updatePosition]);
 
   return (
     <div ref={rootRef} className={cn("relative", className)}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (!open) updatePosition();
+          setOpen((value) => !value);
+        }}
         title="Cor do tema"
         aria-label="Escolher a cor do tema"
         aria-expanded={open}
@@ -51,15 +84,13 @@ export default function ThemePicker({ placement = "down", align = "right", class
         <Palette className="h-[18px] w-[18px]" />
       </button>
 
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <div
+          ref={menuRef}
           role="dialog"
           aria-label="Temas de cor"
-          className={cn(
-            "absolute z-[200] max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl",
-            placement === "up" ? "bottom-full mb-2" : "top-full mt-2",
-            align === "right" ? "right-0" : "left-0"
-          )}
+          className="fixed z-[1100] max-h-[70vh] w-[min(288px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl"
+          style={position ?? { left: 12, top: 12 }}
         >
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-discord-text-muted">
             Cor do tema
@@ -97,7 +128,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
           <p className="mt-2 text-[11px] leading-4 text-discord-text-muted">
             Muda só as cores, neste navegador.
           </p>
-        </div>
+        </div>, document.body
       )}
     </div>
   );

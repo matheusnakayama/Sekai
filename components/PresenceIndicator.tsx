@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type Presence = "online" | "idle" | "dnd" | "offline";
@@ -24,43 +23,64 @@ export function PresenceIndicator({
   className,
   borderColor,
   cutoutColor = "#232428",
+  dndBarColor = cutoutColor,
   hollowSymbols = false,
+  borderWidth = 0,
+  avatarBadge = false,
 }: {
   presence: Presence;
   size?: number;
   className?: string;
   borderColor?: string;
   cutoutColor?: string;
+  dndBarColor?: string;
   hollowSymbols?: boolean;
+  borderWidth?: number;
+  /** Places a single-size presence badge at the avatar container's lower-right corner. */
+  avatarBadge?: boolean;
 }) {
   const maskId = useId().replace(/:/g, "");
+  const indicatorBorderWidth = avatarBadge ? 3 : borderWidth;
+  const badgeSize = "clamp(14px, 28%, 20px)";
+  const iconSize = avatarBadge ? `calc(${badgeSize} - 6px)` : Math.max(0, size - borderWidth * 2);
+  const hollowDnd = hollowSymbols || avatarBadge;
 
   return (
     <span
       role="img"
       aria-label={PRESENCE_LABELS[presence]}
       title={PRESENCE_LABELS[presence]}
-      className={cn("presence-indicator relative inline-grid shrink-0 place-items-center rounded-full", className)}
+      className={cn("presence-indicator inline-grid shrink-0 place-items-center rounded-full", className)}
       style={{
-        width: size,
-        height: size,
-        backgroundColor: hollowSymbols && (presence === "idle" || presence === "dnd") ? "transparent" : PRESENCE_COLORS[presence],
+        position: avatarBadge ? "absolute" : "relative",
+        right: avatarBadge ? 0 : undefined,
+        bottom: avatarBadge ? 0 : undefined,
+        zIndex: avatarBadge ? 10 : undefined,
+        transform: avatarBadge ? "translate(50%, 50%)" : undefined,
+        width: avatarBadge ? badgeSize : size,
+        height: avatarBadge ? badgeSize : size,
+        backgroundColor: presence === "idle" || (hollowDnd && presence === "dnd") ? "transparent" : PRESENCE_COLORS[presence],
         borderColor: borderColor ?? "transparent",
-        borderStyle: "solid",
+        borderStyle: indicatorBorderWidth > 0 ? "solid" : "none",
+        borderWidth: indicatorBorderWidth,
+        boxSizing: "border-box",
       }}
     >
-      {presence === "idle" && (hollowSymbols ? (
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="absolute inset-0 h-full w-full">
-          <defs><mask id={`${maskId}-idle`}><rect width="24" height="24" fill="white"/><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6.5 6.5 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" fill="black"/></mask></defs>
-          <circle cx="12" cy="12" r="11" fill={PRESENCE_COLORS.idle} mask={`url(#${maskId}-idle)`}/>
-        </svg>
-      ) : <Moon aria-hidden="true" className="h-[70%] w-[70%]" fill={cutoutColor} stroke={cutoutColor} strokeWidth={1} />)}
-      {presence === "dnd" && (hollowSymbols ? (
-        <svg aria-hidden="true" viewBox="0 0 16 16" className="absolute inset-0 h-full w-full">
+      {presence === "idle" && <svg aria-hidden="true" viewBox="0 0 16 16" width={iconSize} height={iconSize} className="shrink-0">
+        <defs>
+          <mask id={`${maskId}-idle`} maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+            <rect width="16" height="16" fill="white" />
+            <circle cx="10.5" cy="5.25" r="4.3" fill="black" />
+          </mask>
+        </defs>
+        <circle cx="8" cy="8" r="6.5" fill={PRESENCE_COLORS.idle} mask={`url(#${maskId}-idle)`} />
+      </svg>}
+      {presence === "dnd" && (hollowDnd ? (
+        <svg aria-hidden="true" viewBox="0 0 16 16" width={iconSize} height={iconSize} className="shrink-0">
           <defs><mask id={`${maskId}-dnd`}><rect width="16" height="16" fill="white"/><rect x="4" y="7" width="8" height="2" rx="1" fill="black"/></mask></defs>
           <circle cx="8" cy="8" r="7.5" fill={PRESENCE_COLORS.dnd} mask={`url(#${maskId}-dnd)`}/>
         </svg>
-      ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full bg-white" />)}
+      ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full" style={{ backgroundColor: dndBarColor }} />)}
       {presence === "offline" && <span aria-hidden="true" className="h-[46%] w-[46%] rounded-full" style={{ backgroundColor: cutoutColor }} />}
     </span>
   );

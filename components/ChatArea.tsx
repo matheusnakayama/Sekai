@@ -10,6 +10,7 @@ import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { PrankSimulation } from "@/components/PrankSimulation";
+import { PresenceIndicator } from "@/components/PresenceIndicator";
 
 export interface ChatMessage {
   id: string;
@@ -202,7 +203,6 @@ export function ChatArea({
           <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
         ) : messages.map((message) => {
           const authorStatus = memberById.get(message.authorId)?.status;
-          const statusClass = authorStatus === "online" ? "status-online" : authorStatus === "idle" ? "status-idle" : authorStatus === "dnd" ? "status-dnd" : "status-offline";
           return (
           <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]">
             <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
@@ -223,7 +223,7 @@ export function ChatArea({
                   </span>
                 )}
               </span>
-              {authorStatus && <span aria-label={`Status: ${authorStatus}`} className={cn("status-dot !h-3.5 !w-3.5 !border-[3px] !border-discord-bg-primary", statusClass)} style={{ bottom: -2, right: -2 }} />}
+              {authorStatus && <PresenceIndicator presence={authorStatus} avatarBadge borderColor="rgb(var(--d-primary))" cutoutColor="rgb(var(--d-primary))" />}
             </button>
 
             <div className="min-w-0 flex-1">

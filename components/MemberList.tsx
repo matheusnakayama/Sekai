@@ -5,6 +5,7 @@ import type { RoleBadge } from "@/components/RoleBadgeList";
 import { RoleInsignia } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
+import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
@@ -29,6 +30,8 @@ export interface MemberItem {
   profileCardColor?: string | null;
   badges?: CustomBadge[];
   status: "online" | "idle" | "dnd" | "offline";
+  /** Estado salvo no perfil, separado do estado de conexão ao vivo. */
+  profilePresence?: "online" | "idle" | "dnd" | "offline";
   roleId?: string;
   roleName: string;
   roleColor?: string; // hex, ex: "#f23f43" para Admin
@@ -64,13 +67,6 @@ interface MemberListProps {
   canManageSelfRoles?: boolean;
   onToggleRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
 }
-
-const STATUS_CLASS: Record<MemberItem["status"], string> = {
-  online: "status-online",
-  idle: "status-idle",
-  dnd: "status-dnd",
-  offline: "status-offline",
-};
 
 export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
@@ -195,7 +191,7 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
           </div>
         )}
         </div>
-        <span className={cn("status-dot", STATUS_CLASS[member.status])} />
+        <PresenceIndicator presence={member.status} avatarBadge borderColor="rgb(var(--d-dark))" cutoutColor="rgb(var(--d-dark))" />
       </div>
 
       <span className="flex min-w-0 flex-1 flex-col justify-center">

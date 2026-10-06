@@ -588,16 +588,6 @@ html[data-theme="grafite"] {
 }
 
 @layer components {
-  /* Indicador de status (online/idle/dnd/offline) com "anel" recortado no avatar */
-  .status-dot {
-    @apply absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-dark;
-    box-sizing: border-box;
-  }
-
-  .status-online { @apply bg-discord-online; }
-  .status-idle { @apply bg-discord-idle; }
-  .status-dnd { @apply bg-discord-dnd; }
-  .status-offline { @apply bg-discord-offline; }
 
   /* Avatar com anel verde pulsante quando o membro está falando na call */
   .avatar-speaking {

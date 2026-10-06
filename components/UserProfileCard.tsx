@@ -404,7 +404,7 @@ export function UserProfileCard({
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
           </div>
-          <PresenceIndicator presence={profile.status} size={16} borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} className="absolute bottom-0.5 right-0.5 border-[3px]" />
+          <PresenceIndicator presence={profile.status} avatarBadge borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} />
         </div>
 
         <div className="mt-2">

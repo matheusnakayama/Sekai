@@ -10,6 +10,8 @@ import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { ProfileCardPosition, ProfileCardUser } from "@/components/UserProfileCard";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
+import { PresenceIndicator, type Presence } from "@/components/PresenceIndicator";
+import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 
 interface FriendHomeProps {
   currentUserId: string;
@@ -20,6 +22,7 @@ interface FriendHomeProps {
   unreadByUser?: Record<string, number>;
   onMarkDirectRead?: (userId: string) => void;
   onOpenSettings?: () => void;
+  onPresenceChange?: (presence: Presence) => boolean | void | Promise<boolean | void>;
   onlineUserIds?: string[];
   currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[]; status?: string | null };
 }
@@ -41,7 +44,7 @@ function explainDatabaseError(error: { code?: string; message: string }, feature
   return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
 }
 
-export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onlineUserIds = [], currentUserProfile }: FriendHomeProps) {
+export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onPresenceChange, onlineUserIds = [], currentUserProfile }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [username, setUsername] = useState("");
@@ -62,6 +65,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
   const [hoveredDmProfileId, setHoveredDmProfileId] = useState<string | null>(null);
   const [miniProfile, setMiniProfile] = useState<{ profile: ProfileCardUser; position: ProfileCardPosition } | null>(null);
+  const [selfProfileMenuRequest, setSelfProfileMenuRequest] = useState(0);
   const dmScrollRef = useRef<HTMLDivElement>(null);
   const dmWasAtBottom = useRef(true);
 
@@ -242,8 +246,17 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     return !!userId && onlineUserIds.includes(userId);
   }
 
+  function resolvePresence(profile: Pick<Profile, "id" | "status">): Presence {
+    if (!isOnline(profile.id)) return "offline";
+    return profile.status === "idle" || profile.status === "dnd" ? profile.status : "online";
+  }
+
+  function withLivePresence(profile?: Profile) {
+    return profile ? { ...profile, status: resolvePresence(profile) } : undefined;
+  }
+
   const onlineConversations = useMemo(
-    () => conversationProfiles.map((profile) => ({ ...profile, status: isOnline(profile.id) ? "online" : "offline" })),
+    () => conversationProfiles.map((profile) => ({ ...profile, status: resolvePresence(profile) })),
     // Presence is a live list maintained by Supabase Realtime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [conversationProfiles, onlineUserIds]
@@ -258,7 +271,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     const query = messageSearch.trim().toLocaleLowerCase("pt-BR");
     return query ? dmMessages.filter((item) => item.content.toLocaleLowerCase("pt-BR").includes(query)) : dmMessages;
   }, [dmMessages, messageSearch]);
-  const activeFriend = selectedFriend ? { ...selectedFriend, status: isOnline(selectedFriend.id) ? "online" : "offline" } : null;
+  const activeFriend = selectedFriend ? { ...selectedFriend, status: resolvePresence(selectedFriend) } : null;
 
   function other(item: Friendship) { return item.sender_id === currentUserId ? item.receiver : item.sender; }
 
@@ -304,7 +317,12 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }
 
   function openMiniProfile(profile: Profile, anchor: HTMLElement) {
-    const status = profile.status === "online" || profile.status === "idle" || profile.status === "dnd" ? profile.status : "offline";
+    if (profile.id === currentUserId) {
+      setMiniProfile(null);
+      setSelfProfileMenuRequest((request) => request + 1);
+      return;
+    }
+    const status = resolvePresence(profile);
     setMiniProfile({
       profile: {
         id: profile.id,
@@ -362,15 +380,38 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       </nav>
       <div className="mx-3 my-4 border-t border-black/20"/>
       <div className="flex items-center justify-between px-4 pb-2 text-[11px] font-bold uppercase tracking-wide text-discord-text-muted">Mensagens diretas <button title="Adicionar amigo" onClick={() => { setSelectedFriend(null); setTab("all"); }}><UserPlus size={15}/></button></div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">{visibleConversations.map((profile) => <button key={profile.id} onClick={() => openConversation(profile)} className={`relative flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition ${selectedFriend?.id === profile.id ? "bg-discord-bg-modifier-hover" : "hover:bg-discord-bg-modifier-hover/60"}`}><FriendAvatar profile={profile} size="sm"/><span className="truncate text-sm font-medium text-discord-text-normal">{profile.display_name || profile.username}</span>{!!unreadByUser[profile.id] && <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 text-center text-[10px] font-bold text-white">{unreadByUser[profile.id]}</span>}</button>)}{!visibleConversations.length && <p className="px-3 py-5 text-xs text-discord-text-muted">{conversationSearch ? "Nenhuma conversa encontrada." : "Suas conversas diretas aparecerão aqui."}</p>}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2">{visibleConversations.map((profile) => <button key={profile.id} onClick={() => openConversation(profile)} className={`relative flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition ${selectedFriend?.id === profile.id ? "bg-discord-bg-modifier-hover" : "hover:bg-discord-bg-modifier-hover/60"}`}><FriendAvatar profile={profile} size="sm" statusSurface="rgb(var(--d-secondary))"/><span className="truncate text-sm font-medium text-discord-text-normal">{profile.display_name || profile.username}</span>{!!unreadByUser[profile.id] && <span className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 text-center text-[10px] font-bold text-white">{unreadByUser[profile.id]}</span>}</button>)}{!visibleConversations.length && <p className="px-3 py-5 text-xs text-discord-text-muted">{conversationSearch ? "Nenhuma conversa encontrada." : "Suas conversas diretas aparecerão aqui."}</p>}</div>
       <div className="mx-3 border-t border-white/[0.07]" />
-      <footer className="flex h-[60px] shrink-0 items-center gap-2 bg-discord-bg-darkest px-2">
-        <button type="button" onClick={(event) => openMiniProfile(ownProfile(), event.currentTarget)} aria-label="Abrir seu perfil" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-discord-bg-modifier-hover">
-          <FriendAvatar profile={ownProfile()} size="sm" />
-          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-discord-header-primary">{currentUserProfile?.display_name || "Você"}</span><span className="block truncate text-xs text-discord-text-muted">{currentUserProfile?.custom_status || `@${currentUserProfile?.username || "voce"}`}</span></span>
-        </button>
-        <button type="button" onClick={onOpenSettings} title="Configurações de usuário" aria-label="Abrir configurações de usuário" className="rounded-md p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"><Settings size={18}/></button>
-      </footer>
+      <CurrentUserProfileMenu
+        openRequest={selfProfileMenuRequest}
+        user={{
+          userId: currentUserId,
+          username: currentUserProfile?.username,
+          displayName: currentUserProfile?.display_name || "Você",
+          avatarUrl: currentUserProfile?.avatar_url,
+          avatarPositionX: currentUserProfile?.avatar_position_x,
+          avatarPositionY: currentUserProfile?.avatar_position_y,
+          avatarZoom: currentUserProfile?.avatar_zoom,
+          bannerUrl: currentUserProfile?.banner_url,
+          bannerPositionX: currentUserProfile?.banner_position_x,
+          bannerPositionY: currentUserProfile?.banner_position_y,
+          bannerZoom: currentUserProfile?.banner_zoom,
+          profileCardColor: currentUserProfile?.profile_card_color,
+          badges: currentUserProfile?.badges,
+          customStatus: currentUserProfile?.custom_status,
+          presence: currentUserProfile?.status === "online" || currentUserProfile?.status === "idle" || currentUserProfile?.status === "dnd" || currentUserProfile?.status === "offline" ? currentUserProfile.status : "offline",
+        }}
+        onOpenSettings={onOpenSettings}
+        onPresenceChange={onPresenceChange}
+      >
+        {({ toggle, openSettings, isOpen, triggerRef }) => <footer ref={triggerRef} className="flex h-[60px] shrink-0 items-center gap-2 bg-discord-bg-darkest px-2">
+          <button type="button" onClick={toggle} aria-expanded={isOpen} aria-label="Abrir seu perfil" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-discord-bg-modifier-hover">
+            <FriendAvatar profile={ownProfile()} size="sm" statusSurface="rgb(var(--d-darkest))" />
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-discord-header-primary">{currentUserProfile?.display_name || "Você"}</span><span className="block truncate text-xs text-discord-text-muted">{currentUserProfile?.custom_status || `@${currentUserProfile?.username || "voce"}`}</span></span>
+          </button>
+          <button type="button" onClick={openSettings} title="Configurações de usuário" aria-label="Abrir configurações de usuário" className="rounded-md p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"><Settings size={18}/></button>
+        </footer>}
+      </CurrentUserProfileMenu>
     </aside>
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {selectedFriend && activeFriend ? <div key={activeFriend.id} className="server-view-enter relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -431,7 +472,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           <div className="relative flex-1 px-4 pb-5">
             <div className="-mt-10 mb-3 flex items-end justify-between">
               <FriendAvatar profile={activeFriend} size="profile" isHovered={hoveredDmProfileId === activeFriend.id}/>
-              <span className="mb-1 rounded-full bg-discord-bg-primary px-2.5 py-1 text-[10px] font-medium text-discord-text-muted">{isOnline(activeFriend.id) ? "Online" : "Offline"}</span>
+              <span className="mb-1 rounded-full bg-discord-bg-primary px-2.5 py-1 text-[10px] font-medium text-discord-text-muted">{activeFriend.status === "idle" ? "Ausente" : activeFriend.status === "dnd" ? "Não perturbe" : activeFriend.status === "online" ? "Online" : "Offline"}</span>
             </div>
             <div className="rounded-lg bg-discord-bg-primary p-4">
               <h2 className="break-words text-xl font-bold leading-tight text-discord-header-primary"><button type="button" onMouseEnter={() => setHoveredDmProfileId(activeFriend.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === activeFriend.id ? null : id)} onClick={(event) => openMiniProfile(activeFriend, event.currentTarget)} className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{activeFriend.display_name || activeFriend.username}</button></h2>
@@ -444,7 +485,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           </div>
         </aside>}
       </div> : <><header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/20 px-5 shadow-sm"><Users className="h-5 w-5 text-discord-text-muted"/><span className="font-semibold text-discord-header-primary">Amigos</span></header><div className="flex-1 overflow-y-auto p-5 md:p-8"><div className="mx-auto w-full max-w-4xl">
-      {tab === "pending" ? <section className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-secondary p-5 shadow-xl"><h1 className="text-xl font-bold text-discord-header-primary">Solicitações de amizade</h1><p className="mt-1 text-sm text-discord-text-muted">Aceite pedidos para iniciar uma conversa direta.</p>{incoming.length ? <div className="mt-4 space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-discord-bg-primary/60 p-3"><FriendIdentity profile={item.sender}/><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded-lg bg-discord-brand px-3 py-2 text-sm text-white"><Check size={16}/>Aceitar</button></div>)}</div> : <p className="mt-5 rounded-xl bg-discord-bg-primary/50 p-5 text-sm text-discord-text-muted">Nenhuma solicitação no momento.</p>}</section> : <>
+      {tab === "pending" ? <section className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-secondary p-5 shadow-xl"><h1 className="text-xl font-bold text-discord-header-primary">Solicitações de amizade</h1><p className="mt-1 text-sm text-discord-text-muted">Aceite pedidos para iniciar uma conversa direta.</p>{incoming.length ? <div className="mt-4 space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-discord-bg-primary/60 p-3"><FriendIdentity profile={withLivePresence(item.sender)}/><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded-lg bg-discord-brand px-3 py-2 text-sm text-white"><Check size={16}/>Aceitar</button></div>)}</div> : <p className="mt-5 rounded-xl bg-discord-bg-primary/50 p-5 text-sm text-discord-text-muted">Nenhuma solicitação no momento.</p>}</section> : <>
       <section className="rounded-lg bg-discord-bg-secondary p-5">
         <h1 className="text-xl font-bold text-discord-header-primary">Adicione amigos</h1>
         <p className="mt-1 text-sm text-discord-text-muted">Encontre alguém pelo nome de usuário do Sekai.</p>
@@ -455,16 +496,16 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
         {message && <p className="mt-3 text-sm text-discord-text-muted">{message}</p>}
       </section>
 
-      {incoming.length > 0 && <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">Solicitações recebidas — {incoming.length}</h2><div className="space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg bg-discord-bg-secondary p-3"><FriendIdentity profile={item.sender} /><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded bg-discord-brand px-3 py-2 text-sm text-white"><Check className="h-4 w-4" />Aceitar</button></div>)}</div></section>}
+      {incoming.length > 0 && <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">Solicitações recebidas — {incoming.length}</h2><div className="space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg bg-discord-bg-secondary p-3"><FriendIdentity profile={withLivePresence(item.sender)} /><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded bg-discord-brand px-3 py-2 text-sm text-white"><Check className="h-4 w-4" />Aceitar</button></div>)}</div></section>}
       {serverInvites.length > 0 && <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">Convites para servidores — {serverInvites.length}</h2><div className="space-y-2">{serverInvites.map((invite) => <div key={invite.id} className="flex items-center justify-between rounded-lg bg-discord-bg-secondary p-3"><div><p className="font-medium text-discord-text-normal">{invite.server_name}</p><p className="text-xs text-discord-text-muted">Convite de {invite.sender?.display_name || invite.sender?.username || "um amigo"}</p></div><button onClick={() => void acceptServerInvite(invite)} className="flex items-center gap-2 rounded bg-discord-brand px-3 py-2 text-sm text-white"><Check className="h-4 w-4" />Aceitar</button></div>)}</div></section>}
-      {outgoing.length > 0 && <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">Solicitações enviadas — {outgoing.length}</h2><div className="space-y-2">{outgoing.map((item) => <div key={item.id} className="rounded-lg bg-discord-bg-secondary p-3"><FriendIdentity profile={item.receiver} /><p className="ml-12 text-xs text-discord-text-muted">Pendente</p></div>)}</div></section>}
+      {outgoing.length > 0 && <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">Solicitações enviadas — {outgoing.length}</h2><div className="space-y-2">{outgoing.map((item) => <div key={item.id} className="rounded-lg bg-discord-bg-secondary p-3"><FriendIdentity profile={withLivePresence(item.receiver)} /><p className="ml-12 text-xs text-discord-text-muted">Pendente</p></div>)}</div></section>}
       <section className="mt-7"><h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-discord-text-muted">{tab === "online" ? "Amigos online" : "Todos os amigos"} — {tab === "online" ? friendProfiles.filter((p) => isOnline(p.id)).length : friends.length}</h2>
-        {friends.length ? <div className="space-y-2">{friends.filter((item) => tab !== "online" || isOnline(other(item)?.id)).map((item) => { const profile = other(item); return <div key={item.id} onDoubleClick={() => profile && openConversation(profile)} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-discord-bg-secondary p-3 transition hover:border-white/10 hover:bg-discord-bg-secondary/80"><button onClick={() => profile && openConversation(profile)} className="text-left"><FriendIdentity profile={profile} /></button><div className="ml-auto flex items-center gap-2"><button onClick={() => profile && openConversation(profile)} title="Enviar mensagem direta" className="rounded-lg bg-discord-bg-primary p-2 text-discord-text-muted hover:text-white"><MessageCircle size={17}/></button><select aria-label="Servidor para convite" value={serverByFriend[profile?.id ?? ""] ?? servers[0]?.id ?? ""} onChange={(event) => profile && setServerByFriend((state) => ({ ...state, [profile.id]: event.target.value }))} className="max-w-40 rounded-lg bg-discord-bg-primary px-2 py-2 text-xs text-discord-text-normal">{servers.map((server) => <option key={server.id} value={server.id}>{server.name}</option>)}</select><button onClick={() => void inviteFriend(profile)} disabled={!servers.length} className="flex items-center gap-2 rounded-lg bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover disabled:opacity-50"><Send className="h-4 w-4" />Convidar</button></div></div>; })}</div> : <p className="rounded-lg bg-discord-bg-secondary p-5 text-sm text-discord-text-muted">Ainda sem amigos. Adicione alguém pelo nome de usuário para conversar, enviar um convite de servidor e entrar na mesma sala de voz.</p>}
+        {friends.length ? <div className="space-y-2">{friends.filter((item) => tab !== "online" || isOnline(other(item)?.id)).map((item) => { const profile = other(item); return <div key={item.id} onDoubleClick={() => profile && openConversation(profile)} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-discord-bg-secondary p-3 transition hover:border-white/10 hover:bg-discord-bg-secondary/80"><button onClick={() => profile && openConversation(profile)} className="text-left"><FriendIdentity profile={withLivePresence(profile)} /></button><div className="ml-auto flex items-center gap-2"><button onClick={() => profile && openConversation(profile)} title="Enviar mensagem direta" className="rounded-lg bg-discord-bg-primary p-2 text-discord-text-muted hover:text-white"><MessageCircle size={17}/></button><select aria-label="Servidor para convite" value={serverByFriend[profile?.id ?? ""] ?? servers[0]?.id ?? ""} onChange={(event) => profile && setServerByFriend((state) => ({ ...state, [profile.id]: event.target.value }))} className="max-w-40 rounded-lg bg-discord-bg-primary px-2 py-2 text-xs text-discord-text-normal">{servers.map((server) => <option key={server.id} value={server.id}>{server.name}</option>)}</select><button onClick={() => void inviteFriend(profile)} disabled={!servers.length} className="flex items-center gap-2 rounded-lg bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover disabled:opacity-50"><Send className="h-4 w-4" />Convidar</button></div></div>; })}</div> : <p className="rounded-lg bg-discord-bg-secondary p-5 text-sm text-discord-text-muted">Ainda sem amigos. Adicione alguém pelo nome de usuário para conversar, enviar um convite de servidor e entrar na mesma sala de voz.</p>}
       </section>
       </>}
     </div></div></>}
     </main>
-    {miniProfile && <UserProfileCard
+    {miniProfile && miniProfile.profile.id !== currentUserId && <UserProfileCard
       profile={miniProfile.profile}
       position={miniProfile.position}
       currentUserId={currentUserId}
@@ -484,21 +525,21 @@ function formatDirectMessageDate(date: Date) {
   return date.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" });
 }
 
-function FriendAvatar({ profile, size = "md", showStatus = true, isHovered = false }: { profile?: Profile; size?: "sm" | "md" | "lg" | "profile"; showStatus?: boolean; isHovered?: boolean }) {
+function FriendAvatar({ profile, size = "md", showStatus = true, isHovered = false, statusSurface }: { profile?: Profile; size?: "sm" | "md" | "lg" | "profile"; showStatus?: boolean; isHovered?: boolean; statusSurface?: string }) {
   const dimensions = {
     sm: "h-9 w-9 text-sm",
     md: "h-10 w-10 text-sm",
     lg: "h-[76px] w-[76px] text-xl",
     profile: "h-[78px] w-[78px] border-4 border-discord-bg-secondary text-xl",
   }[size];
-  const statusColor = profile?.status === "online" ? "bg-emerald-500" : profile?.status === "idle" ? "bg-amber-400" : profile?.status === "dnd" ? "bg-red-500" : "bg-gray-500";
-  const dotSize = size === "lg" || size === "profile" ? "h-4 w-4 border-[3px]" : "h-3.5 w-3.5 border-[3px]";
+  const presence: Presence = profile?.status === "online" || profile?.status === "idle" || profile?.status === "dnd" || profile?.status === "offline" ? profile.status : "offline";
+  const surface = statusSurface ?? (size === "profile" ? "rgb(var(--d-secondary))" : "rgb(var(--d-primary))");
   const name = profile?.display_name || profile?.username || "Usuário";
   return <span className="relative inline-flex shrink-0 overflow-visible align-middle">
     <span className={`relative flex ${dimensions} items-center justify-center overflow-hidden rounded-full bg-discord-bg-dark font-semibold text-white`}>
       {profile?.avatar_url ? <CroppedProfileImage src={profile.avatar_url} alt={`${name} avatar`} isHovered={isHovered} positionX={profile.avatar_position_x} positionY={profile.avatar_position_y} zoom={profile.avatar_zoom}/> : name[0]?.toUpperCase()}
     </span>
-    {showStatus && profile?.status && <span role="img" aria-label={profile.status === "online" ? "Online" : profile.status === "idle" ? "Ausente" : profile.status === "dnd" ? "Não perturbe" : "Offline"} className={`absolute z-10 ${dotSize} rounded-full border-[3px] border-discord-bg-primary ${statusColor}`} style={{ bottom: -2, right: -2}}/>}
+    {showStatus && profile && <PresenceIndicator presence={presence} avatarBadge borderColor={surface} cutoutColor={surface}/>}
   </span>;
 }
 
@@ -510,7 +551,7 @@ function FriendIdentity({ profile, compact = false, isHovered = false, onHoverCh
   onProfileClick?: (profile: Profile, anchor: HTMLButtonElement) => void;
 }) {
   const content = <>
-    <FriendAvatar profile={profile} size={compact ? "sm" : "md"} showStatus={false} isHovered={isHovered}/>
+    <FriendAvatar profile={profile} size={compact ? "sm" : "md"} isHovered={isHovered}/>
     <span className="min-w-0 text-left">
       <span className="block truncate text-sm font-medium text-discord-text-normal">{profile?.display_name || profile?.username || "Usuário"}</span>
       <span className="block truncate text-xs text-discord-text-muted">@{profile?.username || ""}</span>
