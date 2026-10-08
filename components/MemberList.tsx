@@ -66,9 +66,11 @@ interface MemberListProps {
   canManageRoles?: boolean;
   canManageSelfRoles?: boolean;
   onToggleRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
+  mutedSoundEffectUserIds?: string[];
+  onToggleSoundEffects?: (userId: string, muted: boolean) => void;
 }
 
-export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole }: MemberListProps) {
+export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; trigger: HTMLButtonElement } | null>(null);
@@ -151,6 +153,8 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           onKick={onKickMember ? () => onKickMember(contextMember) : undefined}
           onBan={onBanMember ? () => onBanMember(contextMember) : undefined}
           onToggleRole={onToggleRole ? (role, assigned) => onToggleRole(contextMember, role, assigned) : undefined}
+          soundEffectsMuted={mutedSoundEffectUserIds.includes(contextMember.id)}
+          onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(contextMember.id, !mutedSoundEffectUserIds.includes(contextMember.id)) : undefined}
         />;
       })()}
     </>
