@@ -7,17 +7,20 @@ import { FocusIcon, MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 export default function VideoTile({
   participant,
   muteRemoteAudio = false,
+  soundEffectsMuted = false,
   focused = false,
   onFocusPresentation,
   onExitPresentationFocus,
 }: {
   participant: Participant;
   muteRemoteAudio?: boolean;
+  soundEffectsMuted?: boolean;
   focused?: boolean;
   onFocusPresentation?: () => void;
   onExitPresentationFocus?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const soundboardAudioRef = useRef<HTMLAudioElement>(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
@@ -36,9 +39,30 @@ export default function VideoTile({
     });
   }, [participant.isLocal, participant.stream, showVideo, volume]);
 
+  useEffect(() => {
+    const audio = soundboardAudioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.muted = participant.isLocal || volume === 0 || muteRemoteAudio || soundEffectsMuted;
+    if (!participant.soundboardTrack) {
+      audio.srcObject = null;
+      return;
+    }
+
+    audio.srcObject = new MediaStream([participant.soundboardTrack]);
+    void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+      if (!participant.isLocal && !muteRemoteAudio && !soundEffectsMuted) setPlaybackBlocked(true);
+    });
+    return () => {
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [muteRemoteAudio, participant.isLocal, participant.soundboardTrack, soundEffectsMuted, volume]);
+
   async function enablePlayback() {
     try {
       await videoRef.current?.play();
+      if (participant.soundboardTrack) await soundboardAudioRef.current?.play();
       setPlaybackBlocked(false);
     } catch {
       setPlaybackBlocked(true);
@@ -63,6 +87,7 @@ export default function VideoTile({
             className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''}`}
           />
         )}
+        <audio ref={soundboardAudioRef} autoPlay playsInline className="hidden" />
         {!showVideo && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />
