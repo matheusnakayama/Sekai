@@ -257,9 +257,9 @@ export function ChatArea({
   }
 
   return (
-    <div className="server-view-enter flex h-full flex-1 flex-col bg-discord-bg-primary">
+    <div className="server-view-enter flex h-full min-h-0 min-w-0 flex-1 flex-col bg-discord-bg-primary">
       {/* Cabeçalho do canal */}
-      <div className="flex h-12 items-center gap-2 border-b border-white/[0.07] bg-discord-bg-dark/35 px-4 shadow-sm">
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-discord-bg-dark/35 px-3 shadow-sm sm:h-12 sm:px-4">
         <Hash className="h-5 w-5 text-discord-text-muted" />
         <span className="font-semibold text-discord-header-primary">{channelName}</span>
       </div>
@@ -271,7 +271,7 @@ export function ChatArea({
           const element = event.currentTarget;
           wasAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
         }}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-2 py-3 sm:space-y-4 sm:px-4 sm:py-4"
       >
         {loading && !messages.length ? (
           <div role="status" className="server-view-enter space-y-3 py-2">
@@ -283,7 +283,7 @@ export function ChatArea({
         ) : messages.map((message) => {
           const authorStatus = memberById.get(message.authorId)?.status;
           return (
-          <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/[0.035]">
+          <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-2 rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] sm:gap-3 sm:px-2">
             <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -320,7 +320,7 @@ export function ChatArea({
                   </div>
                 ) : <p className="mt-1 text-xs italic text-discord-text-muted">Um convite para a brincadeira foi enviado a um membro.</p>;
                 const contentWithEmojis = insertCustomEmojiMarkdown(message.content, imageEmojisByName);
-                return <div className="prose prose-invert max-w-none text-sm text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal"><ReactMarkdown components={{ img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji personalizado"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" /> }}>{contentWithEmojis}</ReactMarkdown></div>;
+                return <div className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm"><ReactMarkdown components={{ img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji personalizado"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" /> }}>{contentWithEmojis}</ReactMarkdown></div>;
               })()}
 
               {message.attachmentUrl && (
@@ -379,7 +379,7 @@ export function ChatArea({
       </div></>}
 
       {/* Campo de mensagem */}
-      <div className="relative mx-4 mb-5 mt-2 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-3">
+      <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">
         {showAutocomplete && filteredCommands.length > 0 && (
           <div className="absolute bottom-[calc(100%+8px)] w-full overflow-hidden rounded-lg bg-discord-bg-floating shadow-xl">
             <div className="border-b border-black/30 px-3 py-2 text-xs font-semibold uppercase text-discord-text-muted">
@@ -400,9 +400,9 @@ export function ChatArea({
 
         <form
           onSubmit={handleSubmit}
-          className="flex items-center gap-2 rounded-lg bg-discord-bg-secondary px-4 py-2.5"
+          className="flex min-h-12 items-center gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
         >
-          <button type="button" onClick={() => imageInput.current?.click()} className="text-discord-text-muted hover:text-discord-text-normal">
+          <button type="button" onClick={() => imageInput.current?.click()} aria-label="Adicionar anexo" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
             <Plus className="h-5 w-5" />
           </button>
           <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
@@ -412,33 +412,33 @@ export function ChatArea({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Conversar em #${channelName}`}
-            className="flex-1 bg-transparent text-sm text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent px-1 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
           />
 
           <div ref={emojiPickerRef} className="relative">
-            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] right-0 z-[90] w-[min(340px,calc(100vw-32px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
+            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] right-0 z-[90] w-[min(360px,calc(100vw-16px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
               <div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-discord-text-muted">Emojis</p><span className="text-[10px] text-discord-text-muted">Clique para inserir</span></div>
-              <div className="grid max-h-48 grid-cols-8 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1">
-                {STANDARD_EMOJIS.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={`Inserir ${emoji}`} className="grid h-8 w-8 place-items-center rounded-lg text-xl transition hover:bg-white/10">{emoji}</button>)}
+              <div className="grid max-h-[min(45dvh,360px)] grid-cols-6 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1 sm:max-h-48 sm:grid-cols-8">
+                {STANDARD_EMOJIS.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={`Inserir ${emoji}`} className="grid h-10 w-10 place-self-center place-items-center rounded-lg text-2xl transition hover:bg-white/10">{emoji}</button>)}
               </div>
               {serverEmojis.length > 0 && <>
                 <p className="mb-2 mt-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Emojis do servidor</p>
-                <div className="grid max-h-32 grid-cols-8 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1">
+                <div className="grid max-h-[25dvh] grid-cols-6 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1 sm:max-h-32 sm:grid-cols-8">
                   {serverEmojis.map((emoji) => {
                     const isImage = /^https?:\/\//i.test(emoji.asset_url);
-                    return <button key={emoji.id} type="button" title={`:${emoji.name}:`} aria-label={`Inserir :${emoji.name}:`} onClick={() => appendEmoji(isImage ? `:${emoji.name}:` : emoji.asset_url)} className="grid h-8 w-8 place-items-center rounded-lg text-xl transition hover:bg-white/10">{isImage ? <img src={emoji.asset_url} alt={emoji.name} className="h-6 w-6 object-contain" /> : emoji.asset_url}</button>;
+                    return <button key={emoji.id} type="button" title={`:${emoji.name}:`} aria-label={`Inserir :${emoji.name}:`} onClick={() => appendEmoji(isImage ? `:${emoji.name}:` : emoji.asset_url)} className="grid h-10 w-10 place-self-center place-items-center rounded-lg text-2xl transition hover:bg-white/10"><span className="max-w-9 truncate">{isImage ? <img src={emoji.asset_url} alt={emoji.name} className="h-7 w-7 object-contain" /> : emoji.asset_url}</span></button>;
                   })}
                 </div>
               </>}
             </div>}
-            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="text-discord-text-muted transition hover:text-discord-text-normal">
+            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
               <Smile className="h-5 w-5" />
             </button>
           </div>
 
-          <button type="button" title="Enviar imagem" onClick={() => imageInput.current?.click()} disabled={uploading} className="text-discord-text-muted hover:text-discord-text-normal disabled:opacity-50"><ImageIcon className="h-5 w-5" /></button>
+          <button type="button" title="Enviar imagem" aria-label="Enviar imagem" onClick={() => imageInput.current?.click()} disabled={uploading} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-discord-text-normal disabled:opacity-50 sm:h-auto sm:w-auto sm:rounded-none"><ImageIcon className="h-5 w-5" /></button>
 
-          <button type="submit" className="text-discord-text-muted hover:text-discord-brand">
+          <button type="submit" aria-label="Enviar mensagem" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 sm:h-auto sm:w-auto sm:bg-transparent sm:text-discord-text-muted sm:hover:bg-transparent sm:hover:text-discord-brand">
             <SendHorizontal className="h-5 w-5" />
           </button>
         </form>
