@@ -245,12 +245,12 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
     try {
       const transmitted = await onPlaySoundEffect?.(serverId, { id: row.id, name: row.name, asset_url: row.asset_url });
       if (transmitted) {
-        setPlaybackNotice(`“${row.name}” foi enviado para a chamada de voz.`);
+        setPlaybackNotice(`“${row.name}” foi enviado aos membros online do servidor.`);
       } else {
         const audio = new Audio(row.asset_url);
         audio.volume = 0.85;
         await audio.play();
-        setPlaybackNotice("Prévia local. Para transmitir para outras pessoas, entre em uma chamada de voz deste servidor e use o soundboard.");
+        setPlaybackNotice("Prévia local. Não foi possível enviar aos membros do servidor.");
       }
       await onAudit("soundboard.play", row.name, { soundId: row.id });
     } catch (playError) {
@@ -298,7 +298,7 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
                 <p className="truncate text-sm font-semibold text-discord-header-primary">:{row.name}:</p>
                 {kind === "sound" && <><p className="mt-1 text-[10px] text-discord-text-muted">Prévia local</p><audio controls src={row.asset_url} className="mt-1 h-8 max-w-full" /> </>}
               </div>
-              {kind === "sound" && <button type="button" onClick={() => void playSound(row)} disabled={playingId !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60" title="Transmitir na chamada de voz"><Play size={14} fill="currentColor" />{playingId === row.id ? "Enviando…" : "Usar na chamada"}<Volume2 size={14} /></button>}
+              {kind === "sound" && <button type="button" onClick={() => void playSound(row)} disabled={playingId !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60" title="Enviar aos membros online do servidor"><Play size={14} fill="currentColor" />{playingId === row.id ? "Enviando…" : "Reproduzir"}<Volume2 size={14} /></button>}
               {canManage && <button type="button" onClick={() => void removeAsset(row)} className="shrink-0 rounded-lg px-2 py-1 text-xs text-red-300 hover:bg-red-500/10">Remover</button>}
             </article>;
           })}
