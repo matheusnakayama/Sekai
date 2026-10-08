@@ -4,6 +4,7 @@ import type { Channel } from 'pusher-js';
 import type { IceServerConfig, SignalPayload } from './types';
 
 type TrackHandler = (peerId: string, stream: MediaStream) => void;
+type SoundboardTrackHandler = (peerId: string, track: MediaStreamTrack) => void;
 type ConnectionStateHandler = (peerId: string, state: RTCPeerConnectionState) => void;
 type SpeakingHandler = (peerId: string, speaking: boolean) => void;
 type ScreenShareHandler = (peerId: string, sharing: boolean) => void;
@@ -35,7 +36,12 @@ interface PeerEntry {
   offerRetryTimer?: number;
   offerRetryAttempts: number;
   videoProfileReady?: Promise<void>;
+  mediaTracksReady?: Promise<void>;
+  audioTransceiver?: RTCRtpTransceiver;
+  videoTransceiver?: RTCRtpTransceiver;
   videoSender?: RTCRtpSender;
+  soundboardTransceiver?: RTCRtpTransceiver;
+  soundboardTrackReady?: Promise<void>;
   videoProfile?: VideoSenderProfile | null;
   targetVideoBitrate?: number;
   currentVideoBitrate?: number;
@@ -63,15 +69,18 @@ export class WebRTCManager {
   private localStream: MediaStream | null = null;
   private hasAudioTrackOverride = false;
   private audioTrackOverride: MediaStreamTrack | null = null;
+  private soundboardTrackOverride: MediaStreamTrack | null = null;
   private hasVideoTrackOverride = false;
   private videoTrackOverride: MediaStreamTrack | null = null;
   private videoProfileOverride: VideoSenderProfile | null = null;
   private videoReplaceChain: Promise<void> = Promise.resolve();
+  private audioReplaceChain: Promise<void> = Promise.resolve();
   private iceServers: IceServerConfig[] = [{ urls: 'stun:stun.l.google.com:19302' }];
   private channel: Channel;
   private localId: string;
 
   onTrack: TrackHandler = () => {};
+  onSoundboardTrack: SoundboardTrackHandler = () => {};
   onConnectionStateChange: ConnectionStateHandler = () => {};
   onSpeakingChange: SpeakingHandler = () => {};
   onScreenShareState: ScreenShareHandler = () => {};
@@ -125,6 +134,8 @@ export class WebRTCManager {
     peer.makingOffer = true;
     try {
       await peer.videoProfileReady;
+      await peer.mediaTracksReady;
+      await peer.soundboardTrackReady;
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       this.send({ type: 'offer', from: this.localId, to: peerId, sdp: pc.localDescription ?? offer });
@@ -190,26 +201,48 @@ export class WebRTCManager {
       for (const peer of this.peers.values()) {
         const { connection } = peer;
         if (connection.signalingState === 'closed') continue;
-        let sender = connection.getSenders().find((s) => s.track?.kind === 'video');
-        sender ??= connection.getTransceivers().find((t) => t.receiver.track.kind === 'video')?.sender;
-        if (!sender) sender = connection.addTransceiver('video', { direction: 'sendrecv' }).sender;
-        await sender.replaceTrack(track);
-        await this.configureVideoSender(sender, this.profileForCurrentPeerCount(profile), peer);
+        await peer.mediaTracksReady;
+        const transceiver = peer.videoTransceiver ?? connection.getTransceivers().find((candidate) => candidate.receiver.track.kind === 'video');
+        if (!transceiver) continue;
+        peer.videoTransceiver = transceiver;
+        await transceiver.sender.replaceTrack(track);
+        await this.configureVideoSender(transceiver.sender, this.profileForCurrentPeerCount(profile), peer);
       }
     });
     this.videoReplaceChain = update.catch(() => {});
     return update;
   }
 
-  async replaceAudioTrack(track: MediaStreamTrack | null) {
+  replaceAudioTrack(track: MediaStreamTrack | null) {
     this.hasAudioTrackOverride = true;
     this.audioTrackOverride = track;
 
-    for (const { connection } of this.peers.values()) {
-      let sender = connection.getSenders().find((s) => s.track?.kind === 'audio');
-      sender ??= connection.getTransceivers().find((t) => t.receiver.track.kind === 'audio')?.sender;
-      if (!sender) sender = connection.addTransceiver('audio', { direction: 'sendrecv' }).sender;
-      await sender.replaceTrack(track);
+    const update = this.audioReplaceChain.then(async () => {
+      for (const peer of this.peers.values()) {
+        if (peer.connection.signalingState === 'closed') continue;
+        await peer.mediaTracksReady;
+        const transceiver = peer.audioTransceiver ?? peer.connection.getTransceivers().find((candidate) => candidate.receiver.track.kind === 'audio' && candidate !== peer.soundboardTransceiver);
+        if (!transceiver) continue;
+        peer.audioTransceiver = transceiver;
+        await transceiver.sender.replaceTrack(track);
+      }
+    });
+    this.audioReplaceChain = update.catch(() => {});
+    return update;
+  }
+
+  async replaceSoundboardTrack(track: MediaStreamTrack | null) {
+    this.soundboardTrackOverride = track;
+    for (const peer of this.peers.values()) {
+      const { connection } = peer;
+      if (connection.signalingState === 'closed') continue;
+      const transceiver = peer.soundboardTransceiver ?? connection.addTransceiver('audio', { direction: 'sendrecv' });
+      peer.soundboardTransceiver = transceiver;
+      const update = (peer.soundboardTrackReady ?? Promise.resolve())
+        .catch(() => {})
+        .then(() => transceiver.sender.replaceTrack(track));
+      peer.soundboardTrackReady = update;
+      await update;
     }
   }
 
@@ -247,32 +280,25 @@ export class WebRTCManager {
     const localVideoTrack = localTracks.find((track) => track.kind === 'video') ?? null;
     const audioTrack = this.hasAudioTrackOverride ? this.audioTrackOverride : localAudioTrack;
     const videoTrack = this.hasVideoTrackOverride ? this.videoTrackOverride : localVideoTrack;
-    const outgoingTracks: MediaStreamTrack[] = [];
-    if (audioTrack) outgoingTracks.push(audioTrack);
-    if (videoTrack) outgoingTracks.push(videoTrack);
-
-    // Use uma única MediaStream para áudio e vídeo remotos, mesmo quando a
-    // imagem enviada é a tela em vez da câmera.
-    const outgoingStream = new MediaStream(outgoingTracks);
-    let outgoingVideoSender: RTCRtpSender | null = null;
-    for (const track of outgoingTracks) {
-      const sender = pc.addTrack(track, outgoingStream);
-      if (track.kind === 'video') outgoingVideoSender = sender;
+    // Crie as seções de mídia sempre na mesma ordem em todos os pares. Com
+    // addTrack(), a ordem mudava conforme câmera/microfone disponíveis, fazendo
+    // o áudio do soundboard cair no m-line de vídeo em algumas chamadas.
+    const audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    const videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+    const soundboardTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    peer.audioTransceiver = audioTransceiver;
+    peer.videoTransceiver = videoTransceiver;
+    peer.soundboardTransceiver = soundboardTransceiver;
+    const initialTrackChanges: Promise<void>[] = [];
+    if (audioTrack) initialTrackChanges.push(audioTransceiver.sender.replaceTrack(audioTrack));
+    if (videoTrack) initialTrackChanges.push(videoTransceiver.sender.replaceTrack(videoTrack));
+    peer.mediaTracksReady = Promise.all(initialTrackChanges).then(() => {});
+    if (this.soundboardTrackOverride) {
+      peer.soundboardTrackReady = soundboardTransceiver.sender.replaceTrack(this.soundboardTrackOverride).then(() => {});
     }
-    if (!audioTrack) {
-      // Mantém o canal de áudio negociado mesmo quando o microfone não estava
-      // disponível ao entrar; ele ainda poderá ser substituído depois.
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-    }
-    if (!videoTrack) {
-      // Mantém uma seção de vídeo negociada para quem compartilhar tela sem
-      // câmera ou começar o compartilhamento antes de a conexão estar pronta.
-      const transceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
-      outgoingVideoSender = transceiver.sender;
-    }
-    if (outgoingVideoSender && this.videoProfileOverride) {
+    if (this.videoProfileOverride) {
       peer.videoProfileReady = this.configureVideoSender(
-        outgoingVideoSender,
+        videoTransceiver.sender,
         this.profileForCurrentPeerCount(this.videoProfileOverride),
         peer
       );
@@ -300,6 +326,10 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
+      if (event.transceiver === peer.soundboardTransceiver) {
+        this.onSoundboardTrack(peerId, event.track);
+        return;
+      }
       // Mantenha uma MediaStream estável por participante. Além de cobrir
       // transceivers streamless, isso evita perder a imagem quando o navegador
       // muda a associação da faixa entre câmera e tela durante renegociação.
@@ -504,7 +534,9 @@ export class WebRTCManager {
         if (offerCollision) await pc.setLocalDescription({ type: 'rollback' });
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
         await this.flushPendingCandidates(peer);
+        await peer.mediaTracksReady;
         await peer.videoProfileReady;
+        await peer.soundboardTrackReady;
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         peer.negotiationQueued = false;
