@@ -50,6 +50,7 @@ export interface VoiceMemberPreview {
 }
 
 interface ChannelSidebarProps {
+  serverId: string;
   serverName: string;
   channels: Channel[];
   categories?: ChannelCategory[];
@@ -97,11 +98,13 @@ interface ChannelSidebarProps {
   voiceMembersByChannel?: Record<string, VoiceMemberPreview[]>;
   onPresentScreen?: () => void;
   onPlaySoundEffect?: (effect: SoundboardEffect) => Promise<boolean>;
+  soundboardAudioReady?: boolean;
   onCloseMobileNav?: () => void;
   onDisconnectVoice?: () => void;
 }
 
 export function ChannelSidebar({
+  serverId,
   serverName,
   channels,
   categories = [],
@@ -128,6 +131,7 @@ export function ChannelSidebar({
   voiceMembersByChannel = {},
   onPresentScreen,
   onPlaySoundEffect,
+  soundboardAudioReady = false,
   onCloseMobileNav,
   onDisconnectVoice,
 }: ChannelSidebarProps) {
@@ -157,7 +161,7 @@ export function ChannelSidebar({
     let cancelled = false;
     setSoundboardEffects([]);
     setSoundboardError("");
-    if (!connectedVoiceServerId) {
+    if (!serverId) {
       setSoundboardLoading(false);
       return () => { cancelled = true; };
     }
@@ -168,19 +172,19 @@ export function ChannelSidebar({
         const { data, error } = await supabase
           .from("server_assets")
           .select("id,name,asset_url")
-          .eq("server_id", connectedVoiceServerId)
+          .eq("server_id", serverId)
           .eq("kind", "sound")
           .order("name", { ascending: true });
         if (cancelled) return;
         if (error) {
-          console.warn("Não foi possível carregar os efeitos sonoros da chamada:", error.message);
+          console.warn("Não foi possível carregar os efeitos sonoros do servidor:", error.message);
           setSoundboardError("Não foi possível carregar os sons deste servidor.");
           return;
         }
         setSoundboardEffects((data ?? []).map((row) => ({ id: row.id, name: row.name, assetUrl: row.asset_url })));
       } catch (error) {
         if (!cancelled) {
-          console.warn("Não foi possível carregar os efeitos sonoros da chamada:", error);
+          console.warn("Não foi possível carregar os efeitos sonoros do servidor:", error);
           setSoundboardError("Não foi possível carregar os sons deste servidor.");
         }
       } finally {
@@ -189,7 +193,7 @@ export function ChannelSidebar({
     })();
 
     return () => { cancelled = true; };
-  }, [connectedVoiceServerId, supabase]);
+  }, [serverId, supabase]);
 
   function dropChannel(target: Channel, event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -209,10 +213,10 @@ export function ChannelSidebar({
     setSoundboardMessage(`Enviando “${effect.name}”…`);
     try {
       const sent = await onPlaySoundEffect(effect);
-      setSoundboardMessage(sent ? `“${effect.name}” enviado para a chamada.` : "Não foi possível transmitir o efeito. Tente novamente.");
+      setSoundboardMessage(sent ? `“${effect.name}” enviado para os membros online do servidor.` : "Não foi possível enviar o efeito. Tente novamente.");
     } catch (error) {
-      console.warn("Não foi possível transmitir o efeito sonoro:", error);
-      setSoundboardMessage(error instanceof Error ? error.message : "Não foi possível transmitir o efeito.");
+      console.warn("Não foi possível enviar o efeito sonoro:", error);
+      setSoundboardMessage(error instanceof Error ? error.message : "Não foi possível enviar o efeito.");
     }
     window.setTimeout(() => setSoundboardMessage(""), 3500);
   }
@@ -336,6 +340,31 @@ export function ChannelSidebar({
 
       {contextMenu && <><button aria-label="Fechar opções do canal" className="fixed inset-0 z-40 cursor-default" onClick={() => setContextMenu(null)} /><div style={{ left: Math.min(contextMenu.x, window.innerWidth - 205), top: Math.min(contextMenu.y, window.innerHeight - 130) }} className="fixed z-50 w-48 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"><p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>{canCreateInvite && <button onClick={() => { onCreateChannelInvite?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Criar convite do canal</button>}{canManageChannels && <><button onClick={() => { onEditChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Configurações do canal</button><button onClick={() => { onDeleteChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10">Excluir canal</button></>}</div></>}
 
+      {/* Acesso ao soundboard sempre disponível, com ou sem chamada. */}
+      <div className="relative border-t border-white/[0.06] bg-discord-bg-darkest px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setSoundboardOpen((open) => !open)}
+          aria-label="Abrir efeitos sonoros do servidor"
+          aria-expanded={soundboardOpen}
+          title="Efeitos sonoros do servidor"
+          className={cn("flex min-h-10 w-full items-center gap-2 rounded-lg border px-2.5 text-left transition", soundboardOpen ? "border-discord-brand/50 bg-discord-brand/15 text-white" : "border-white/[0.07] bg-white/[0.035] text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white")}
+        >
+          <Music2 className="h-4 w-4 shrink-0 text-discord-brand" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold">Efeitos sonoros</span>
+            <span className="block truncate text-[10px] text-discord-text-muted">Para membros online do servidor</span>
+          </span>
+          <span className="text-[10px] text-discord-text-muted">{soundboardEffects.length}</span>
+        </button>
+        {soundboardOpen && <div className="absolute bottom-full left-2 right-2 z-[80] mb-2 overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-2.5 shadow-2xl">
+          <div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-semibold text-discord-header-primary">Efeitos sonoros</p><span className="text-[10px] text-discord-text-muted">{soundboardEffects.length}</span></div>
+          {soundboardLoading ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] text-discord-text-muted">Carregando sons…</p> : soundboardError ? <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-4 text-center text-[11px] text-red-200">{soundboardError}</p> : soundboardEffects.length === 0 ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] leading-relaxed text-discord-text-muted">Nenhum efeito cadastrado neste servidor. Adicione em Configurações → Painel de efeitos sonoros.</p> : <div className="max-h-56 space-y-1 overflow-y-auto">{soundboardEffects.map((effect) => <button key={effect.id} type="button" onClick={() => void playSoundboardEffect(effect)} disabled={!onPlaySoundEffect} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-discord-text-normal transition hover:bg-discord-brand/15 hover:text-white disabled:opacity-50"><Music2 className="h-3.5 w-3.5 shrink-0 text-discord-brand"/><span className="truncate">{effect.name}</span></button>)}</div>}
+          {soundboardMessage && <p role="status" className="mt-2 px-1 text-[10px] text-emerald-300">{soundboardMessage}</p>}
+          <p className="mt-2 px-1 text-[10px] leading-relaxed text-discord-text-muted">O som chega aos membros online com o Sekai aberto, dentro ou fora da chamada. {soundboardAudioReady ? "Áudio liberado neste navegador." : "Cada pessoa precisa interagir com o Sekai uma vez para liberar áudio no navegador."}</p>
+        </div>}
+      </div>
+
       {/* Barra de chamada conectada (como no Discord) */}
       {connectedVoiceChannelId && (
         <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
@@ -368,24 +397,6 @@ export function ChannelSidebar({
                 <ScreenShareIcon active={false} />
                 Apresentar tela
               </button>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setSoundboardOpen((open) => !open)}
-                  aria-label="Abrir efeitos sonoros da chamada"
-                  aria-expanded={soundboardOpen}
-                  title="Efeitos sonoros"
-                  className={`grid h-9 w-10 place-items-center rounded-lg border transition ${soundboardOpen ? "border-discord-brand/50 bg-discord-brand/15 text-white" : "border-white/[0.07] bg-white/[0.035] text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white"}`}
-                >
-                  <Music2 className="h-4 w-4" />
-                </button>
-                {soundboardOpen && <div className="absolute bottom-full right-0 z-[80] mb-2 w-60 max-w-[calc(100vw_-_2rem)] overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-2.5 shadow-2xl">
-                  <div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-semibold text-discord-header-primary">Efeitos sonoros</p><span className="text-[10px] text-discord-text-muted">{soundboardEffects.length}</span></div>
-                  {soundboardLoading ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] text-discord-text-muted">Carregando sons…</p> : soundboardError ? <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-4 text-center text-[11px] text-red-200">{soundboardError}</p> : soundboardEffects.length === 0 ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] leading-relaxed text-discord-text-muted">Nenhum efeito cadastrado neste servidor. Adicione em Configurações → Painel de efeitos sonoros.</p> : <div className="max-h-56 space-y-1 overflow-y-auto">{soundboardEffects.map((effect) => <button key={effect.id} type="button" onClick={() => void playSoundboardEffect(effect)} disabled={!onPlaySoundEffect} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-discord-text-normal transition hover:bg-discord-brand/15 hover:text-white disabled:opacity-50"><Music2 className="h-3.5 w-3.5 shrink-0 text-discord-brand"/><span className="truncate">{effect.name}</span></button>)}</div>}
-                  {soundboardMessage && <p role="status" className="mt-2 px-1 text-[10px] text-emerald-300">{soundboardMessage}</p>}
-                  <p className="mt-2 px-1 text-[10px] leading-relaxed text-discord-text-muted">O áudio será enviado pela sua transmissão de voz para quem está nesta chamada.</p>
-                </div>}
-              </div>
             </div>
           )}
         </div>
