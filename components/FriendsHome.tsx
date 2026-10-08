@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings } from "lucide-react";
+import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings, Phone, PhoneCall } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 import { useDialogs } from "@/components/DialogProvider";
@@ -13,6 +13,7 @@ import type { ProfileCardPosition, ProfileCardUser } from "@/components/UserProf
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { PresenceIndicator, type Presence } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
+import { DIRECT_CALL_INVITE } from "@/lib/directCalls";
 
 interface FriendHomeProps {
   currentUserId: string;
@@ -25,6 +26,9 @@ interface FriendHomeProps {
   onOpenSettings?: () => void;
   onPresenceChange?: (presence: Presence) => boolean | void | Promise<boolean | void>;
   onlineUserIds?: string[];
+  onJoinDirectCall?: (peerId: string, peerName: string, sendInvite: boolean) => void;
+  activeDirectCallPeerId?: string | null;
+  onOpenDirectCall?: () => void;
   currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[]; status?: string | null };
 }
 
@@ -45,7 +49,7 @@ function explainDatabaseError(error: { code?: string; message: string }, feature
   return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
 }
 
-export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onPresenceChange, onlineUserIds = [], currentUserProfile }: FriendHomeProps) {
+export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onPresenceChange, onlineUserIds = [], currentUserProfile, onJoinDirectCall, activeDirectCallPeerId, onOpenDirectCall }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [username, setUsername] = useState("");
@@ -440,6 +444,9 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
             <span className="hidden border-l border-white/10 pl-3 text-xs text-discord-text-muted lg:block">Mensagem direta</span>
             <div className="ml-auto flex min-w-0 items-center gap-2">
               {messageSearchOpen && <input autoFocus value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Buscar na conversa" aria-label="Buscar mensagens desta conversa" className="w-36 rounded-md bg-discord-bg-secondary px-2.5 py-1.5 text-xs text-discord-text-normal outline-none focus:ring-1 focus:ring-white/20 sm:w-52"/>}
+              {activeDirectCallPeerId === activeFriend.id
+                ? <button onClick={onOpenDirectCall} title="Voltar para a chamada" aria-label="Voltar para a chamada" className="rounded p-2 text-discord-online hover:bg-discord-bg-modifier-hover"><PhoneCall size={18}/></button>
+                : <button onClick={() => onJoinDirectCall?.(activeFriend.id, activeFriend.display_name || activeFriend.username, true)} title={`Ligar para ${activeFriend.display_name || activeFriend.username}`} aria-label={`Ligar para ${activeFriend.display_name || activeFriend.username}`} className="rounded p-2 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-online"><Phone size={18}/></button>}
               <button onClick={() => { setMessageSearchOpen((open) => !open); if (messageSearchOpen) setMessageSearch(""); }} title="Buscar na conversa" aria-label="Buscar na conversa" className="rounded p-2 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white"><Search size={18}/></button>
               <button onClick={() => setProfilePanelOpen((open) => !open)} title={profilePanelOpen ? "Fechar perfil" : "Abrir perfil"} aria-label={profilePanelOpen ? "Fechar perfil" : "Abrir perfil"} className={`rounded p-2 transition hover:bg-discord-bg-modifier-hover hover:text-white ${profilePanelOpen ? "text-discord-header-primary" : "text-discord-text-muted"}`}><UserRound size={18}/></button>
             </div>
@@ -467,7 +474,14 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                     <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" isHovered={hoveredDmProfileId === author.id}/></button>}</div>
                     <div className="min-w-0 flex-1">
                       {!grouped && <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} className="rounded-sm text-sm font-semibold text-discord-header-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{author.display_name || author.username}</button><time className="text-[10px] text-discord-text-muted">{timestamp.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</time></div>}
-                      {item.content && <p className="whitespace-pre-wrap break-words text-sm leading-[1.45rem] text-discord-text-normal">{item.content}</p>}
+                      {item.content === DIRECT_CALL_INVITE ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-discord-brand/30 bg-discord-brand/10 px-4 py-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-discord-brand/20 text-discord-brand"><PhoneCall size={18}/></span>
+                        <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-discord-header-primary">Chamada de voz</span><span className="block text-xs text-discord-text-muted">{item.sender_id === currentUserId ? "Convite enviado" : "Convite recebido"}</span></span>
+                        {item.sender_id !== currentUserId && (() => {
+                          const fresh = Date.now() - timestamp.getTime() < 2 * 60 * 1000;
+                          return <button type="button" disabled={!fresh} onClick={() => onJoinDirectCall?.(item.sender_id, author.display_name || author.username, false)} className="rounded-lg bg-discord-brand px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">{fresh ? "Atender" : "Expirada"}</button>;
+                        })()}
+                      </div> : item.content && <p className="whitespace-pre-wrap break-words text-sm leading-[1.45rem] text-discord-text-normal">{item.content}</p>}
                       {item.attachment_url && <a href={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
                     </div>
                   </article>
