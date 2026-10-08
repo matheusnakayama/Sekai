@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 import { useDialogs } from "@/components/DialogProvider";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
@@ -56,6 +57,8 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   const [tab, setTab] = useState<"online" | "all" | "pending">("online");
   const [selectedFriend, setSelectedFriend] = useState<Profile | null>(null);
   const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
+  const [signedDmImageUrls, setSignedDmImageUrls] = useState<Record<string, string>>({});
+  const signedDmImageCache = useRef(new Map<string, string>());
   const [dmDraft, setDmDraft] = useState("");
   const [recentProfiles, setRecentProfiles] = useState<Profile[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -154,6 +157,21 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     setDmMessages((data ?? []) as DirectMessage[]);
   }, [currentUserId, selectedFriend, supabase]);
   useEffect(() => { void loadDm(); }, [loadDm]);
+  useEffect(() => {
+    let cancelled = false;
+    const urls = Array.from(new Set(dmMessages.map((item) => item.attachment_url).filter((url): url is string => !!url)));
+    const unresolved = urls.filter((url) => !signedDmImageCache.current.has(url));
+    if (!unresolved.length) {
+      setSignedDmImageUrls(Object.fromEntries(urls.map((url) => [url, signedDmImageCache.current.get(url) ?? url])));
+      return;
+    }
+    void Promise.all(unresolved.map(async (url) => [url, await resolveChatImageUrl(supabase, url)] as const)).then((entries) => {
+      if (cancelled) return;
+      entries.forEach(([url, signedUrl]) => signedDmImageCache.current.set(url, signedUrl));
+      setSignedDmImageUrls(Object.fromEntries(urls.map((url) => [url, signedDmImageCache.current.get(url) ?? url])));
+    });
+    return () => { cancelled = true; };
+  }, [dmMessages, supabase]);
   useEffect(() => {
     if (!selectedFriend || selectedFriend.badges) return;
     let cancelled = false;
@@ -450,7 +468,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                     <div className="min-w-0 flex-1">
                       {!grouped && <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} className="rounded-sm text-sm font-semibold text-discord-header-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{author.display_name || author.username}</button><time className="text-[10px] text-discord-text-muted">{timestamp.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</time></div>}
                       {item.content && <p className="whitespace-pre-wrap break-words text-sm leading-[1.45rem] text-discord-text-normal">{item.content}</p>}
-                      {item.attachment_url && <a href={item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
+                      {item.attachment_url && <a href={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
                     </div>
                   </article>
                 </div>;
