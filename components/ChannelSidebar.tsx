@@ -186,32 +186,34 @@ export function ChannelSidebar({
                         onDragOver={(event) => { if (canManageChannels && draggedChannelId) event.preventDefault(); }}
                         onDrop={(event) => dropChannel(channel, event)}
                         onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, channel }); }}
-                        className={cn("group/channel flex min-w-0 items-center rounded-md transition", draggedChannelId === channel.id && "opacity-40", canManageChannels && "cursor-grab active:cursor-grabbing")}
+                        className={cn("group/channel flex min-w-0 flex-col rounded-md transition", draggedChannelId === channel.id && "opacity-40", canManageChannels && "cursor-grab active:cursor-grabbing")}
                       >
-                        <button
-                          onClick={() => onSelectChannel(channel.id)}
-                          className={cn(
-                            "flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-medium",
-                            active
-                              ? "bg-discord-bg-modifier-hover text-discord-header-primary"
-                              : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
-                          )}
-                        >
-                          {channel.type === "text" ? (
-                            <Hash className="h-4 w-4 shrink-0" />
-                          ) : (
-                            <Volume2 className="h-4 w-4 shrink-0" />
-                          )}
-                          <span className="truncate">{channel.name}</span>
-                          {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-discord-online" title="Conectado" />}
-                          {channel.unread && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-white" />}
-                        </button>
-                        {(canCreateInvite || canManageChannels) && <div className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
-                          {canCreateInvite && <button type="button" onClick={() => onCreateChannelInvite?.(channel)} title="Convidar para este canal" aria-label={`Convidar para ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><UserPlus className="h-3.5 w-3.5"/></button>}
-                          {canManageChannels && <button type="button" onClick={() => onEditChannel?.(channel)} title="Configurações do canal" aria-label={`Configurações de ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><Settings className="h-3.5 w-3.5"/></button>}
-                        </div>}
+                        <div className="flex min-w-0 items-center rounded-md">
+                          <button
+                            onClick={() => onSelectChannel(channel.id)}
+                            className={cn(
+                              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-medium",
+                              active
+                                ? "bg-discord-bg-modifier-hover text-discord-header-primary"
+                                : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
+                            )}
+                          >
+                            {channel.type === "text" ? (
+                              <Hash className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <Volume2 className="h-4 w-4 shrink-0" />
+                            )}
+                            <span className="truncate">{channel.name}</span>
+                            {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-discord-online" title="Conectado" />}
+                            {channel.unread && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-white" />}
+                          </button>
+                          {(canCreateInvite || canManageChannels) && <div className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
+                            {canCreateInvite && <button type="button" onClick={() => onCreateChannelInvite?.(channel)} title="Convidar para este canal" aria-label={`Convidar para ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><UserPlus className="h-3.5 w-3.5"/></button>}
+                            {canManageChannels && <button type="button" onClick={() => onEditChannel?.(channel)} title="Configurações do canal" aria-label={`Configurações de ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><Settings className="h-3.5 w-3.5"/></button>}
+                          </div>}
+                        </div>
                         {channel.type === "voice" && (voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).length > 0 && (
-                          <div className="ml-8 mt-0.5 space-y-1 border-l border-white/10 py-1 pl-2">
+                          <div className="ml-8 mt-0.5 max-w-[calc(100%-2rem)] space-y-1 border-l border-white/10 py-1 pl-2">
                             {(voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).map((member) => (
                               <div key={member.id} className="flex min-w-0 items-center gap-2">
                                 <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
