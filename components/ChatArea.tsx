@@ -74,6 +74,19 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatMessageDate(date: Date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Hoje";
+  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
+  return date.toLocaleDateString("pt-BR", {
+    day: "numeric",
+    month: "long",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
 export function ChatArea({
   serverId,
   channelName,
@@ -280,10 +293,15 @@ export function ChatArea({
           </div>
         ) : !messages.length ? (
           <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
-        ) : messages.map((message) => {
+        ) : messages.map((message, index) => {
+          const timestamp = new Date(message.createdAt);
+          const previousTimestamp = index > 0 ? new Date(messages[index - 1].createdAt) : null;
+          const showDate = !previousTimestamp || timestamp.toDateString() !== previousTimestamp.toDateString();
           const authorStatus = memberById.get(message.authorId)?.status;
           return (
-          <div key={message.id} onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-2 rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] sm:gap-3 sm:px-2">
+          <div key={message.id}>
+          {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
+          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-2 rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] sm:gap-3 sm:px-2">
             <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -351,6 +369,7 @@ export function ChatArea({
                 </div>
               )}
             </div>
+          </div>
           </div>
           );
         })}
