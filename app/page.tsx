@@ -23,8 +23,9 @@ import { FriendsHome } from "@/components/FriendsHome";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { getServerTemplate } from "@/lib/serverTemplates";
+import type { SoundboardEffect } from "@/components/Controls";
 
-type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void };
+type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> };
 type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
 
 function channelCacheKey(userId: string, serverId: string) {
@@ -224,6 +225,7 @@ export default function Home() {
     channelName: string;
     accessToken: string;
     kind: "server" | "dm";
+    serverId?: string;
     peerUserId?: string;
   } | null>(null);
   const [callExpanded, setCallExpanded] = useState(false);
@@ -243,7 +245,6 @@ export default function Home() {
       return [];
     }
   });
-  const mutedSoundEffectUsersRef = useRef(new Set(mutedSoundEffectUserIds));
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
@@ -264,7 +265,6 @@ export default function Home() {
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
   useEffect(() => {
-    mutedSoundEffectUsersRef.current = new Set(mutedSoundEffectUserIds);
     try {
       window.localStorage.setItem("sekai-muted-sound-effect-users", JSON.stringify(mutedSoundEffectUserIds));
     } catch {
@@ -394,69 +394,6 @@ export default function Home() {
       if (realtimeChannel) void supabase.removeChannel(realtimeChannel);
     };
   }, [channelListVersion, currentUserId, playBankaiSound, serverListVersion, supabase]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    let cancelled = false;
-    const soundChannels: ReturnType<typeof supabase.channel>[] = [];
-
-    async function subscribeToSoundboards() {
-      const { data: memberships, error } = await supabase
-        .from("members")
-        .select("server_id")
-        .eq("user_id", currentUserId);
-      if (cancelled) return;
-      if (error) {
-        console.warn("Não foi possível carregar os servidores para os efeitos sonoros:", error.message);
-        return;
-      }
-
-      const serverIds = [...new Set((memberships ?? []).map((row: any) => row.server_id).filter(Boolean))];
-      for (const serverId of serverIds) {
-        if (cancelled) return;
-        const channel = supabase.channel(`sekai-soundboard:${serverId}`, { config: { private: true } });
-        channel.on("broadcast", { event: "play" }, ({ payload }) => {
-          const request = payload as { serverId?: string; soundId?: string; actorId?: string };
-          if (
-            request.serverId !== serverId ||
-            !request.soundId ||
-            !request.actorId ||
-            request.actorId === currentUserId ||
-            myProfile?.presence === "dnd" ||
-            mutedSoundEffectUsersRef.current.has(request.actorId)
-          ) return;
-
-          void supabase
-            .from("server_assets")
-            .select("asset_url")
-            .eq("id", request.soundId)
-            .eq("server_id", serverId)
-            .eq("kind", "sound")
-            .maybeSingle()
-            .then(({ data, error: assetError }) => {
-              if (cancelled || assetError || !data?.asset_url) return;
-              const audio = new Audio(data.asset_url);
-              audio.volume = 0.85;
-              void audio.play().catch((playError) => {
-                console.warn("O navegador bloqueou o efeito sonoro recebido:", playError);
-              });
-            });
-        });
-        soundChannels.push(channel);
-        channel.subscribe((status) => {
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn(`A conexão dos efeitos sonoros do servidor ${serverId} foi interrompida:`, status);
-          }
-        });
-      }
-    }
-
-    void subscribeToSoundboards();
-    return () => {
-      cancelled = true;
-      soundChannels.forEach((channel) => void supabase.removeChannel(channel));
-    };
-  }, [currentUserId, myProfile?.presence, serverListVersion, supabase]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -1195,7 +1132,6 @@ export default function Home() {
       const next = new Set(previous);
       if (muted) next.add(userId);
       else next.delete(userId);
-      mutedSoundEffectUsersRef.current = next;
       return Array.from(next);
     });
   }
@@ -1235,6 +1171,7 @@ export default function Home() {
       channelName: channel.name,
       accessToken: data.session.access_token,
       kind: "server",
+      serverId: activeServerId,
     });
     setCallExpanded(true);
   }
@@ -1605,8 +1542,11 @@ export default function Home() {
         onToggleDeafen={voiceSession ? () => voiceControlsRef.current?.toggleDeafen() : undefined}
         connectedVoiceChannelId={voiceSession?.channelId ?? null}
         connectedVoiceChannelName={voiceSession?.channelName}
+        connectedVoiceServerId={voiceSession?.kind === "server" ? voiceSession.serverId : undefined}
         connectedVoiceMembers={liveVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}
+        onPresentScreen={voiceSession?.kind === "server" ? () => { void voiceControlsRef.current?.toggleScreenShare(); } : undefined}
+        onPlaySoundEffect={voiceSession?.kind === "server" ? async (effect) => (await voiceControlsRef.current?.playSoundEffect(effect)) ?? false : undefined}
         onDisconnectVoice={disconnectVoice}
         currentUser={{
           userId: currentUserId,
@@ -1698,6 +1638,12 @@ export default function Home() {
             viewAudit: isPlatformAdmin || hasPermission(myPermissions, "VIEW_AUDIT_LOG"),
           }}
           onClose={() => setShowServerSettings(false)}
+          onPlaySoundEffect={async (serverId, sound) => {
+            if (voiceSession?.kind !== "server" || voiceSession.serverId !== serverId || !voiceControlsRef.current) return false;
+            const sent = await voiceControlsRef.current.playSoundEffect({ id: sound.id, name: sound.name, assetUrl: sound.asset_url });
+            if (!sent) throw new Error("Não foi possível transmitir o efeito para a chamada.");
+            return true;
+          }}
           onDeleted={() => {
             setShowServerSettings(false);
             if (currentUserId) {
@@ -1733,9 +1679,11 @@ export default function Home() {
           <RoomClient
             key={voiceSession.channelId}
             roomId={voiceSession.channelId}
+            serverId={voiceSession.serverId}
             roomName={voiceSession.channelName}
             initialName={currentMember?.displayName ?? "Você"}
             accessToken={voiceSession.accessToken}
+            mutedSoundEffectUserIds={mutedSoundEffectUserIds}
             autoJoin
             onParticipantsChange={handleVoiceParticipantsChange}
             onControlsReady={handleVoiceControlsReady}
