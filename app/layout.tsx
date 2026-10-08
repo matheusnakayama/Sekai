@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
@@ -12,6 +13,12 @@ export const metadata: Metadata = {
     shortcut: "/sekai-symbol.jpg",
     apple: "/sekai-symbol.jpg",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -30,7 +37,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="h-screen w-screen overflow-hidden bg-discord-bg-primary">
+      <body className="h-[100dvh] w-full overflow-hidden bg-discord-bg-primary">
         <DialogProvider>
           {children}
           <FloatingYoutubeCharm />
