@@ -104,21 +104,24 @@ export default function ThemePicker({ placement = "down", align = "right", class
                   type="button"
                   onClick={() => setTheme(option.id)}
                   className={cn(
-                    "group overflow-hidden rounded-lg border text-left transition",
-                    active ? "border-white/70" : "border-white/10 hover:border-white/40"
+                    "group overflow-hidden rounded-xl border bg-white/[0.025] text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.06] hover:shadow-lg",
+                    active ? "border-white/65 ring-1 ring-white/25" : "border-white/10 hover:border-white/35"
                   )}
                 >
                   <span
-                    className="relative block h-9 w-full"
-                    style={{ backgroundImage: gradientOf(option.stops) }}
+                    className="relative block h-11 w-full overflow-hidden"
+                    style={{ backgroundImage: gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]]) }}
                   >
+                    <span className="absolute left-2 top-2 h-5 w-9 rounded-md border border-white/25 bg-white/15 shadow-sm backdrop-blur-sm" />
+                    <span className="absolute bottom-2 right-2 h-3 w-5 rounded-full border border-white/20 bg-black/15" />
                     {active && (
-                      <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/55">
+                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/25 bg-black/55 shadow-sm">
                         <Check className="h-3 w-3 text-white" />
                       </span>
                     )}
                   </span>
-                  <span className="block truncate px-2 py-1 text-xs font-medium text-discord-text-normal">
+                  <span className="block h-1 w-full" style={{ backgroundImage: gradientOf(option.stops) }} />
+                  <span className="block truncate px-2 py-1.5 text-[11px] font-semibold text-discord-text-normal">
                     {option.name}
                   </span>
                 </button>
