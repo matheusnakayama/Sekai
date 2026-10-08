@@ -151,12 +151,141 @@ export default function Home() {
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
+  const bankaiAudioRef = useRef<HTMLAudioElement | null>(null);
+  const bankaiAudioUnlockedRef = useRef(false);
+  const bankaiAudioUnlockingRef = useRef(false);
+  const bankaiAudioRequestRef = useRef(0);
+  const bankaiCooldownByServerRef = useRef(new Map<string, number>());
   const [showCreateServer, setShowCreateServer] = useState(false);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const serverListVersion = servers.map((server) => server.id).join(":");
+  const channelListVersion = channels.map((channel) => channel.id).join(":");
+
+  const playBankaiSound = useCallback(async () => {
+    if (myProfile?.presence === "dnd") return;
+    const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+    bankaiAudioRef.current = audio;
+    audio.preload = "auto";
+    // Invalida a tentativa silenciosa de desbloqueio que possa estar pendente.
+    bankaiAudioRequestRef.current += 1;
+    bankaiAudioUnlockingRef.current = false;
+    audio.muted = false;
+    audio.volume = 0.85;
+    audio.pause();
+    audio.currentTime = 0;
+    try {
+      await audio.play();
+      bankaiAudioUnlockedRef.current = true;
+    } catch {
+      // O navegador pode bloquear som iniciado remotamente. A primeira
+      // interação local tenta liberar o mesmo áudio sem abrir uma confirmação.
+    }
+  }, [myProfile?.presence]);
+
+  useEffect(() => {
+    function unlockBankaiAudio() {
+      if (bankaiAudioUnlockedRef.current || bankaiAudioUnlockingRef.current) return;
+      const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+      bankaiAudioRef.current = audio;
+      audio.preload = "auto";
+      audio.muted = true;
+      audio.currentTime = 0;
+      bankaiAudioUnlockingRef.current = true;
+      const requestId = ++bankaiAudioRequestRef.current;
+      void audio.play().then(() => {
+        if (requestId === bankaiAudioRequestRef.current) {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = false;
+          bankaiAudioUnlockedRef.current = true;
+        }
+        bankaiAudioUnlockingRef.current = false;
+      }).catch(() => {
+        if (requestId === bankaiAudioRequestRef.current) {
+          audio.muted = false;
+          bankaiAudioUnlockingRef.current = false;
+        }
+      });
+    }
+
+    window.addEventListener("pointerdown", unlockBankaiAudio);
+    window.addEventListener("keydown", unlockBankaiAudio);
+    window.addEventListener("touchstart", unlockBankaiAudio);
+    return () => {
+      window.removeEventListener("pointerdown", unlockBankaiAudio);
+      window.removeEventListener("keydown", unlockBankaiAudio);
+      window.removeEventListener("touchstart", unlockBankaiAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let cancelled = false;
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function subscribeToServerBankai() {
+      // Usa a associação real de cada conta, não a lista de servidores
+      // administráveis que aparece para administradores da plataforma.
+      const { data: memberships, error: membershipError } = await supabase
+        .from("members")
+        .select("server_id")
+        .eq("user_id", currentUserId);
+      if (cancelled) return;
+      if (membershipError) {
+        console.warn("Não foi possível carregar os servidores para o comando BANKAI:", membershipError.message);
+        return;
+      }
+      const serverIds = [...new Set((memberships ?? []).map((row: any) => row.server_id).filter(Boolean))];
+      if (serverIds.length === 0) return;
+
+      const { data: textChannels, error } = await supabase
+        .from("channels")
+        .select("id, server_id")
+        .in("server_id", serverIds)
+        .eq("type", "text");
+      if (cancelled || error || !textChannels?.length) {
+        if (error) console.warn("Não foi possível ouvir os comandos BANKAI:", error.message);
+        return;
+      }
+
+      const channel = supabase.channel(`sekai-bankai:${currentUserId}`);
+      textChannels.forEach((textChannel: { id: string; server_id: string }) => {
+        channel.on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `channel_id=eq.${textChannel.id}`,
+        }, (event) => {
+          const message = event.new as { content?: string | null; author_id?: string };
+          if (message.content?.trim().toLocaleUpperCase() !== ".BANKAI") return;
+          // O remetente já iniciou o áudio diretamente no gesto de envio.
+          if (message.author_id === currentUserId) return;
+          const now = Date.now();
+          const lastPlayed = bankaiCooldownByServerRef.current.get(textChannel.server_id) ?? 0;
+          if (now - lastPlayed < 2500) return;
+          bankaiCooldownByServerRef.current.set(textChannel.server_id, now);
+          void playBankaiSound();
+        });
+      });
+
+      realtimeChannel = channel;
+      channel.subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("A conexão do comando BANKAI foi interrompida:", status);
+        }
+      });
+    }
+
+    void subscribeToServerBankai();
+    return () => {
+      cancelled = true;
+      if (realtimeChannel) void supabase.removeChannel(realtimeChannel);
+    };
+  }, [channelListVersion, currentUserId, playBankaiSound, serverListVersion, supabase]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -1061,6 +1190,10 @@ export default function Home() {
       });
       if (!result.ok) console.warn(result.message);
       return;
+    }
+    // Dispare no próprio gesto de envio, antes de qualquer verificação assíncrona.
+    if (/^\.BANKAI$/i.test(content.trim()) && myProfile?.presence !== "dnd") {
+      void playBankaiSound();
     }
     try {
       if (activeServerId && content) {
