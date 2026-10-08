@@ -53,6 +53,7 @@ interface ServerSettingsModalProps {
   onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
+  onPlaySoundEffect?: (serverId: string, sound: { id: string; name: string; asset_url: string }) => Promise<boolean>;
 }
 
 export function ServerSettingsModal({
@@ -64,6 +65,7 @@ export function ServerSettingsModal({
   onClose,
   onChanged,
   onDeleted,
+  onPlaySoundEffect,
 }: ServerSettingsModalProps) {
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("geral");
@@ -112,7 +114,7 @@ export function ServerSettingsModal({
           {(tab === "engajamento" || tab === "impulso") && <ServerMetricsPanel serverId={serverId} serverName={serverName}/>}
           {tab === "emoji" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="emoji" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "stickers" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="sticker" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
-          {tab === "soundboard" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="sound" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "soundboard" && <ServerAssetsPanel serverId={serverId} currentUserId={currentUserId} kind="sound" canManage={isOwner || perms.manageGuild} onAudit={onAudit} onPlaySoundEffect={onPlaySoundEffect}/>}
           {tab === "acesso" && <ServerPreferencesPanel serverId={serverId} section="access" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "seguranca" && <ServerPreferencesPanel serverId={serverId} section="security" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "automod" && <ServerPreferencesPanel serverId={serverId} section="automod" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
