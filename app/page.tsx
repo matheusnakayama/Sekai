@@ -10,7 +10,7 @@ import { ServerSidebar, ServerItem } from "@/components/ServerSidebar";
 import { CreateServerModal } from "@/components/CreateServerModal";
 import { CreateChannelModal } from "@/components/CreateChannelModal";
 import { useDialogs } from "@/components/DialogProvider";
-import { ChannelSidebar, Channel, VoiceMemberPreview } from "@/components/ChannelSidebar";
+import { ChannelSidebar, Channel, ChannelCategory, VoiceMemberPreview } from "@/components/ChannelSidebar";
 import { ChannelInviteModal } from "@/components/ChannelInviteModal";
 import { ChannelSettingsModal } from "@/components/ChannelSettingsModal";
 import { ChatArea } from "@/components/ChatArea";
@@ -207,6 +207,7 @@ export default function Home() {
   const serverChannelsCache = useRef(new Map<string, Channel[]>());
   const serverMessageSettingsCache = useRef(new Map<string, ServerMessageSettings>());
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [channelCategories, setChannelCategories] = useState<ChannelCategory[]>([]);
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [mentionRequest, setMentionRequest] = useState<{ displayName: string; nonce: number } | null>(null);
   const mentionRequestRef = useRef(0);
@@ -716,6 +717,7 @@ export default function Home() {
     setActiveServerId("");
     setActiveChannelId("");
     setChannels([]);
+    setChannelCategories([]);
     setMembers([]);
   }, [authChecked, currentUserId]);
 
@@ -779,6 +781,11 @@ export default function Home() {
     setIsOwner(serverResult.data?.owner_id === currentUserId);
 
     if (!categoryResult.error) {
+      setChannelCategories((categoryResult.data ?? []).map((category: any) => ({
+        id: category.id,
+        name: category.name,
+        position: Number(category.position ?? 0),
+      })));
       const categoryNameById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, category.name]));
       const categoryPositionById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, Number(category.position ?? 0)]));
       const categorizedChannels = mappedChannels.map((channel) => ({
@@ -897,6 +904,7 @@ export default function Home() {
     setActiveChannelId(firstCachedChannel?.id ?? "");
     setActiveChannelType(firstCachedChannel?.type ?? "text");
     setChannels(cachedChannels ?? []);
+    setChannelCategories([]);
     setMembers([]);
     setServerRoles([]);
     setIsOwner(false);
@@ -1525,6 +1533,7 @@ export default function Home() {
         key={activeServerId}
         serverName={servers.find((s) => s.id === activeServerId)?.name ?? "Selecione um servidor"}
         channels={channels}
+        categories={channelCategories}
         activeChannelId={activeChannelId}
         onSelectChannel={(channelId) => { handleSelectChannel(channelId); setMobileNavigationOpen(false); }}
         onCloseMobileNav={() => setMobileNavigationOpen(false)}
@@ -1589,9 +1598,7 @@ export default function Home() {
 
       {createChannelCategoryId !== undefined && (
         <CreateChannelModal
-          categories={Array.from(new Map(channels.map((c) => [c.categoryId, c.categoryName] as const)).entries())
-            .filter(([id]) => id)
-            .map(([id, name]) => ({ id: id as string, name: String(name) }))}
+          categories={channelCategories.map(({ id, name }) => ({ id, name }))}
           defaultCategoryId={createChannelCategoryId}
           onClose={() => setCreateChannelCategoryId(undefined)}
           onCreate={handleSubmitCreateChannel}
@@ -1608,9 +1615,7 @@ export default function Home() {
 
       {channelSettingsTarget && <ChannelSettingsModal
         channel={channelSettingsTarget}
-        categories={Array.from(new Map(channels.map((channel) => [channel.categoryId, channel.categoryName] as const)).entries())
-          .filter(([id]) => id)
-          .map(([id, name]) => ({ id: id as string, name: String(name) }))}
+        categories={channelCategories.map(({ id, name }) => ({ id, name }))}
         onClose={() => setChannelSettingsTarget(null)}
         onSave={handleSaveChannelSettings}
       />}
