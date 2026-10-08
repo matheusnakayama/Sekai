@@ -6,7 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function getProfilePalette(color?: string | null) {
-  const surface = color && /^#[\da-f]{6}$/i.test(color) ? color : "#0b0b0d";
+  const isGradient = !!color && /^linear-gradient\(\s*135deg\s*,\s*#[\da-f]{6}(?:\s*,\s*#[\da-f]{6}){1,2}\s*\)$/i.test(color);
+  const firstColor = color?.match(/#[\da-f]{6}/i)?.[0];
+  const surface = firstColor && /^#[\da-f]{6}$/i.test(firstColor) ? firstColor : "#0b0b0d";
   const channels = [1, 3, 5].map((offset) => Number.parseInt(surface.slice(offset, offset + 2), 16) / 255);
   const luminance = channels.reduce((total, value, index) => {
     const linear = value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
@@ -16,6 +18,7 @@ export function getProfilePalette(color?: string | null) {
 
   return {
     surface,
+    background: isGradient ? color! : surface,
     isLight,
     text: isLight ? "#1f2024" : "#f2f3f5",
     muted: isLight ? "rgba(31,32,36,.68)" : "rgba(242,243,245,.68)",
