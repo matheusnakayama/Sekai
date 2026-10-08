@@ -13,6 +13,8 @@ import {
   UserMinus,
   UserPlus,
   UserRound,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { RoleIcon } from "@/components/RoleBadgeList";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
@@ -39,6 +41,8 @@ interface MemberContextMenuProps {
   onKick?: () => void;
   onBan?: () => void;
   onToggleRole?: (role: ServerRoleOption, assigned: boolean) => void;
+  soundEffectsMuted?: boolean;
+  onToggleSoundEffects?: () => void;
 }
 
 export function MemberContextMenu({
@@ -63,6 +67,8 @@ export function MemberContextMenu({
   onKick,
   onBan,
   onToggleRole,
+  soundEffectsMuted = false,
+  onToggleSoundEffects,
 }: MemberContextMenuProps) {
   const [rolesOpen, setRolesOpen] = useState(false);
   const isSelf = member.id === currentUserId;
@@ -107,6 +113,19 @@ export function MemberContextMenu({
         <MenuAction icon={<AtSign size={15} />} label="Menção" onClick={run(onMention)} />
         <MenuAction icon={<MessageCircle size={15} />} label="Mensagem" disabled={!onMessage || isSelf} hint={isSelf ? "Não é possível enviar mensagem para si mesmo" : undefined} onClick={run(onMessage)} />
         <MenuAction icon={<UserPlus size={15} />} label="Adicionar amigo" disabled={isSelf} hint={isSelf ? "Esta é sua própria conta" : undefined} onClick={run(onAddFriend)} />
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={soundEffectsMuted}
+          disabled={isSelf || !onToggleSoundEffects}
+          onClick={run(onToggleSoundEffects)}
+          title={isSelf ? "Use as configurações de som do seu próprio dispositivo" : undefined}
+          className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-[13px] font-medium transition hover:bg-white/[0.08] focus-visible:bg-white/[0.08] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {soundEffectsMuted ? <Volume2 size={15} className="shrink-0 text-white/65" /> : <VolumeX size={15} className="shrink-0 text-white/65" />}
+          <span className="min-w-0 flex-1 truncate">{soundEffectsMuted ? "Ativar efeitos sonoros" : "Desativar efeitos sonoros"}</span>
+          {soundEffectsMuted && <Check size={13} className="shrink-0 text-emerald-400" />}
+        </button>
 
         <MenuDivider />
 
