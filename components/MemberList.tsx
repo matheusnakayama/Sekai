@@ -97,11 +97,11 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
     <div className="h-full w-60 overflow-y-auto bg-discord-bg-dark px-2 py-2">
       {groups.map(({ id, roleName, roleColor, roleInsigniaUrl, members: roleMembers }) => (
         <section key={id} className="mb-3">
-          <div className="flex min-w-0 items-center gap-1.5 px-2 py-2">
+          <div className="flex min-h-10 min-w-0 items-center gap-1.5 px-2 py-2 md:min-h-0">
             {roleName.toLocaleLowerCase() !== "@everyone" && roleName.toLocaleLowerCase() !== "everyone" && roleName !== "Membro" && (
               <RoleInsignia role={{ id, name: roleName, color: roleColor, insigniaUrl: roleInsigniaUrl }} size="small" />
             )}
-            <p className="min-w-0 flex-1 truncate text-xs font-medium text-discord-text-muted">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-discord-text-muted md:text-xs">
               {roleName} — {roleMembers.length}
             </p>
           </div>
@@ -184,13 +184,13 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
   const [hovered, setHovered] = useState(false);
 
   return (
-    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-discord-bg-modifier-hover", member.status === "offline" && "opacity-45 hover:opacity-80")}>
-      <div className="relative h-8 w-8 shrink-0">
+    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group flex min-h-12 w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-discord-bg-modifier-hover md:min-h-0 md:py-1.5", member.status === "offline" && "opacity-45 hover:opacity-80")}>
+      <div className="relative h-9 w-9 shrink-0 md:h-8 md:w-8">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
           <CroppedProfileImage src={member.avatarUrl} alt="" className="rounded-full" isHovered={hovered} positionX={member.avatarPositionX} positionY={member.avatarPositionY} zoom={member.avatarZoom} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
+          <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white md:text-xs">
             {member.displayName[0]?.toUpperCase()}
           </div>
         )}
@@ -200,7 +200,7 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
 
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1.5 leading-5">
-          <span className="min-w-0 truncate text-sm font-medium" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
+          <span className="min-w-0 truncate text-[15px] font-medium md:text-sm" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
         </span>
         {member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
       </span>
