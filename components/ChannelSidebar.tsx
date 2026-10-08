@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   Hash,
+  Music2,
   Volume2,
   Mic,
   MicOff,
@@ -19,6 +20,9 @@ import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 import type { CustomBadge } from "@/lib/badges";
+import { createClient } from "@/lib/supabase/client";
+import type { SoundboardEffect } from "@/components/Controls";
+import { ScreenShareIcon } from "@/components/icons";
 
 export interface Channel {
   id: string;
@@ -80,8 +84,11 @@ interface ChannelSidebarProps {
   /** Canal de voz em que você está conectado agora (a chamada segue ativa em segundo plano). */
   connectedVoiceChannelId?: string | null;
   connectedVoiceChannelName?: string;
+  connectedVoiceServerId?: string;
   connectedVoiceMembers?: VoiceMemberPreview[];
   voiceMembersByChannel?: Record<string, VoiceMemberPreview[]>;
+  onPresentScreen?: () => void;
+  onPlaySoundEffect?: (effect: SoundboardEffect) => Promise<boolean>;
   onDisconnectVoice?: () => void;
 }
 
@@ -106,16 +113,63 @@ export function ChannelSidebar({
   onReorderChannels,
   connectedVoiceChannelId,
   connectedVoiceChannelName,
+  connectedVoiceServerId,
   connectedVoiceMembers = [],
   voiceMembersByChannel = {},
+  onPresentScreen,
+  onPlaySoundEffect,
   onDisconnectVoice,
 }: ChannelSidebarProps) {
+  const supabase = createClient();
   const orderedChannels = [...channels].sort((a, b) => (a.categoryPosition ?? 0) - (b.categoryPosition ?? 0) || (a.position ?? 0) - (b.position ?? 0));
   const categories = Array.from(new Set(orderedChannels.map((c) => c.categoryName)));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
   const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+  const [soundboardOpen, setSoundboardOpen] = useState(false);
+  const [soundboardEffects, setSoundboardEffects] = useState<SoundboardEffect[]>([]);
+  const [soundboardLoading, setSoundboardLoading] = useState(false);
+  const [soundboardError, setSoundboardError] = useState("");
+  const [soundboardMessage, setSoundboardMessage] = useState("");
   const presenceLabel = currentUser.presence === "online" ? "Online" : currentUser.presence === "idle" ? "Ausente" : currentUser.presence === "dnd" ? "Não perturbe" : "Invisível";
+
+  useEffect(() => {
+    let cancelled = false;
+    setSoundboardEffects([]);
+    setSoundboardError("");
+    if (!connectedVoiceServerId) {
+      setSoundboardLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setSoundboardLoading(true);
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("server_assets")
+          .select("id,name,asset_url")
+          .eq("server_id", connectedVoiceServerId)
+          .eq("kind", "sound")
+          .order("name", { ascending: true });
+        if (cancelled) return;
+        if (error) {
+          console.warn("Não foi possível carregar os efeitos sonoros da chamada:", error.message);
+          setSoundboardError("Não foi possível carregar os sons deste servidor.");
+          return;
+        }
+        setSoundboardEffects((data ?? []).map((row) => ({ id: row.id, name: row.name, assetUrl: row.asset_url })));
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Não foi possível carregar os efeitos sonoros da chamada:", error);
+          setSoundboardError("Não foi possível carregar os sons deste servidor.");
+        }
+      } finally {
+        if (!cancelled) setSoundboardLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [connectedVoiceServerId, supabase]);
 
   function dropChannel(target: Channel, event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -128,6 +182,19 @@ export function ChannelSidebar({
     next.splice(Math.max(0, insertIndex), 0, moved);
     onReorderChannels?.(next);
     setDraggedChannelId(null);
+  }
+
+  async function playSoundboardEffect(effect: SoundboardEffect) {
+    if (!onPlaySoundEffect) return;
+    setSoundboardMessage(`Enviando “${effect.name}”…`);
+    try {
+      const sent = await onPlaySoundEffect(effect);
+      setSoundboardMessage(sent ? `“${effect.name}” enviado para a chamada.` : "Não foi possível transmitir o efeito. Tente novamente.");
+    } catch (error) {
+      console.warn("Não foi possível transmitir o efeito sonoro:", error);
+      setSoundboardMessage(error instanceof Error ? error.message : "Não foi possível transmitir o efeito.");
+    }
+    window.setTimeout(() => setSoundboardMessage(""), 3500);
   }
 
   return (
@@ -267,6 +334,39 @@ export function ChannelSidebar({
               <PhoneOff className="h-[18px] w-[18px]" />
             </button>
           </div>
+          {connectedVoiceServerId && (
+            <div className="mt-2 flex items-center gap-1.5 border-t border-white/[0.06] pt-2">
+              <button
+                type="button"
+                onClick={onPresentScreen}
+                disabled={!onPresentScreen}
+                title="Apresentar tela na chamada"
+                aria-label="Apresentar tela na chamada"
+                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.035] text-xs font-medium text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <ScreenShareIcon active={false} />
+                Apresentar tela
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSoundboardOpen((open) => !open)}
+                  aria-label="Abrir efeitos sonoros da chamada"
+                  aria-expanded={soundboardOpen}
+                  title="Efeitos sonoros"
+                  className={`grid h-9 w-10 place-items-center rounded-lg border transition ${soundboardOpen ? "border-discord-brand/50 bg-discord-brand/15 text-white" : "border-white/[0.07] bg-white/[0.035] text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white"}`}
+                >
+                  <Music2 className="h-4 w-4" />
+                </button>
+                {soundboardOpen && <div className="absolute bottom-full right-0 z-[80] mb-2 w-60 max-w-[calc(100vw_-_2rem)] overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-2.5 shadow-2xl">
+                  <div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-semibold text-discord-header-primary">Efeitos sonoros</p><span className="text-[10px] text-discord-text-muted">{soundboardEffects.length}</span></div>
+                  {soundboardLoading ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] text-discord-text-muted">Carregando sons…</p> : soundboardError ? <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-4 text-center text-[11px] text-red-200">{soundboardError}</p> : soundboardEffects.length === 0 ? <p className="rounded-lg bg-black/15 px-3 py-4 text-center text-[11px] leading-relaxed text-discord-text-muted">Nenhum efeito cadastrado neste servidor. Adicione em Configurações → Painel de efeitos sonoros.</p> : <div className="max-h-56 space-y-1 overflow-y-auto">{soundboardEffects.map((effect) => <button key={effect.id} type="button" onClick={() => void playSoundboardEffect(effect)} disabled={!onPlaySoundEffect} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-discord-text-normal transition hover:bg-discord-brand/15 hover:text-white disabled:opacity-50"><Music2 className="h-3.5 w-3.5 shrink-0 text-discord-brand"/><span className="truncate">{effect.name}</span></button>)}</div>}
+                  {soundboardMessage && <p role="status" className="mt-2 px-1 text-[10px] text-emerald-300">{soundboardMessage}</p>}
+                  <p className="mt-2 px-1 text-[10px] leading-relaxed text-discord-text-muted">O áudio será enviado pela sua transmissão de voz para quem está nesta chamada.</p>
+                </div>}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
