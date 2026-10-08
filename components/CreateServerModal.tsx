@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SERVER_TEMPLATES } from "@/lib/serverTemplates";
 
 interface CreateServerModalProps {
   onClose: () => void;
-  onCreate: (name: string, iconFile: File | null) => Promise<void>;
+  onCreate: (name: string, iconFile: File | null, templateId: string) => Promise<void>;
   onJoin: (code: string) => Promise<void>;
 }
 
@@ -15,6 +16,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
   const [name, setName] = useState("");
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [iconPreview, setIconPreview] = useState("");
+  const [templateId, setTemplateId] = useState("basic");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -39,7 +41,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
           setError("Dê um nome ao seu servidor.");
           return;
         }
-        await onCreate(name.trim(), iconFile);
+        await onCreate(name.trim(), iconFile, templateId);
       } else {
         if (!code.trim()) {
           setError("Cole um código de convite.");
@@ -57,7 +59,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg bg-discord-bg-secondary p-6 shadow-xl">
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-discord-bg-secondary p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-discord-header-primary">
             {mode === "create" ? "Crie seu servidor" : "Entrar em um servidor"}
@@ -122,6 +124,29 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
               placeholder="Servidor do(a) {seu nome}"
               className="mb-2 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
             />
+            <p className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-discord-text-muted">Escolha um modelo</p>
+            <div className="grid max-h-52 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              {SERVER_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => setTemplateId(template.id)}
+                  aria-pressed={templateId === template.id}
+                  className={cn(
+                    "flex min-h-[72px] items-start gap-3 rounded-lg border p-3 text-left transition",
+                    templateId === template.id
+                      ? "border-discord-brand bg-discord-brand/15 ring-1 ring-discord-brand/40"
+                      : "border-white/10 bg-discord-bg-primary/60 hover:border-white/20 hover:bg-discord-bg-primary"
+                  )}
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-theme-gradient text-lg text-white">{template.icon}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-discord-header-primary">{template.name}</span>
+                    <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-discord-text-muted">{template.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           </>
         ) : (
           <>
