@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Menu, Users, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { aggregateRolePermissions, hasPermission, PERMISSIONS, toBigInt } from "@/lib/permissions";
 import { UserSettingsModal } from "@/components/UserSettingsModal";
@@ -216,6 +217,8 @@ export default function Home() {
   const [activeServerId, setActiveServerId] = useState<string>("");
   const [activeChannelId, setActiveChannelId] = useState<string>("");
   const [activeChannelType, setActiveChannelType] = useState<"text" | "voice">("text");
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [mobileMembersOpen, setMobileMembersOpen] = useState(false);
   const [isServerLoading, setIsServerLoading] = useState(false);
   const serverLoadSequence = useRef(0);
   const [inviteChannelId, setInviteChannelId] = useState<string | null>(null);
@@ -1504,16 +1507,18 @@ export default function Home() {
     : voiceMembersByChannel;
 
   return (
-    <div className="flex h-screen w-screen flex-col">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
+      <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(312px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
       <ServerSidebar
         servers={servers}
         activeServerId={activeServerId}
-        onSelectServer={handleSelectServer}
-        onCreateServer={() => setShowCreateServer(true)}
-        onOpenHome={() => { setActiveChannelId(""); setChannels([]); }}
-        onServerContext={(serverId) => { handleSelectServer(serverId); setShowServerSettings(true); }}
+        onSelectServer={(serverId) => { handleSelectServer(serverId); setMobileNavigationOpen(false); setMobileMembersOpen(false); }}
+        onCreateServer={() => { setShowCreateServer(true); setMobileNavigationOpen(false); }}
+        onOpenHome={() => { setActiveChannelId(""); setChannels([]); setMobileNavigationOpen(false); }}
+        onServerContext={(serverId) => { handleSelectServer(serverId); setShowServerSettings(true); setMobileNavigationOpen(false); }}
       />
 
       {activeServerId ? <ChannelSidebar
@@ -1521,7 +1526,8 @@ export default function Home() {
         serverName={servers.find((s) => s.id === activeServerId)?.name ?? "Selecione um servidor"}
         channels={channels}
         activeChannelId={activeChannelId}
-        onSelectChannel={handleSelectChannel}
+        onSelectChannel={(channelId) => { handleSelectChannel(channelId); setMobileNavigationOpen(false); }}
+        onCloseMobileNav={() => setMobileNavigationOpen(false)}
         canManageChannels={canManageChannels}
         canCreateInvite={canCreateInvite}
         onCreateChannel={(categoryId) => setCreateChannelCategoryId(categoryId)}
@@ -1571,6 +1577,7 @@ export default function Home() {
         }}
         onPresenceChange={handlePresenceChange}
       /> : null}
+      </div>
 
       {showCreateServer && (
         <CreateServerModal
@@ -1674,8 +1681,17 @@ export default function Home() {
       )}
 
       {/* A chamada fica montada enquanto você está conectado; só aparece quando a tela dela está aberta. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {!callOpenHere && !!activeServerId && <header className="flex h-14 shrink-0 items-center gap-3 border-b border-black/20 bg-discord-bg-secondary/80 px-3 shadow-sm md:hidden">
+        <button type="button" onClick={() => { setMobileMembersOpen(false); setMobileNavigationOpen(true); }} aria-label="Abrir servidores e canais" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-header-primary active:scale-95"><Menu className="h-5 w-5"/></button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-discord-header-primary">{activeServerId ? servers.find((server) => server.id === activeServerId)?.name ?? "Servidor" : "Mensagens diretas"}</p>
+          <p className="truncate text-xs text-discord-text-muted">{activeChannel ? `${activeChannel.type === "text" ? "#" : "♫"} ${activeChannel.name}` : voiceSession?.channelName ?? (activeServerId ? "Escolha um canal" : "Amigos e conversas")}</p>
+        </div>
+        {activeServerId && <button type="button" onClick={() => { setMobileNavigationOpen(false); setMobileMembersOpen(true); }} aria-label="Ver membros do servidor" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-text-normal active:scale-95"><Users className="h-5 w-5"/></button>}
+      </header>}
       {voiceSession && (
-        <div className={callOpenHere ? "call-host call-bg relative h-full min-w-0 flex-1 overflow-y-auto" : "hidden"}>
+        <div className={callOpenHere ? "call-host call-bg relative h-full min-h-0 min-w-0 flex-1 overflow-y-auto" : "hidden"}>
           <RoomClient
             key={voiceSession.channelId}
             roomId={voiceSession.channelId}
@@ -1705,6 +1721,7 @@ export default function Home() {
           onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onOpenSettings={() => setShowUserSettings(true)}
+          onOpenMobileNavigation={() => { setMobileMembersOpen(false); setMobileNavigationOpen(true); }}
           onPresenceChange={handlePresenceChange}
           onJoinDirectCall={(peerId, peerName, sendInvite) => void handleJoinDirectCall(peerId, peerName, sendInvite)}
           activeDirectCallPeerId={voiceSession?.kind === "dm" ? voiceSession.peerUserId : null}
@@ -1782,8 +1799,10 @@ export default function Home() {
           onToggleMemberRole={handleToggleMemberRole}
         />
       )}
+      </div>
 
-      {!callOpenHere && !!activeServerId && <MemberList
+      {mobileMembersOpen && !callOpenHere && <button type="button" aria-label="Fechar lista de membros" onClick={() => setMobileMembersOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
+      {!callOpenHere && !!activeServerId && <div className={mobileMembersOpen ? "fixed bottom-[env(safe-area-inset-bottom)] right-0 top-[env(safe-area-inset-top)] z-[160] flex w-60 shadow-2xl md:static md:z-auto md:h-full md:shadow-none" : "hidden md:flex md:h-full"}><button type="button" onClick={() => setMobileMembersOpen(false)} aria-label="Fechar lista de membros" className="absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg bg-discord-bg-primary text-discord-text-normal shadow-md md:hidden"><X className="h-5 w-5"/></button><MemberList
         members={members}
         currentUserId={currentUserId}
         onAddFriend={handleAddFriend}
@@ -1796,7 +1815,7 @@ export default function Home() {
         onTimeoutMember={handleTimeoutMember}
         onChangeNickname={handleChangeMemberNickname}
         onMentionMember={handleMentionMember}
-        onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); }}
+        onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); setMobileMembersOpen(false); }}
         onQuickMessageMember={handleQuickDirectMessage}
         immediateMutualServer={servers.find((server) => server.id === activeServerId) ?? null}
         roles={serverRoles}
@@ -1805,7 +1824,7 @@ export default function Home() {
         onToggleRole={handleToggleMemberRole}
         mutedSoundEffectUserIds={mutedSoundEffectUserIds}
         onToggleSoundEffects={handleToggleSoundEffects}
-      />}
+      /></div>}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">{dmToast.content === "Ligação de voz recebida" ? "Chamada recebida" : "Nova mensagem direta"}</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
