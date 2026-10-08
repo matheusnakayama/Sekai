@@ -11,6 +11,20 @@ import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { PrankSimulation } from "@/components/PrankSimulation";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { createClient } from "@/lib/supabase/client";
+import { resolveChatImageUrl } from "@/lib/chatImageUrls";
+
+const STANDARD_EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🙂", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "🙃", "😴", "😭", "😡", "🥳", "🤯", "😱", "🤗", "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "✨", "🔥", "🎉", "🎊", "🎂", "🌟", "💀", "👀", "🐱", "🐶", "🌈", "☕", "🍕", "🍿", "🎮", "🚀"];
+
+type ServerEmoji = { id: string; name: string; asset_url: string };
+
+function insertCustomEmojiMarkdown(content: string, emojis: Map<string, ServerEmoji>) {
+  return content.replace(/:([a-z0-9_-]{1,32}):/gi, (token, rawName: string) => {
+    const emoji = emojis.get(rawName.toLowerCase());
+    if (!emoji || !/^https?:\/\//i.test(emoji.asset_url)) return token;
+    return `![${rawName}](<${emoji.asset_url}>)`;
+  });
+}
 
 export interface ChatMessage {
   id: string;
@@ -30,6 +44,7 @@ export interface SlashCommand {
 }
 
 interface ChatAreaProps {
+  serverId: string;
   channelName: string;
   messages: ChatMessage[];
   loading?: boolean;
@@ -60,6 +75,7 @@ function formatTime(iso: string) {
 }
 
 export function ChatArea({
+  serverId,
   channelName,
   messages,
   loading = false,
@@ -84,11 +100,17 @@ export function ChatArea({
   canManageSelfRoles = false,
   onToggleMemberRole,
 }: ChatAreaProps) {
+  const supabase = createClient();
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [serverEmojis, setServerEmojis] = useState<ServerEmoji[]>([]);
+  const [signedAttachmentUrls, setSignedAttachmentUrls] = useState<Record<string, string>>({});
+  const signedAttachmentCache = useRef(new Map<string, string>());
   const [selectedProfile, setSelectedProfile] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
@@ -99,6 +121,57 @@ export function ChatArea({
   const previousLastMessageId = useRef<string | null>(null);
   const wasAtBottom = useRef(true);
   const lastMentionNonce = useRef(0);
+  const imageEmojisByName = useMemo(
+    () => new Map(serverEmojis.filter((emoji) => /^https?:\/\//i.test(emoji.asset_url)).map((emoji) => [emoji.name.toLowerCase(), emoji])),
+    [serverEmojis],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!serverId) { setServerEmojis([]); return; }
+    void supabase.from("server_assets").select("id,name,asset_url").eq("server_id", serverId).eq("kind", "emoji").order("name").then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("Não foi possível carregar os emojis personalizados:", error.message);
+        setServerEmojis([]);
+        return;
+      }
+      setServerEmojis((data ?? []) as ServerEmoji[]);
+    });
+    return () => { cancelled = true; };
+  }, [emojiPickerOpen, serverId, supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const urls = Array.from(new Set(messages.map((message) => message.attachmentUrl).filter((url): url is string => !!url)));
+    const unresolved = urls.filter((url) => !signedAttachmentCache.current.has(url));
+    if (!unresolved.length) {
+      setSignedAttachmentUrls(Object.fromEntries(urls.map((url) => [url, signedAttachmentCache.current.get(url) ?? url])));
+      return;
+    }
+    void Promise.all(unresolved.map(async (url) => [url, await resolveChatImageUrl(supabase, url)] as const)).then((entries) => {
+      if (cancelled) return;
+      entries.forEach(([url, signedUrl]) => signedAttachmentCache.current.set(url, signedUrl));
+      setSignedAttachmentUrls(Object.fromEntries(urls.map((url) => [url, signedAttachmentCache.current.get(url) ?? url])));
+    });
+    return () => { cancelled = true; };
+  }, [messages, supabase]);
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return;
+    function closeOutside(event: PointerEvent) {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) setEmojiPickerOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setEmojiPickerOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [emojiPickerOpen]);
 
   useEffect(() => {
     setSelectedProfile((current) => current ? memberById.get(current.id) ?? null : null);
@@ -161,6 +234,12 @@ export function ChatArea({
 
   function pickCommand(name: string) {
     setDraft(`/${name} `);
+  }
+
+  function appendEmoji(value: string) {
+    setDraft((current) => `${current}${current && !/\s$/.test(current) ? " " : ""}${value} `);
+    setEmojiPickerOpen(false);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   async function uploadImage(file?: File) {
@@ -240,12 +319,13 @@ export function ChatArea({
                     <button type="button" onClick={() => setPrankOpen(true)} className="shrink-0 rounded-lg bg-theme-gradient px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110">Abrir</button>
                   </div>
                 ) : <p className="mt-1 text-xs italic text-discord-text-muted">Um convite para a brincadeira foi enviado a um membro.</p>;
-                return <div className="prose prose-invert max-w-none text-sm text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal"><ReactMarkdown>{message.content}</ReactMarkdown></div>;
+                const contentWithEmojis = insertCustomEmojiMarkdown(message.content, imageEmojisByName);
+                return <div className="prose prose-invert max-w-none text-sm text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal"><ReactMarkdown components={{ img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji personalizado"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" /> }}>{contentWithEmojis}</ReactMarkdown></div>;
               })()}
 
               {message.attachmentUrl && (
                 <HoverGifImage
-                  src={message.attachmentUrl}
+                  src={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl}
                   alt="anexo"
                   className="mt-2 max-h-80 rounded-lg border border-black/20"
                 />
@@ -335,9 +415,26 @@ export function ChatArea({
             className="flex-1 bg-transparent text-sm text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none"
           />
 
-          <button type="button" className="text-discord-text-muted hover:text-discord-text-normal">
-            <Smile className="h-5 w-5" />
-          </button>
+          <div ref={emojiPickerRef} className="relative">
+            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] right-0 z-[90] w-[min(340px,calc(100vw-32px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
+              <div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-discord-text-muted">Emojis</p><span className="text-[10px] text-discord-text-muted">Clique para inserir</span></div>
+              <div className="grid max-h-48 grid-cols-8 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1">
+                {STANDARD_EMOJIS.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={`Inserir ${emoji}`} className="grid h-8 w-8 place-items-center rounded-lg text-xl transition hover:bg-white/10">{emoji}</button>)}
+              </div>
+              {serverEmojis.length > 0 && <>
+                <p className="mb-2 mt-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Emojis do servidor</p>
+                <div className="grid max-h-32 grid-cols-8 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1">
+                  {serverEmojis.map((emoji) => {
+                    const isImage = /^https?:\/\//i.test(emoji.asset_url);
+                    return <button key={emoji.id} type="button" title={`:${emoji.name}:`} aria-label={`Inserir :${emoji.name}:`} onClick={() => appendEmoji(isImage ? `:${emoji.name}:` : emoji.asset_url)} className="grid h-8 w-8 place-items-center rounded-lg text-xl transition hover:bg-white/10">{isImage ? <img src={emoji.asset_url} alt={emoji.name} className="h-6 w-6 object-contain" /> : emoji.asset_url}</button>;
+                  })}
+                </div>
+              </>}
+            </div>}
+            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="text-discord-text-muted transition hover:text-discord-text-normal">
+              <Smile className="h-5 w-5" />
+            </button>
+          </div>
 
           <button type="button" title="Enviar imagem" onClick={() => imageInput.current?.click()} disabled={uploading} className="text-discord-text-muted hover:text-discord-text-normal disabled:opacity-50"><ImageIcon className="h-5 w-5" /></button>
 
