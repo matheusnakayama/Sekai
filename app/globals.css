@@ -589,25 +589,21 @@ html[data-theme="grafite"] {
 
 @layer components {
 
-  /* Avatar com anel verde pulsante quando o membro está falando na call */
+  /* Indicador estável de fala; a animação fica só na transição, não pisca enquanto fala. */
   .avatar-speaking {
-    @apply ring-2 ring-discord-online animate-speaking rounded-full;
+    @apply ring-2 rounded-full;
+    box-shadow: 0 0 0 2px rgb(var(--d-brand)), 0 0 14px color-mix(in srgb, rgb(var(--d-brand)) 58%, transparent);
   }
 
   .voice-speaking-avatar {
     position: relative;
-    box-shadow: 0 0 0 2px var(--bg-gradient-start), 0 0 14px color-mix(in srgb, var(--bg-gradient-end) 68%, transparent);
-    animation: voice-theme-pulse 1.15s ease-in-out infinite;
+    box-shadow: 0 0 0 2px rgb(var(--d-brand)), 0 0 14px color-mix(in srgb, rgb(var(--d-brand)) 58%, transparent);
+    transition: box-shadow 120ms ease-out;
   }
 
   .voice-speaking-tile {
-    border-color: var(--bg-gradient-start);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg-gradient-start) 78%, transparent), 0 0 20px color-mix(in srgb, var(--bg-gradient-end) 45%, transparent);
-  }
-
-  @keyframes voice-theme-pulse {
-    0%, 100% { box-shadow: 0 0 0 2px var(--bg-gradient-start), 0 0 12px color-mix(in srgb, var(--bg-gradient-end) 42%, transparent); }
-    50% { box-shadow: 0 0 0 3px var(--bg-gradient-end), 0 0 18px color-mix(in srgb, var(--bg-gradient-start) 72%, transparent); }
+    border-color: rgb(var(--d-brand));
+    box-shadow: 0 0 0 2px color-mix(in srgb, rgb(var(--d-brand)) 78%, transparent), 0 0 20px color-mix(in srgb, rgb(var(--d-brand)) 45%, transparent);
   }
 }
 
