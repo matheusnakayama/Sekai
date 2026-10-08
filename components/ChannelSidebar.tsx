@@ -36,6 +36,12 @@ export interface Channel {
   unread?: boolean;
 }
 
+export interface ChannelCategory {
+  id: string;
+  name: string;
+  position: number;
+}
+
 export interface VoiceMemberPreview {
   id: string;
   name: string;
@@ -46,6 +52,7 @@ export interface VoiceMemberPreview {
 interface ChannelSidebarProps {
   serverName: string;
   channels: Channel[];
+  categories?: ChannelCategory[];
   activeChannelId?: string;
   onSelectChannel: (channelId: string) => void;
   onOpenServerMenu?: () => void;
@@ -97,6 +104,7 @@ interface ChannelSidebarProps {
 export function ChannelSidebar({
   serverName,
   channels,
+  categories = [],
   activeChannelId,
   onSelectChannel,
   onOpenServerMenu,
@@ -125,7 +133,16 @@ export function ChannelSidebar({
 }: ChannelSidebarProps) {
   const supabase = createClient();
   const orderedChannels = [...channels].sort((a, b) => (a.categoryPosition ?? 0) - (b.categoryPosition ?? 0) || (a.position ?? 0) - (b.position ?? 0));
-  const categories = Array.from(new Set(orderedChannels.map((c) => c.categoryName)));
+  const categoryIds = new Set(categories.map((category) => category.id));
+  const categorySections: ChannelCategory[] = [
+    ...categories,
+    ...Array.from(new Map<string, ChannelCategory>(orderedChannels.filter((channel) => channel.categoryId && !categoryIds.has(channel.categoryId)).map((channel): [string, ChannelCategory] => [channel.categoryId!, {
+      id: channel.categoryId!,
+      name: channel.categoryName,
+      position: channel.categoryPosition ?? 0,
+    }])).values()),
+    ...(orderedChannels.some((channel) => !channel.categoryId) ? [{ id: "", name: "SEM CATEGORIA", position: Number.MAX_SAFE_INTEGER }] : []),
+  ].sort((a, b) => a.position - b.position);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
   const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
@@ -213,24 +230,25 @@ export function ChannelSidebar({
 
       {/* Lista de canais */}
       <div className="flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
-        {categories.map((category) => {
-          const isCollapsed = collapsed[category];
-          const categoryChannels = orderedChannels.filter((c) => c.categoryName === category);
-          const categoryId = categoryChannels[0]?.categoryId ?? null;
+        {categorySections.map((category) => {
+          const sectionKey = category.id || "__uncategorized__";
+          const isCollapsed = collapsed[sectionKey];
+          const categoryChannels = orderedChannels.filter((channel) => category.id ? channel.categoryId === category.id : !channel.categoryId);
+          const categoryId = category.id || null;
 
           return (
-            <div key={category} className="border-b border-white/[0.07] pb-2.5 last:border-b-0">
+            <div key={sectionKey} className="border-b border-white/[0.07] pb-2.5 last:border-b-0">
               <div className="group flex items-center justify-between rounded-md bg-black/[0.08] px-1 py-1">
                 <button
                   onClick={() =>
-                    setCollapsed((prev) => ({ ...prev, [category]: !prev[category] }))
+                    setCollapsed((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }))
                   }
                   className="flex min-h-10 flex-1 items-center gap-1 text-sm font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary md:min-h-0 md:text-xs"
                 >
                   <ChevronDown
                     className={cn("h-3 w-3 transition-transform", isCollapsed && "-rotate-90")}
                   />
-                  {category}
+                  {category.name}
                 </button>
                 {canManageChannels && (
                   <button
