@@ -9,6 +9,7 @@ import {
   MicOff,
   Headphones,
   Settings,
+  UserPlus,
   Plus,
   PhoneOff,
 } from "lucide-react";
@@ -25,6 +26,8 @@ export interface Channel {
   type: "text" | "voice";
   categoryId: string | null;
   categoryName: string;
+  position?: number;
+  categoryPosition?: number;
   unread?: boolean;
 }
 
@@ -67,9 +70,13 @@ interface ChannelSidebarProps {
   onOpenSettings?: () => void;
   onPresenceChange?: (presence: "online" | "idle" | "dnd" | "offline") => boolean | void | Promise<boolean | void>;
   canManageChannels?: boolean;
+  canCreateInvite?: boolean;
   onCreateChannel?: (categoryId: string | null) => void;
   onCreateCategory?: () => void;
   onDeleteChannel?: (channel: Channel) => void;
+  onEditChannel?: (channel: Channel) => void;
+  onCreateChannelInvite?: (channel: Channel) => void;
+  onReorderChannels?: (channels: Channel[]) => void;
   /** Canal de voz em que você está conectado agora (a chamada segue ativa em segundo plano). */
   connectedVoiceChannelId?: string | null;
   connectedVoiceChannelName?: string;
@@ -90,19 +97,38 @@ export function ChannelSidebar({
   onOpenSettings,
   onPresenceChange,
   canManageChannels = false,
+  canCreateInvite = false,
   onCreateChannel,
   onCreateCategory,
   onDeleteChannel,
+  onEditChannel,
+  onCreateChannelInvite,
+  onReorderChannels,
   connectedVoiceChannelId,
   connectedVoiceChannelName,
   connectedVoiceMembers = [],
   voiceMembersByChannel = {},
   onDisconnectVoice,
 }: ChannelSidebarProps) {
-  const categories = Array.from(new Set(channels.map((c) => c.categoryName)));
+  const orderedChannels = [...channels].sort((a, b) => (a.categoryPosition ?? 0) - (b.categoryPosition ?? 0) || (a.position ?? 0) - (b.position ?? 0));
+  const categories = Array.from(new Set(orderedChannels.map((c) => c.categoryName)));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
+  const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
   const presenceLabel = currentUser.presence === "online" ? "Online" : currentUser.presence === "idle" ? "Ausente" : currentUser.presence === "dnd" ? "Não perturbe" : "Invisível";
+
+  function dropChannel(target: Channel, event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const source = channels.find((channel) => channel.id === draggedChannelId);
+    if (!source || source.id === target.id || !canManageChannels) return;
+    const moved = { ...source, categoryId: target.categoryId, categoryName: target.categoryName, categoryPosition: target.categoryPosition };
+    const next = channels.filter((channel) => channel.id !== source.id);
+    const targetIndex = next.findIndex((channel) => channel.id === target.id);
+    const insertIndex = targetIndex + (event.clientY > event.currentTarget.getBoundingClientRect().top + event.currentTarget.clientHeight / 2 ? 1 : 0);
+    next.splice(Math.max(0, insertIndex), 0, moved);
+    onReorderChannels?.(next);
+    setDraggedChannelId(null);
+  }
 
   return (
     <div className="server-view-enter flex h-full w-60 flex-col bg-discord-bg-dark">
@@ -119,7 +145,7 @@ export function ChannelSidebar({
       <div className="flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
         {categories.map((category) => {
           const isCollapsed = collapsed[category];
-          const categoryChannels = channels.filter((c) => c.categoryName === category);
+          const categoryChannels = orderedChannels.filter((c) => c.categoryName === category);
           const categoryId = categoryChannels[0]?.categoryId ?? null;
 
           return (
@@ -152,11 +178,20 @@ export function ChannelSidebar({
                   {categoryChannels.map((channel) => {
                     const active = channel.id === activeChannelId;
                     return (
-                      <div key={channel.id} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, channel }); }}>
+                      <div
+                        key={channel.id}
+                        draggable={canManageChannels}
+                        onDragStart={(event) => { setDraggedChannelId(channel.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", channel.id); }}
+                        onDragEnd={() => setDraggedChannelId(null)}
+                        onDragOver={(event) => { if (canManageChannels && draggedChannelId) event.preventDefault(); }}
+                        onDrop={(event) => dropChannel(channel, event)}
+                        onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, channel }); }}
+                        className={cn("group/channel flex min-w-0 items-center rounded-md transition", draggedChannelId === channel.id && "opacity-40", canManageChannels && "cursor-grab active:cursor-grabbing")}
+                      >
                         <button
                           onClick={() => onSelectChannel(channel.id)}
                           className={cn(
-                            "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium",
+                            "flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-medium",
                             active
                               ? "bg-discord-bg-modifier-hover text-discord-header-primary"
                               : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
@@ -168,16 +203,13 @@ export function ChannelSidebar({
                             <Volume2 className="h-4 w-4 shrink-0" />
                           )}
                           <span className="truncate">{channel.name}</span>
-                          {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && (
-                            <span
-                              className="ml-auto h-2 w-2 rounded-full bg-discord-online"
-                              title="Conectado"
-                            />
-                          )}
-                          {channel.unread && (
-                            <span className="ml-auto h-2 w-2 rounded-full bg-white" />
-                          )}
+                          {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-discord-online" title="Conectado" />}
+                          {channel.unread && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-white" />}
                         </button>
+                        {(canCreateInvite || canManageChannels) && <div className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
+                          {canCreateInvite && <button type="button" onClick={() => onCreateChannelInvite?.(channel)} title="Convidar para este canal" aria-label={`Convidar para ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><UserPlus className="h-3.5 w-3.5"/></button>}
+                          {canManageChannels && <button type="button" onClick={() => onEditChannel?.(channel)} title="Configurações do canal" aria-label={`Configurações de ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><Settings className="h-3.5 w-3.5"/></button>}
+                        </div>}
                         {channel.type === "voice" && (voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).length > 0 && (
                           <div className="ml-8 mt-0.5 space-y-1 border-l border-white/10 py-1 pl-2">
                             {(voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).map((member) => (
@@ -212,7 +244,7 @@ export function ChannelSidebar({
         )}
       </div>
 
-      {contextMenu && <><button aria-label="Fechar opções do canal" className="fixed inset-0 z-40 cursor-default" onClick={() => setContextMenu(null)} /><div style={{ left: Math.min(contextMenu.x, window.innerWidth - 205), top: Math.min(contextMenu.y, window.innerHeight - 95) }} className="fixed z-50 w-48 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"><p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>{canManageChannels && <button onClick={() => { onDeleteChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10">Excluir canal</button>}</div></>}
+      {contextMenu && <><button aria-label="Fechar opções do canal" className="fixed inset-0 z-40 cursor-default" onClick={() => setContextMenu(null)} /><div style={{ left: Math.min(contextMenu.x, window.innerWidth - 205), top: Math.min(contextMenu.y, window.innerHeight - 130) }} className="fixed z-50 w-48 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"><p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>{canCreateInvite && <button onClick={() => { onCreateChannelInvite?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Criar convite do canal</button>}{canManageChannels && <><button onClick={() => { onEditChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Configurações do canal</button><button onClick={() => { onDeleteChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10">Excluir canal</button></>}</div></>}
 
       {/* Barra de chamada conectada (como no Discord) */}
       {connectedVoiceChannelId && (
