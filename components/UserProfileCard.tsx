@@ -339,7 +339,7 @@ export function UserProfileCard({
       ref={cardRef}
       role="dialog"
       aria-label={`Perfil de ${profile.displayName}`}
-      style={{ left: resolvedPosition.left, top: resolvedPosition.top, backgroundColor: profilePalette.surface, color: profilePalette.text, borderColor: profilePalette.border }}
+      style={{ left: resolvedPosition.left, top: resolvedPosition.top, background: profilePalette.background, color: profilePalette.text, borderColor: profilePalette.border }}
       className="profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(300px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-[22px] border shadow-[0_24px_80px_rgba(0,0,0,.62)]"
     >
       <ProfileBanner
