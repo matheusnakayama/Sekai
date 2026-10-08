@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Channel } from 'pusher-js';
 import { uploadPresigned } from '@vercel/blob/client';
 import PreJoin from '@/components/PreJoin';
-import Controls, { type ScreenShareSettings } from '@/components/Controls';
+import Controls, { type ScreenShareSettings, type SoundboardEffect } from '@/components/Controls';
 import ParticipantsGrid from '@/components/ParticipantsGrid';
 import ParticipantsPanel from '@/components/ParticipantsPanel';
 import ChatPanel from '@/components/ChatPanel';
@@ -35,6 +35,7 @@ interface PresenceMembersSnapshot {
 
 export default function RoomClient({
   roomId,
+  serverId,
   roomName,
   initialName,
   accessToken,
@@ -44,9 +45,11 @@ export default function RoomClient({
   onAddFriend,
   onControlsReady,
   onControlStateChange,
+  mutedSoundEffectUserIds = [],
   autoJoin = false,
 }: {
   roomId: string;
+  serverId?: string;
   roomName: string;
   initialName: string;
   accessToken: string;
@@ -55,8 +58,9 @@ export default function RoomClient({
   onMinimize?: () => void;
   onParticipantsChange?: (participants: Participant[]) => void;
   onAddFriend?: (userId: string) => void;
-  onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void } | null) => void;
+  onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> } | null) => void;
   onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
+  mutedSoundEffectUserIds?: string[];
   /** Entra direto, sem a tela de pré-visualização (microfone ligado, câmera desligada). */
   autoJoin?: boolean;
 }) {
@@ -73,6 +77,9 @@ export default function RoomClient({
   const [screenAudioEnabled, setScreenAudioEnabled] = useState(false);
   const [screenShareSettings, setScreenShareSettings] = useState<ScreenShareSettings>({ height: 1080, frameRate: 60 });
   const [screenCaptureInfo, setScreenCaptureInfo] = useState('');
+  const [soundEffects, setSoundEffects] = useState<SoundboardEffect[]>([]);
+  const [soundEffectsLoading, setSoundEffectsLoading] = useState(false);
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [muteRemoteAudioDuringShare, setMuteRemoteAudioDuringShare] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -93,6 +100,11 @@ export default function RoomClient({
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
   const screenAudioContextRef = useRef<AudioContext | null>(null);
+  const soundboardAudioContextRef = useRef<AudioContext | null>(null);
+  const soundboardSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const soundboardTrackRef = useRef<MediaStreamTrack | null>(null);
+  const soundboardBusyRef = useRef(false);
+  const soundboardRequestRef = useRef(0);
   const presentationSectionRef = useRef<HTMLElement | null>(null);
   const chatOpenRef = useRef(false);
   const hostIdRef = useRef('');
@@ -115,6 +127,14 @@ export default function RoomClient({
   }, [micOn, deafened, localSpeaking, phase, onControlStateChange]);
 
   const cleanup = useCallback(() => {
+    soundboardRequestRef.current += 1;
+    soundboardBusyRef.current = false;
+    try { soundboardSourceRef.current?.stop(); } catch { /* Pode ainda não ter começado a tocar. */ }
+    soundboardSourceRef.current = null;
+    soundboardTrackRef.current?.stop();
+    soundboardTrackRef.current = null;
+    soundboardAudioContextRef.current?.close().catch(() => {});
+    soundboardAudioContextRef.current = null;
     managerRef.current?.destroy();
     managerRef.current = null;
     channelRef.current?.unbind('client-chat-message');
@@ -138,6 +158,35 @@ export default function RoomClient({
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSoundEffects([]);
+    if (!serverId) {
+      setSoundEffectsLoading(false);
+      return;
+    }
+
+    setSoundEffectsLoading(true);
+    void supabase
+      .from('server_assets')
+      .select('id, name, asset_url')
+      .eq('server_id', serverId)
+      .eq('kind', 'sound')
+      .order('name', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.warn('Não foi possível carregar os efeitos sonoros do servidor:', error.message);
+          setSoundEffects([]);
+        } else {
+          setSoundEffects((data ?? []).map((row) => ({ id: row.id, name: row.name, assetUrl: row.asset_url })));
+        }
+        setSoundEffectsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [serverId, supabase]);
 
   useEffect(() => {
     const track = cameraStreamRef.current?.getAudioTracks()[0];
@@ -332,6 +381,13 @@ export default function RoomClient({
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
           return { ...prev, [peerId]: { ...participant, stream } };
+        });
+      };
+
+      manager.onSoundboardTrack = (peerId, track) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          return { ...prev, [peerId]: { ...participant, soundboardTrack: track } };
         });
       };
 
@@ -547,7 +603,7 @@ export default function RoomClient({
     }
   }
 
-  async function setOutgoingScreenAudio(screenAudioTrack: MediaStreamTrack | null) {
+  const setOutgoingScreenAudio = useCallback(async (screenAudioTrack: MediaStreamTrack | null) => {
     const manager = managerRef.current;
     if (!manager) return false;
 
@@ -589,7 +645,76 @@ export default function RoomClient({
     screenAudioContextRef.current = audioContext;
     await previousContext?.close().catch(() => {});
     return !!mixedTrack;
-  }
+  }, []);
+
+  const playSoundboardEffect = useCallback(async (effect: SoundboardEffect) => {
+    const manager = managerRef.current;
+    if (phase !== 'in-call' || !manager) return false;
+    if (micLockedByHostRef.current) {
+      setBanner('O anfitrião bloqueou o envio de áudio nesta chamada.');
+      return false;
+    }
+    if (soundboardBusyRef.current) return false;
+
+    soundboardBusyRef.current = true;
+    const requestId = ++soundboardRequestRef.current;
+    const context = new AudioContext();
+    soundboardAudioContextRef.current = context;
+    setPlayingSoundId(effect.id);
+
+    const releaseSoundboardResources = async () => {
+      const source = soundboardSourceRef.current;
+      if (source) source.onended = null;
+      soundboardSourceRef.current = null;
+      const outputTrack = soundboardTrackRef.current;
+      soundboardTrackRef.current = null;
+      if (soundboardAudioContextRef.current === context) soundboardAudioContextRef.current = null;
+      soundboardBusyRef.current = false;
+      setPlayingSoundId(null);
+      await context.close().catch(() => {});
+      outputTrack?.stop();
+    };
+
+    try {
+      // Inicie o contexto enquanto ainda estamos dentro do clique do usuário.
+      await context.resume();
+      const response = await fetch(effect.assetUrl);
+      if (!response.ok) throw new Error('Não foi possível carregar o arquivo deste efeito.');
+      const buffer = await context.decodeAudioData(await response.arrayBuffer());
+      if (requestId !== soundboardRequestRef.current || managerRef.current !== manager) return false;
+
+      const destination = context.createMediaStreamDestination();
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(destination);
+      source.connect(context.destination);
+      const outputTrack = destination.stream.getAudioTracks()[0];
+      if (!outputTrack) throw new Error('O navegador não conseguiu preparar o áudio da chamada.');
+
+      soundboardSourceRef.current = source;
+      soundboardTrackRef.current = outputTrack;
+      await manager.replaceSoundboardTrack(outputTrack);
+      if (requestId !== soundboardRequestRef.current || managerRef.current !== manager) return false;
+
+      source.onended = () => {
+        if (requestId !== soundboardRequestRef.current) return;
+        void (async () => {
+          await manager.replaceSoundboardTrack(null).catch((error) => console.warn('Não foi possível encerrar o efeito na chamada:', error));
+          await releaseSoundboardResources();
+        })();
+      };
+      source.start();
+      setBanner(`Efeito “${effect.name}” transmitido para a chamada.`);
+      return true;
+    } catch (error) {
+      if (requestId !== soundboardRequestRef.current) return false;
+      await manager.replaceSoundboardTrack(null).catch((restoreError) => console.warn('Não foi possível encerrar o efeito na chamada:', restoreError));
+      await releaseSoundboardResources();
+      console.error('Não foi possível transmitir o efeito sonoro:', error);
+      setBanner(error instanceof Error ? error.message : 'Não foi possível transmitir o efeito sonoro.');
+      return false;
+    }
+  }, [phase]);
 
   async function toggleSharedScreenAudio() {
     const screenAudioTrack = screenAudioTrackRef.current;
@@ -636,9 +761,9 @@ export default function RoomClient({
   }, [deafened, micOn, toggleMic]);
 
   useEffect(() => {
-    onControlsReady?.({ toggleMic, toggleDeafen });
+    onControlsReady?.({ toggleMic, toggleDeafen, toggleScreenShare, playSoundEffect: playSoundboardEffect });
     return () => onControlsReady?.(null);
-  }, [onControlsReady, toggleMic, toggleDeafen]);
+  }, [onControlsReady, toggleMic, toggleDeafen, toggleScreenShare, playSoundboardEffect]);
 
   function toggleCam() {
     if (sharingScreen) return; // câmera fica em segundo plano durante compartilhamento
@@ -1252,6 +1377,7 @@ export default function RoomClient({
             <div className="max-w-xs">
               <ParticipantsGrid
                 participants={participantList}
+                mutedSoundEffectUserIds={mutedSoundEffectUserIds}
                 muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
                 focusedParticipantId={focusedPresentationId}
                 onFocusPresentation={focusPresentation}
@@ -1265,6 +1391,7 @@ export default function RoomClient({
         ) : (
           <ParticipantsGrid
             participants={participantList}
+            mutedSoundEffectUserIds={mutedSoundEffectUserIds}
             muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
             focusedParticipantId={focusedPresentationId}
             onFocusPresentation={focusPresentation}
@@ -1281,6 +1408,10 @@ export default function RoomClient({
           sharingScreen={sharingScreen}
           screenAudioAvailable={screenAudioAvailable}
           screenAudioEnabled={screenAudioEnabled}
+          soundEffects={soundEffects}
+          soundEffectsLoading={soundEffectsLoading}
+          playingSoundId={playingSoundId}
+          onPlaySoundEffect={(effect) => { void playSoundboardEffect(effect); }}
           screenShareSettings={screenShareSettings}
           onScreenShareSettingsChange={setScreenShareSettings}
           participantCount={participantList.length}
