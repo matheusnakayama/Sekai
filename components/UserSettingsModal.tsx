@@ -56,6 +56,11 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
 
 const PROFILE_CARD_COLORS = ["#111216", "#202127", "#292d46", "#40244f", "#173c38", "#4a2632"];
 
+function readProfileCardColors(value?: string | null) {
+  const colors = value?.match(/#[\da-f]{6}/gi)?.slice(0, 3) ?? [];
+  return colors.length ? colors : ["#202127"];
+}
+
 const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false };
 type ImageScope = "user" | "server";
 type ImageEditorTarget = { kind: ProfileImageKind; scope: ImageScope; src: string; file: File | null; crop: ImageCrop; pending: boolean };
@@ -90,7 +95,9 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   const [bio, setBio] = useState(initial.bio ?? "");
   const [customStatus, setCustomStatus] = useState(initial.customStatus ?? "");
   const [presence, setPresence] = useState<Presence>(initial.presence ?? "online");
-  const [profileCardColor, setProfileCardColor] = useState(initial.profileCardColor ?? "#202127");
+  const [profileCardMode, setProfileCardMode] = useState<"solid" | "gradient">(() => initial.profileCardColor?.startsWith("linear-gradient(") ? "gradient" : "solid");
+  const [profileCardColors, setProfileCardColors] = useState(() => readProfileCardColors(initial.profileCardColor));
+  const [activeColorStop, setActiveColorStop] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -133,6 +140,22 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   const [badgeLoading, setBadgeLoading] = useState(false);
   const [badgeSaving, setBadgeSaving] = useState(false);
   const [badgePendingDeleteId, setBadgePendingDeleteId] = useState<string | null>(null);
+  const profileCardColor = profileCardMode === "gradient" && profileCardColors.length > 1
+    ? `linear-gradient(135deg, ${profileCardColors.join(", ")})`
+    : profileCardColors[0] ?? "#202127";
+  const profileCardBaseColor = profileCardColors[0] ?? "#202127";
+
+  function updateActiveProfileCardColor(color: string) {
+    setProfileCardColors((current) => current.map((value, index) => index === activeColorStop ? color : value));
+  }
+
+  function setProfileCardModeWithDefaults(mode: "solid" | "gradient") {
+    setProfileCardMode(mode);
+    setActiveColorStop(0);
+    if (mode === "gradient" && profileCardColors.length === 1) {
+      setProfileCardColors((current) => [...current, "#5865f2"]);
+    }
+  }
 
   useEffect(() => {
     setPreferences(loadPreferences(userId));
@@ -492,14 +515,14 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
                 {serverId && <div className="mb-6 flex gap-6 border-b border-white/10"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")} className={`settings-profile-tab pb-3 text-sm font-semibold transition ${profileScope === "user" ? "text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Perfil do usuário</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")} className={`settings-profile-tab pb-3 text-sm font-semibold transition ${profileScope === "server" ? "text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Perfis do servidor</button></div>}
                 <div hidden={profileScope !== "user"}>
                 <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai.</p></div>
-                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ backgroundColor: profileCardColor, borderColor: "#08090b", transition: "background-color 180ms ease" }}>
+                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
                   <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
                     {bannerPreview && <CroppedProfileImage src={bannerPreview} alt="" positionX={bannerCrop.x} positionY={bannerCrop.y} zoom={bannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
                     <div className="absolute right-3 top-3 flex gap-2"><button type="button" onClick={() => openImagePicker("banner")} className="settings-upload-control flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>{bannerPreview ? "Trocar banner" : "Adicionar banner"}</button>{bannerPreview && <><button type="button" onClick={() => openCropEditor("banner", "user")} className="rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/70">Ajustar recorte</button><button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setBannerCrop(DEFAULT_CROP); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button></>}</div>
                   </div>
                   <div className="relative z-10 flex flex-wrap items-end justify-between gap-3 px-5 pb-5">
                     <div className="flex min-w-0 items-end gap-3">
-                      <div className="relative -mt-10 h-[84px] w-[84px] shrink-0 overflow-visible"><div className="relative h-full w-full rounded-full border-[5px] bg-discord-brand" style={{ borderColor: profileCardColor }}><div className="absolute inset-0 overflow-hidden rounded-full">{avatarPreview ? <CroppedProfileImage src={avatarPreview} alt="Prévia do avatar" positionX={avatarCrop.x} positionY={avatarCrop.y} zoom={avatarCrop.zoom} className="rounded-full"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{displayName[0]?.toUpperCase()}</div>}</div></div><PresenceIndicator presence={presence} avatarBadge borderColor={profileCardColor} cutoutColor={profileCardColor} /></div>
+                      <div className="relative -mt-10 h-[84px] w-[84px] shrink-0 overflow-visible"><div className="relative h-full w-full rounded-full border-[5px] bg-discord-brand" style={{ borderColor: profileCardBaseColor }}><div className="absolute inset-0 overflow-hidden rounded-full">{avatarPreview ? <CroppedProfileImage src={avatarPreview} alt="Prévia do avatar" positionX={avatarCrop.x} positionY={avatarCrop.y} zoom={avatarCrop.zoom} className="rounded-full"/> : <div className="grid h-full place-items-center text-2xl font-bold text-white">{displayName[0]?.toUpperCase()}</div>}</div></div><PresenceIndicator presence={presence} avatarBadge borderColor={profileCardBaseColor} cutoutColor={profileCardBaseColor} /></div>
                       <div className="min-w-0 pb-1.5"><p className="max-w-[190px] truncate text-[15px] font-semibold tracking-tight text-discord-header-primary">{displayName || "Seu nome"}</p><p className="mt-0.5 max-w-[190px] truncate text-[11px] text-discord-text-muted">@{username || "seu_usuario"}{pronouns ? ` · ${pronouns}` : ""}</p>{customStatus ? <p className="mt-1 max-w-[190px] truncate text-[11px] text-discord-text-muted">{customStatus}</p> : <p className="mt-1 max-w-[190px] truncate text-[11px] italic text-discord-text-muted/70">Adicione um status</p>}</div>
                     </div>
                     <div className="mb-1 flex shrink-0 gap-2"><button type="button" onClick={() => openImagePicker("avatar")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{avatarPreview ? "Trocar avatar" : "Adicionar avatar"}</button>{avatarPreview && <><button type="button" onClick={() => openCropEditor("avatar", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar</button><button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(""); setAvatarCrop(DEFAULT_CROP); setRemoveAvatar(true); }} aria-label="Remover avatar" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
@@ -513,10 +536,19 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
                 </div>
                 <Field label="Sobre você" hint={`${bio.length}/190 caracteres`}><textarea value={bio} maxLength={190} onChange={(e) => setBio(e.target.value)} rows={4} placeholder="Conte um pouco sobre você..." className={`${inputClass} resize-y`}/></Field>
                 <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">A prévia acima acompanha a cor escolhida. Ela também aparece no seu cartão de perfil.</p></div><span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[11px] text-discord-text-muted"><i className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: profileCardColor }}/>{profileCardColor.toUpperCase()}</span></div>
+                  <div className="mb-3 flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Use uma cor sólida ou combine até três cores em um gradiente.</p></div><span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[11px] text-discord-text-muted"><i className="h-3 w-3 rounded-full border border-white/20" style={{ background: profileCardColor }}/>{profileCardMode === "gradient" ? `Gradiente · ${profileCardColors.length} cores` : profileCardBaseColor.toUpperCase()}</span></div>
+                  <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-discord-bg-secondary p-1">
+                    <button type="button" onClick={() => setProfileCardModeWithDefaults("solid")} aria-pressed={profileCardMode === "solid"} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${profileCardMode === "solid" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-white"}`}>Cor sólida</button>
+                    <button type="button" onClick={() => setProfileCardModeWithDefaults("gradient")} aria-pressed={profileCardMode === "gradient"} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${profileCardMode === "gradient" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-white"}`}>Gradiente</button>
+                  </div>
+                  {profileCardMode === "gradient" && <div className="mb-3 flex flex-wrap items-center gap-2">
+                    {profileCardColors.map((color, index) => <button key={index} type="button" onClick={() => setActiveColorStop(index)} aria-pressed={activeColorStop === index} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition ${activeColorStop === index ? "border-discord-brand bg-discord-brand/10 text-discord-header-primary" : "border-white/10 text-discord-text-muted hover:bg-white/5"}`}><i className="h-4 w-4 rounded-full border border-white/20" style={{ backgroundColor: color }}/>Cor {index + 1}</button>)}
+                    {profileCardColors.length < 3 && <button type="button" onClick={() => { setProfileCardColors((current) => [...current, current.length === 1 ? "#5865f2" : "#20b8a6"]); setActiveColorStop(profileCardColors.length); }} className="rounded-lg border border-dashed border-white/20 px-2.5 py-1.5 text-xs text-discord-text-muted transition hover:border-white/40 hover:text-white">+ Adicionar cor</button>}
+                    {profileCardColors.length > 2 && <button type="button" onClick={() => { setProfileCardColors((current) => current.slice(0, -1)); setActiveColorStop((current) => Math.min(current, profileCardColors.length - 2)); }} aria-label="Remover a última cor do gradiente" className="grid h-8 w-8 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-white"><X size={14}/></button>}
+                  </div>}
                   <div className="flex flex-wrap items-center gap-2.5">
-                    {PROFILE_CARD_COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color}`} aria-pressed={profileCardColor.toLowerCase() === color} onClick={() => setProfileCardColor(color)} className={`h-9 w-9 rounded-full border transition ${profileCardColor.toLowerCase() === color ? "scale-110 border-white ring-2 ring-discord-brand ring-offset-2 ring-offset-discord-bg-primary" : "border-white/15 hover:scale-105 hover:border-white/50"}`} style={{ backgroundColor: color }}/>) }
-                    <label className="ml-1 flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-medium text-discord-text-normal transition hover:bg-discord-bg-modifier-hover">Personalizada<input aria-label="Escolher cor personalizada do perfil" type="color" value={profileCardColor} onChange={(event) => setProfileCardColor(event.target.value)} className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"/></label>
+                    {PROFILE_CARD_COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color} na cor ${activeColorStop + 1}`} aria-pressed={profileCardColors[activeColorStop]?.toLowerCase() === color} onClick={() => updateActiveProfileCardColor(color)} className={`h-9 w-9 rounded-full border transition ${profileCardColors[activeColorStop]?.toLowerCase() === color ? "scale-110 border-white ring-2 ring-discord-brand ring-offset-2 ring-offset-discord-bg-primary" : "border-white/15 hover:scale-105 hover:border-white/50"}`} style={{ backgroundColor: color }}/>) }
+                    <label className="ml-1 flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-medium text-discord-text-normal transition hover:bg-discord-bg-modifier-hover">Personalizada<input aria-label={`Escolher cor ${activeColorStop + 1} personalizada do perfil`} type="color" value={profileCardColors[activeColorStop] ?? profileCardBaseColor} onChange={(event) => updateActiveProfileCardColor(event.target.value)} className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"/></label>
                   </div>
                 </div>
                 <div className="mt-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4"><div className="mb-3 flex items-center gap-2"><Circle size={10} className="fill-current text-discord-brand"/><h4 className="text-sm font-semibold text-discord-header-primary">Presença</h4></div><div className="grid gap-2 sm:grid-cols-2">{PRESENCE.map((item) => <button type="button" key={item.id} onClick={() => setPresence(item.id)} className={`flex items-start gap-3 rounded-lg border p-3 text-left transition ${presence === item.id ? "border-discord-brand bg-discord-brand/10" : "border-white/5 hover:bg-discord-bg-modifier-hover"}`}><span className="mt-0.5"><PresenceIndicator presence={item.id} size={16} cutoutColor="rgb(var(--d-primary))" hollowSymbols/></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-discord-text-normal">{item.label}</span><span className="mt-0.5 block text-xs text-discord-text-muted">{item.description}</span></span>{presence === item.id && <Check size={15} className="text-discord-brand"/>}</button>)}</div><p className="mt-2 text-[11px] text-discord-text-muted">A presença é exibida no perfil e na lista de membros.</p></div>
