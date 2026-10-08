@@ -177,7 +177,7 @@ export function ServerMetricsPanel({ serverId, serverName }: { serverId: string;
   return <div className="mx-auto max-w-3xl"><Header title="Engajamento" description={`Acompanhe a atividade de ${serverName} com dados reais do servidor.`}/>{loading ? <p className="text-sm text-discord-text-muted">Calculando…</p> : <div className="grid gap-3 sm:grid-cols-2">{[["Membros", counts.members], ["Canais", counts.channels], ["Convites", counts.invites], ["Mensagens", counts.messages]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-5"><p className="text-xs font-semibold uppercase tracking-wider text-discord-text-muted">{label}</p><p className="mt-3 text-3xl font-bold text-discord-header-primary">{value}</p></div>)}</div>}<div className="mt-5 rounded-xl border border-white/[0.08] p-4"><h3 className="font-semibold text-discord-header-primary">Vantagens de impulso</h3><p className="mt-2 text-sm leading-6 text-discord-text-muted">O Sekai ainda não processa impulsos ou pagamentos. As chamadas de voz usam o serviço LiveKit configurado pelo administrador do projeto.</p></div></div>;
 }
 
-export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, onAudit }: { serverId: string; currentUserId: string; kind: "emoji" | "sticker" | "sound"; canManage: boolean; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void> }) {
+export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, onAudit, onPlaySoundEffect }: { serverId: string; currentUserId: string; kind: "emoji" | "sticker" | "sound"; canManage: boolean; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void>; onPlaySoundEffect?: (serverId: string, sound: { id: string; name: string; asset_url: string }) => Promise<boolean> }) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [rows, setRows] = useState<any[]>([]);
@@ -188,10 +188,11 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
   const [saving, setSaving] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [playbackNotice, setPlaybackNotice] = useState("");
   const labels = {
     emoji: ["Emojis", "Cadastre emojis Unicode ou imagens próprias para usar nas mensagens."],
     sticker: ["Figurinhas", "Gerencie imagens de figurinha disponíveis para a comunidade."],
-    sound: ["Painel de efeitos sonoros", "Adicione áudios e toque um efeito para todas as pessoas conectadas ao servidor."],
+    sound: ["Painel de efeitos sonoros", "Adicione sons ao servidor e transmita-os para as pessoas na chamada de voz."],
   } as const;
 
   async function load() {
@@ -240,32 +241,21 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
   }
 
   async function playSound(row: any) {
-    setPlayingId(row.id); setError("");
-    const audio = new Audio(row.asset_url);
-    audio.volume = 0.85;
-    void audio.play().catch((playError) => {
-      console.warn("O navegador bloqueou o efeito sonoro local:", playError);
-    });
-    const channel = supabase.channel(`sekai-soundboard:${serverId}`, { config: { private: true } });
+    setPlayingId(row.id); setError(""); setPlaybackNotice("");
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timeout = window.setTimeout(() => reject(new Error("A conexão com o painel de som demorou demais.")), 8000);
-        channel.subscribe((status) => {
-          if (status === "SUBSCRIBED") { window.clearTimeout(timeout); resolve(); }
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") { window.clearTimeout(timeout); reject(new Error("Não foi possível conectar ao painel de som.")); }
-        });
-      });
-      const result = await channel.send({
-        type: "broadcast",
-        event: "play",
-        payload: { serverId, soundId: row.id, actorId: currentUserId },
-      });
-      if (result !== "ok") throw new Error("O servidor não confirmou a reprodução do efeito.");
+      const transmitted = await onPlaySoundEffect?.(serverId, { id: row.id, name: row.name, asset_url: row.asset_url });
+      if (transmitted) {
+        setPlaybackNotice(`“${row.name}” foi enviado para a chamada de voz.`);
+      } else {
+        const audio = new Audio(row.asset_url);
+        audio.volume = 0.85;
+        await audio.play();
+        setPlaybackNotice("Prévia local. Para transmitir para outras pessoas, entre em uma chamada de voz deste servidor e use o soundboard.");
+      }
       await onAudit("soundboard.play", row.name, { soundId: row.id });
     } catch (playError) {
-      setError(playError instanceof Error ? playError.message : "Não foi possível tocar o efeito para o servidor.");
+      setError(playError instanceof Error ? playError.message : "Não foi possível reproduzir o efeito sonoro.");
     } finally {
-      void supabase.removeChannel(channel);
       setPlayingId(null);
     }
   }
@@ -290,8 +280,9 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
           {kind === "emoji" && <Field label="Emoji Unicode"><input value={emoji} onChange={(event) => setEmoji(event.target.value)} placeholder="🎉 (opcional se enviar imagem)" className={inputClass} /></Field>}
           <Field label={fileLabel}><input type="file" accept={fileAccept} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-2 block w-full text-xs text-discord-text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" /></Field>
         </div>
-        {kind === "sound" && <p className="mt-2 text-xs text-discord-text-muted">Todos os membros conectados que não silenciaram você ouvirão o efeito.</p>}
+        {kind === "sound" && <p className="mt-2 text-xs text-discord-text-muted">Entre em uma chamada de voz deste servidor para transmitir os sons. Fora da chamada, o botão toca apenas uma prévia local.</p>}
         {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
+        {playbackNotice && <p role="status" className="mt-3 text-xs text-emerald-300">{playbackNotice}</p>}
         <button type="submit" disabled={saving} className="mt-4 rounded-xl bg-theme-gradient px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:opacity-50">{saving ? "Adicionando…" : "Adicionar recurso"}</button>
       </form>}
       {error && !canManage && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
@@ -305,9 +296,9 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-discord-header-primary">:{row.name}:</p>
-                {kind === "sound" && <audio controls src={row.asset_url} className="mt-1 h-8 max-w-full" />}
+                {kind === "sound" && <><p className="mt-1 text-[10px] text-discord-text-muted">Prévia local</p><audio controls src={row.asset_url} className="mt-1 h-8 max-w-full" /> </>}
               </div>
-              {kind === "sound" && <button type="button" onClick={() => void playSound(row)} disabled={playingId !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60" title="Tocar para o servidor"><Play size={14} fill="currentColor" />{playingId === row.id ? "Enviando…" : "Tocar para todos"}<Volume2 size={14} /></button>}
+              {kind === "sound" && <button type="button" onClick={() => void playSound(row)} disabled={playingId !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60" title="Transmitir na chamada de voz"><Play size={14} fill="currentColor" />{playingId === row.id ? "Enviando…" : "Usar na chamada"}<Volume2 size={14} /></button>}
               {canManage && <button type="button" onClick={() => void removeAsset(row)} className="shrink-0 rounded-lg px-2 py-1 text-xs text-red-300 hover:bg-red-500/10">Remover</button>}
             </article>;
           })}
