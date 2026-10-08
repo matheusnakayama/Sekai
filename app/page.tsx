@@ -25,12 +25,23 @@ import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { getServerTemplate } from "@/lib/serverTemplates";
 import type { SoundboardEffect } from "@/components/Controls";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> };
 type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
 
 function channelCacheKey(userId: string, serverId: string) {
   return `${userId}:${serverId}`;
+}
+
+function isServerSoundUrl(assetUrl: string, serverId: string) {
+  try {
+    const asset = new URL(assetUrl);
+    const supabaseUrl = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+    return asset.origin === supabaseUrl.origin && asset.pathname.startsWith(`/storage/v1/object/public/server-assets/${serverId}/`);
+  } catch {
+    return false;
+  }
 }
 
 function readCachedChannels(userId: string, serverId: string): Channel[] | null {
@@ -249,6 +260,18 @@ export default function Home() {
       return [];
     }
   });
+  const [soundboardNotice, setSoundboardNotice] = useState("");
+  const soundboardChannelsRef = useRef(new Map<string, { channel: RealtimeChannel; ready: Promise<boolean> }>());
+  const soundboardAudiosRef = useRef(new Set<HTMLAudioElement>());
+  const soundboardAudioContextRef = useRef<AudioContext | null>(null);
+  const soundboardBuffersRef = useRef(new Map<string, AudioBuffer>());
+  const soundboardSourcesRef = useRef(new Set<AudioBufferSourceNode>());
+  const [soundboardAudioReady, setSoundboardAudioReady] = useState(false);
+  const mutedSoundEffectUserIdsRef = useRef(mutedSoundEffectUserIds);
+  const soundboardDeafenedRef = useRef(voiceControlState.deafened);
+  const soundboardNoticeTimerRef = useRef<number | null>(null);
+  mutedSoundEffectUserIdsRef.current = mutedSoundEffectUserIds;
+  soundboardDeafenedRef.current = voiceControlState.deafened;
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
@@ -267,6 +290,187 @@ export default function Home() {
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
+
+  const showSoundboardNotice = useCallback((message: string) => {
+    setSoundboardNotice(message);
+    if (soundboardNoticeTimerRef.current !== null) window.clearTimeout(soundboardNoticeTimerRef.current);
+    soundboardNoticeTimerRef.current = window.setTimeout(() => setSoundboardNotice(""), 5500);
+  }, []);
+
+  const playServerSoundLocally = useCallback((serverId: string, effect: SoundboardEffect, senderId?: string, isLocal = false) => {
+    if (!isServerSoundUrl(effect.assetUrl, serverId)) return false;
+    if (soundboardDeafenedRef.current) return false;
+    if (!isLocal && senderId && mutedSoundEffectUserIdsRef.current.includes(senderId)) return false;
+    const playWithAudioElement = async () => {
+      const audio = new Audio(effect.assetUrl);
+      audio.preload = "auto";
+      audio.volume = 0.85;
+      soundboardAudiosRef.current.add(audio);
+      const release = () => {
+        soundboardAudiosRef.current.delete(audio);
+        audio.removeAttribute("src");
+        audio.load();
+      };
+      audio.addEventListener("ended", release, { once: true });
+      audio.addEventListener("error", release, { once: true });
+      try { await audio.play(); }
+      catch (error) { release(); throw error; }
+    };
+    const context = soundboardAudioContextRef.current;
+    if (!context) {
+      void playWithAudioElement().catch((error) => {
+        console.warn("O navegador não permitiu reproduzir o efeito sonoro:", error);
+        showSoundboardNotice("O navegador bloqueou o áudio. Clique uma vez no Sekai e permita o som para ouvir os próximos efeitos.");
+      });
+      return true;
+    }
+
+    void (async () => {
+      try {
+        if (context.state !== "running") await context.resume();
+        if (context.state !== "running") throw new Error("O navegador ainda não liberou a reprodução de áudio.");
+        let buffer = soundboardBuffersRef.current.get(effect.assetUrl);
+        if (!buffer) {
+          const response = await fetch(effect.assetUrl, { mode: "cors" });
+          if (!response.ok) throw new Error(`Falha ao buscar o áudio (${response.status}).`);
+          buffer = await context.decodeAudioData(await response.arrayBuffer());
+          soundboardBuffersRef.current.set(effect.assetUrl, buffer);
+        }
+        if (context.state !== "running") await context.resume();
+        if (context.state !== "running") throw new Error("O navegador suspendeu o áudio.");
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        source.buffer = buffer;
+        gain.gain.value = 0.85;
+        source.connect(gain);
+        gain.connect(context.destination);
+        soundboardSourcesRef.current.add(source);
+        source.onended = () => soundboardSourcesRef.current.delete(source);
+        source.start();
+      } catch (error) {
+        console.warn("Não foi possível reproduzir o efeito sonoro:", error);
+        try {
+          // O elemento de áudio funciona como fallback quando o servidor de
+          // arquivos não permite fetch/CORS para Web Audio.
+          await playWithAudioElement();
+        } catch (fallbackError) {
+          console.warn("O navegador também bloqueou o áudio direto:", fallbackError);
+          showSoundboardNotice("O navegador bloqueou o efeito ou não conseguiu carregar o áudio. Confira a permissão de som e o arquivo do efeito.");
+        }
+      }
+    })();
+    return true;
+  }, [showSoundboardNotice]);
+
+  const ensureServerSoundboardChannel = useCallback((serverId: string) => {
+    const existing = soundboardChannelsRef.current.get(serverId);
+    if (existing && existing.channel.state !== "closed") return existing;
+    if (existing) soundboardChannelsRef.current.delete(serverId);
+
+    let resolveReady: (ready: boolean) => void = () => {};
+    const ready = new Promise<boolean>((resolve) => { resolveReady = resolve; });
+    let settled = false;
+    const settle = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolveReady(value);
+    };
+    const channel = supabase.channel(`sekai-soundboard:${serverId}`, {
+      config: { private: true, broadcast: { ack: true } },
+    });
+    soundboardChannelsRef.current.set(serverId, { channel, ready });
+    channel.on("broadcast", { event: "play-sound" }, ({ payload }) => {
+      const event = payload as { serverId?: unknown; senderId?: unknown; effectId?: unknown; name?: unknown; assetUrl?: unknown };
+      if (event.serverId !== serverId || typeof event.senderId !== "string" || event.senderId === currentUserId) return;
+      if (typeof event.effectId !== "string" || typeof event.assetUrl !== "string") return;
+      playServerSoundLocally(serverId, {
+        id: event.effectId,
+        name: typeof event.name === "string" ? event.name : "Efeito sonoro",
+        assetUrl: event.assetUrl,
+      }, event.senderId);
+    });
+    channel.subscribe((status, error) => {
+      if (status === "SUBSCRIBED") settle(true);
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        settle(false);
+        console.warn(`Não foi possível conectar ao soundboard do servidor ${serverId}:`, error);
+        if (soundboardChannelsRef.current.get(serverId)?.channel === channel) soundboardChannelsRef.current.delete(serverId);
+        void supabase.removeChannel(channel);
+      }
+    });
+    return { channel, ready };
+  }, [currentUserId, playServerSoundLocally, supabase]);
+
+  const playServerSoundEffect = useCallback(async (serverId: string, effect: SoundboardEffect) => {
+    if (!currentUserId) throw new Error("Entre na sua conta para usar os efeitos sonoros.");
+    if (!isServerSoundUrl(effect.assetUrl, serverId)) throw new Error("O arquivo deste efeito não pertence ao armazenamento de sons deste servidor.");
+
+    // A prévia local começa diretamente no clique; o envio não depende de uma chamada de voz.
+    playServerSoundLocally(serverId, effect, currentUserId, true);
+    const { channel, ready } = ensureServerSoundboardChannel(serverId);
+    const connected = await Promise.race([ready, new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 5000))]);
+    if (!connected || channel.state !== "joined") throw new Error("O soundboard não conectou. Confira se a migration de imagens e soundboard foi executada no Supabase e tente novamente.");
+
+    const result = await channel.send({
+      type: "broadcast",
+      event: "play-sound",
+      payload: { serverId, senderId: currentUserId, effectId: effect.id, name: effect.name, assetUrl: effect.assetUrl },
+    });
+    if (result !== "ok") throw new Error("O Supabase não confirmou o envio do efeito sonoro.");
+    return true;
+  }, [currentUserId, ensureServerSoundboardChannel, playServerSoundLocally]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let cancelled = false;
+    void supabase.from("members").select("server_id").eq("user_id", currentUserId).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("Não foi possível carregar os servidores para o soundboard:", error.message);
+        return;
+      }
+      const ids = [...new Set((data ?? []).map((row: any) => row.server_id).filter((id: unknown): id is string => typeof id === "string"))];
+      ids.forEach((serverId) => ensureServerSoundboardChannel(serverId));
+    });
+    return () => {
+      cancelled = true;
+      soundboardChannelsRef.current.forEach(({ channel }) => { void supabase.removeChannel(channel); });
+      soundboardChannelsRef.current.clear();
+    };
+  }, [currentUserId, ensureServerSoundboardChannel, serverListVersion, supabase]);
+
+  useEffect(() => () => {
+    soundboardAudiosRef.current.forEach((audio) => { audio.pause(); audio.removeAttribute("src"); });
+    soundboardAudiosRef.current.clear();
+    soundboardSourcesRef.current.forEach((source) => { try { source.stop(); } catch { /* Já terminou. */ } });
+    soundboardSourcesRef.current.clear();
+    soundboardAudioContextRef.current?.close().catch(() => {});
+    soundboardAudioContextRef.current = null;
+    if (soundboardNoticeTimerRef.current !== null) window.clearTimeout(soundboardNoticeTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    function unlockSoundboardAudio() {
+      let context = soundboardAudioContextRef.current;
+      if (!context) {
+        const AudioContextClass = window.AudioContext;
+        if (!AudioContextClass) return;
+        context = new AudioContextClass();
+        soundboardAudioContextRef.current = context;
+      }
+      void context.resume().then(() => {
+        if (context?.state === "running") setSoundboardAudioReady(true);
+      }).catch((error) => console.warn("Não foi possível liberar a reprodução de áudio:", error));
+    }
+    window.addEventListener("pointerdown", unlockSoundboardAudio, true);
+    window.addEventListener("keydown", unlockSoundboardAudio, true);
+    window.addEventListener("touchstart", unlockSoundboardAudio, true);
+    return () => {
+      window.removeEventListener("pointerdown", unlockSoundboardAudio, true);
+      window.removeEventListener("keydown", unlockSoundboardAudio, true);
+      window.removeEventListener("touchstart", unlockSoundboardAudio, true);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -1517,6 +1721,7 @@ export default function Home() {
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />
+      {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
       {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
       <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(312px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
@@ -1531,6 +1736,7 @@ export default function Home() {
 
       {activeServerId ? <ChannelSidebar
         key={activeServerId}
+        serverId={activeServerId}
         serverName={servers.find((s) => s.id === activeServerId)?.name ?? "Selecione um servidor"}
         channels={channels}
         categories={channelCategories}
@@ -1561,7 +1767,8 @@ export default function Home() {
         connectedVoiceMembers={liveVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}
         onPresentScreen={voiceSession?.kind === "server" ? () => { void voiceControlsRef.current?.toggleScreenShare(); } : undefined}
-        onPlaySoundEffect={voiceSession?.kind === "server" ? async (effect) => (await voiceControlsRef.current?.playSoundEffect(effect)) ?? false : undefined}
+        onPlaySoundEffect={(effect) => playServerSoundEffect(activeServerId, effect)}
+        soundboardAudioReady={soundboardAudioReady}
         onDisconnectVoice={disconnectVoice}
         currentUser={{
           userId: currentUserId,
@@ -1651,9 +1858,8 @@ export default function Home() {
           }}
           onClose={() => setShowServerSettings(false)}
           onPlaySoundEffect={async (serverId, sound) => {
-            if (voiceSession?.kind !== "server" || voiceSession.serverId !== serverId || !voiceControlsRef.current) return false;
-            const sent = await voiceControlsRef.current.playSoundEffect({ id: sound.id, name: sound.name, assetUrl: sound.asset_url });
-            if (!sent) throw new Error("Não foi possível transmitir o efeito para a chamada.");
+            const sent = await playServerSoundEffect(serverId, { id: sound.id, name: sound.name, assetUrl: sound.asset_url });
+            if (!sent) throw new Error("Não foi possível enviar o efeito aos membros online do servidor.");
             return true;
           }}
           onDeleted={() => {
@@ -1705,6 +1911,7 @@ export default function Home() {
             initialName={currentMember?.displayName ?? "Você"}
             accessToken={voiceSession.accessToken}
             mutedSoundEffectUserIds={mutedSoundEffectUserIds}
+            onPlayServerSoundEffect={playServerSoundEffect}
             autoJoin
             onParticipantsChange={handleVoiceParticipantsChange}
             onControlsReady={handleVoiceControlsReady}
