@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings, Phone, PhoneCall } from "lucide-react";
+import { Check, Send, UserPlus, Users, MessageCircle, Search, Inbox, ArrowLeft, Image as ImageIcon, UserRound, X, Smile, Settings, Phone, PhoneCall, Menu } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 import { useDialogs } from "@/components/DialogProvider";
@@ -24,6 +24,7 @@ interface FriendHomeProps {
   unreadByUser?: Record<string, number>;
   onMarkDirectRead?: (userId: string) => void;
   onOpenSettings?: () => void;
+  onOpenMobileNavigation?: () => void;
   onPresenceChange?: (presence: Presence) => boolean | void | Promise<boolean | void>;
   onlineUserIds?: string[];
   onJoinDirectCall?: (peerId: string, peerName: string, sendInvite: boolean) => void;
@@ -49,7 +50,7 @@ function explainDatabaseError(error: { code?: string; message: string }, feature
   return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
 }
 
-export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onPresenceChange, onlineUserIds = [], currentUserProfile, onJoinDirectCall, activeDirectCallPeerId, onOpenDirectCall }: FriendHomeProps) {
+export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onOpenMobileNavigation, onPresenceChange, onlineUserIds = [], currentUserProfile, onJoinDirectCall, activeDirectCallPeerId, onOpenDirectCall }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [username, setUsername] = useState("");
@@ -393,7 +394,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }
 
   return <div className="flex min-w-0 flex-1 overflow-hidden bg-discord-bg-primary">
-    <aside className="flex w-[270px] shrink-0 flex-col border-r border-black/20 bg-discord-bg-secondary/70">
+    <aside className="hidden w-[270px] shrink-0 flex-col border-r border-black/20 bg-discord-bg-secondary/70 md:flex">
       <div className="p-3"><label className="flex w-full items-center gap-2 rounded-lg bg-discord-bg-primary/70 px-3 py-2 text-sm text-discord-text-muted transition focus-within:ring-1 focus-within:ring-white/20"><Search size={16}/><input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Buscar" aria-label="Buscar conversas" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-discord-text-muted" />{conversationSearch && <button type="button" onClick={() => setConversationSearch("")} aria-label="Limpar busca"><X size={14}/></button>}</label></div>
       <nav className="space-y-1 px-2">
         <button onClick={() => { setSelectedFriend(null); setTab("online"); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${tab === "online" && !selectedFriend ? "bg-discord-bg-modifier-hover text-white" : "text-discord-text-muted hover:bg-discord-bg-modifier-hover/60"}`}><Users size={18}/>Amigos online</button>
@@ -438,8 +439,9 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {selectedFriend && activeFriend ? <div key={activeFriend.id} className="server-view-enter relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-[60px] shrink-0 items-center gap-3 border-b border-black/20 px-4 shadow-sm sm:px-5">
-            <button className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white md:hidden" onClick={() => setSelectedFriend(null)} aria-label="Voltar para amigos"><ArrowLeft size={18}/></button>
+          <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-black/20 px-2 shadow-sm sm:gap-3 sm:px-5">
+            <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-text-normal md:hidden" onClick={onOpenMobileNavigation} aria-label="Abrir servidores"><Menu size={20}/></button>
+            <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white md:hidden" onClick={() => setSelectedFriend(null)} aria-label="Voltar para amigos"><ArrowLeft size={20}/></button>
             <FriendIdentity profile={activeFriend} compact isHovered={hoveredDmProfileId === activeFriend.id} onHoverChange={(hovered) => setHoveredDmProfileId(hovered ? activeFriend.id : null)} onProfileClick={openMiniProfile}/>
             <span className="hidden border-l border-white/10 pl-3 text-xs text-discord-text-muted lg:block">Mensagem direta</span>
             <div className="ml-auto flex min-w-0 items-center gap-2">
@@ -449,6 +451,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                 : <button onClick={() => onJoinDirectCall?.(activeFriend.id, activeFriend.display_name || activeFriend.username, true)} title={`Ligar para ${activeFriend.display_name || activeFriend.username}`} aria-label={`Ligar para ${activeFriend.display_name || activeFriend.username}`} className="rounded p-2 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-online"><Phone size={18}/></button>}
               <button onClick={() => { setMessageSearchOpen((open) => !open); if (messageSearchOpen) setMessageSearch(""); }} title="Buscar na conversa" aria-label="Buscar na conversa" className="rounded p-2 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white"><Search size={18}/></button>
               <button onClick={() => setProfilePanelOpen((open) => !open)} title={profilePanelOpen ? "Fechar perfil" : "Abrir perfil"} aria-label={profilePanelOpen ? "Fechar perfil" : "Abrir perfil"} className={`rounded p-2 transition hover:bg-discord-bg-modifier-hover hover:text-white ${profilePanelOpen ? "text-discord-header-primary" : "text-discord-text-muted"}`}><UserRound size={18}/></button>
+              <button onClick={onOpenSettings} title="Configurações" aria-label="Abrir configurações" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><Settings size={19}/></button>
             </div>
           </header>
           <div ref={dmScrollRef} onScroll={trackDmScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-6 sm:px-6">
@@ -489,11 +492,11 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
               })}
             </div> : <div className="rounded-lg bg-discord-bg-secondary/60 p-4 text-sm text-discord-text-muted">{messageSearch ? "Nenhuma mensagem corresponde à busca." : "Ainda não há mensagens nesta conversa."}</div>}
           </div>
-          <form onSubmit={sendDirectMessage} className="mx-4 mb-4 flex min-h-12 items-center gap-3 rounded-lg bg-discord-bg-secondary px-3 py-2 sm:mx-5 sm:px-4">
-            <label title="Enviar imagem" className={`cursor-pointer text-discord-text-muted transition hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={19}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
-            <input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-sm text-discord-text-normal outline-none placeholder:text-discord-text-muted"/>
-            <button type="button" onClick={() => setDmDraft((draft) => `${draft}${draft ? " " : ""}🙂`)} title="Adicionar emoji" aria-label="Adicionar emoji" className="text-discord-text-muted transition hover:text-white"><Smile size={18}/></button>
-            <button type="submit" aria-label="Enviar mensagem" disabled={!dmDraft.trim() || uploadingImage} className="rounded p-1 text-discord-brand transition hover:bg-white/5 disabled:opacity-35"><Send size={18}/></button>
+          <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex min-h-14 items-center gap-1 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:mx-5 sm:gap-3 sm:px-4 sm:py-2">
+            <label title="Enviar imagem" aria-label="Enviar imagem" className={`grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={21}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
+            <input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
+            <button type="button" onClick={() => setDmDraft((draft) => `${draft}${draft ? " " : ""}🙂`)} title="Adicionar emoji" aria-label="Adicionar emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white"><Smile size={20}/></button>
+            <button type="submit" aria-label="Enviar mensagem" disabled={!dmDraft.trim() || uploadingImage} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 disabled:opacity-35"><Send size={19}/></button>
           </form>
           {message && <p role="alert" className="mx-5 -mt-2 mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
         </section>
@@ -516,7 +519,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
             </div>
           </div>
         </aside>}
-      </div> : <><header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/20 px-5 shadow-sm"><Users className="h-5 w-5 text-discord-text-muted"/><span className="font-semibold text-discord-header-primary">Amigos</span></header><div className="flex-1 overflow-y-auto p-5 md:p-8"><div className="mx-auto w-full max-w-4xl">
+      </div> : <><header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/20 px-2 shadow-sm sm:px-5"><button type="button" onClick={onOpenMobileNavigation} aria-label="Abrir servidores" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-text-normal md:hidden"><Menu className="h-5 w-5"/></button><Users className="h-5 w-5 text-discord-text-muted"/><span className="flex-1 font-semibold text-discord-header-primary">Amigos</span><button type="button" onClick={onOpenSettings} aria-label="Abrir configurações" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white"><Settings className="h-5 w-5"/></button></header><div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-8"><div className="mx-auto w-full max-w-4xl">
       {tab === "pending" ? <section className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-secondary p-5 shadow-xl"><h1 className="text-xl font-bold text-discord-header-primary">Solicitações de amizade</h1><p className="mt-1 text-sm text-discord-text-muted">Aceite pedidos para iniciar uma conversa direta.</p>{incoming.length ? <div className="mt-4 space-y-2">{incoming.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-discord-bg-primary/60 p-3"><FriendIdentity profile={withLivePresence(item.sender)}/><button onClick={() => void accept(item.id)} className="flex items-center gap-2 rounded-lg bg-discord-brand px-3 py-2 text-sm text-white"><Check size={16}/>Aceitar</button></div>)}</div> : <p className="mt-5 rounded-xl bg-discord-bg-primary/50 p-5 text-sm text-discord-text-muted">Nenhuma solicitação no momento.</p>}</section> : <>
       <section className="rounded-lg bg-discord-bg-secondary p-5">
         <h1 className="text-xl font-bold text-discord-header-primary">Adicione amigos</h1>
