@@ -11,6 +11,7 @@ import ChatPanel from '@/components/ChatPanel';
 import ErrorBanner from '@/components/ErrorBanner';
 import ThemePicker from '@/components/ThemePicker';
 import { createClient } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusherClient';
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import type {
@@ -31,6 +32,16 @@ interface PresenceMember {
 
 interface PresenceMembersSnapshot {
   each: (callback: (member: PresenceMember) => void) => void;
+}
+
+function isServerSoundUrl(assetUrl: string, serverId: string) {
+  try {
+    const asset = new URL(assetUrl);
+    const supabaseUrl = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
+    return asset.origin === supabaseUrl.origin && asset.pathname.startsWith(`/storage/v1/object/public/server-assets/${serverId}/`);
+  } catch {
+    return false;
+  }
 }
 
 export default function RoomClient({
@@ -105,6 +116,11 @@ export default function RoomClient({
   const soundboardTrackRef = useRef<MediaStreamTrack | null>(null);
   const soundboardBusyRef = useRef(false);
   const soundboardRequestRef = useRef(0);
+  const soundboardChannelRef = useRef<RealtimeChannel | null>(null);
+  const soundboardReadyRef = useRef<Promise<boolean> | null>(null);
+  const soundboardAudiosRef = useRef(new Set<HTMLAudioElement>());
+  const mutedSoundEffectUserIdsRef = useRef(mutedSoundEffectUserIds);
+  const soundboardPlaybackMutedRef = useRef(deafened || muteRemoteAudioDuringShare);
   const presentationSectionRef = useRef<HTMLElement | null>(null);
   const chatOpenRef = useRef(false);
   const hostIdRef = useRef('');
@@ -117,6 +133,8 @@ export default function RoomClient({
   const screenAudioEnabledRef = useRef(false);
   const muteRemoteAudioFallbackRef = useRef(false);
   const supabase = createClient();
+  mutedSoundEffectUserIdsRef.current = mutedSoundEffectUserIds;
+  soundboardPlaybackMutedRef.current = deafened || muteRemoteAudioDuringShare;
 
   useEffect(() => {
     onParticipantsChange?.(phase === 'in-call' ? Object.values(participants) : []);
@@ -135,6 +153,8 @@ export default function RoomClient({
     soundboardTrackRef.current = null;
     soundboardAudioContextRef.current?.close().catch(() => {});
     soundboardAudioContextRef.current = null;
+    soundboardAudiosRef.current.forEach((audio) => { audio.pause(); audio.src = ''; });
+    soundboardAudiosRef.current.clear();
     managerRef.current?.destroy();
     managerRef.current = null;
     channelRef.current?.unbind('client-chat-message');
@@ -187,6 +207,70 @@ export default function RoomClient({
 
     return () => { cancelled = true; };
   }, [serverId, supabase]);
+
+  const playSoundLocally = useCallback((effect: { id: string; assetUrl: string }, senderId?: string, isLocal = false) => {
+    if (!serverId || !isServerSoundUrl(effect.assetUrl, serverId)) return false;
+    if (soundboardPlaybackMutedRef.current) return false;
+    if (!isLocal && senderId && mutedSoundEffectUserIdsRef.current.includes(senderId)) return false;
+
+    const audio = new Audio(effect.assetUrl);
+    audio.preload = 'auto';
+    audio.volume = 0.85;
+    soundboardAudiosRef.current.add(audio);
+    const releaseAudio = () => {
+      soundboardAudiosRef.current.delete(audio);
+      if (isLocal) setPlayingSoundId((current) => current === effect.id ? null : current);
+    };
+    audio.addEventListener('ended', releaseAudio, { once: true });
+    audio.addEventListener('error', () => {
+      releaseAudio();
+      setBanner('Não foi possível carregar este efeito sonoro. Confira o arquivo no painel do servidor.');
+    }, { once: true });
+    if (isLocal) setPlayingSoundId(effect.id);
+    void audio.play().catch((error) => {
+      releaseAudio();
+      console.warn('O navegador não permitiu reproduzir o efeito sonoro:', error);
+      setBanner('O navegador bloqueou a reprodução do efeito. Interaja com a chamada e tente novamente.');
+    });
+    return true;
+  }, [serverId]);
+
+  useEffect(() => {
+    if (phase !== 'in-call' || !serverId) return;
+    let active = true;
+    const topic = `sekai-soundboard:${serverId}`;
+    const channel = supabase.channel(topic, {
+      config: { private: true, broadcast: { ack: true } },
+    });
+    let resolveReady: (ready: boolean) => void = () => {};
+    const readyPromise = new Promise<boolean>((resolve) => { resolveReady = resolve; });
+    soundboardChannelRef.current = channel;
+    soundboardReadyRef.current = readyPromise;
+    channel.on('broadcast', { event: 'play-sound' }, ({ payload }) => {
+      if (!active) return;
+      const event = payload as { serverId?: unknown; senderId?: unknown; effectId?: unknown; assetUrl?: unknown };
+      if (event.serverId !== serverId || event.senderId === localIdRef.current) return;
+      if (typeof event.senderId !== 'string' || typeof event.effectId !== 'string' || typeof event.assetUrl !== 'string') return;
+      playSoundLocally({ id: event.effectId, assetUrl: event.assetUrl }, event.senderId);
+    });
+    channel.subscribe((status, error) => {
+      if (!active) return;
+      if (status === 'SUBSCRIBED') resolveReady(true);
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        resolveReady(false);
+        console.warn('Não foi possível conectar o soundboard da chamada:', error);
+        setBanner('Não foi possível conectar os efeitos sonoros. Confira se a migração chat_images_and_soundboard_migration.sql foi executada no Supabase.');
+      }
+    });
+
+    return () => {
+      active = false;
+      resolveReady(false);
+      if (soundboardChannelRef.current === channel) soundboardChannelRef.current = null;
+      if (soundboardReadyRef.current === readyPromise) soundboardReadyRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [phase, serverId, supabase, playSoundLocally]);
 
   useEffect(() => {
     const track = cameraStreamRef.current?.getAudioTracks()[0];
@@ -654,67 +738,49 @@ export default function RoomClient({
       setBanner('O anfitrião bloqueou o envio de áudio nesta chamada.');
       return false;
     }
-    if (soundboardBusyRef.current) return false;
+    if (!serverId || !isServerSoundUrl(effect.assetUrl, serverId)) {
+      setBanner('O arquivo deste efeito não pertence ao armazenamento de sons deste servidor.');
+      return false;
+    }
 
-    soundboardBusyRef.current = true;
-    const requestId = ++soundboardRequestRef.current;
-    const context = new AudioContext();
-    soundboardAudioContextRef.current = context;
-    setPlayingSoundId(effect.id);
-
-    const releaseSoundboardResources = async () => {
-      const source = soundboardSourceRef.current;
-      if (source) source.onended = null;
-      soundboardSourceRef.current = null;
-      const outputTrack = soundboardTrackRef.current;
-      soundboardTrackRef.current = null;
-      if (soundboardAudioContextRef.current === context) soundboardAudioContextRef.current = null;
-      soundboardBusyRef.current = false;
-      setPlayingSoundId(null);
-      await context.close().catch(() => {});
-      outputTrack?.stop();
-    };
+    // O clique inicia a prévia local imediatamente, enquanto o broadcast avisa
+    // os outros membros da chamada para reproduzirem o mesmo arquivo.
+    playSoundLocally(effect, localIdRef.current, true);
+    let channel = soundboardChannelRef.current;
+    if (!channel || channel.state !== 'joined') {
+      const ready = soundboardReadyRef.current
+        ? await Promise.race([
+            soundboardReadyRef.current,
+            new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 4000)),
+          ])
+        : false;
+      channel = soundboardChannelRef.current;
+      if (!ready || !channel || channel.state !== 'joined') {
+        setBanner('O soundboard ainda está conectando ao servidor. Aguarde um instante e tente de novo.');
+        return false;
+      }
+    }
 
     try {
-      // Inicie o contexto enquanto ainda estamos dentro do clique do usuário.
-      await context.resume();
-      const response = await fetch(effect.assetUrl);
-      if (!response.ok) throw new Error('Não foi possível carregar o arquivo deste efeito.');
-      const buffer = await context.decodeAudioData(await response.arrayBuffer());
-      if (requestId !== soundboardRequestRef.current || managerRef.current !== manager) return false;
-
-      const destination = context.createMediaStreamDestination();
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(destination);
-      source.connect(context.destination);
-      const outputTrack = destination.stream.getAudioTracks()[0];
-      if (!outputTrack) throw new Error('O navegador não conseguiu preparar o áudio da chamada.');
-
-      soundboardSourceRef.current = source;
-      soundboardTrackRef.current = outputTrack;
-      await manager.replaceSoundboardTrack(outputTrack);
-      if (requestId !== soundboardRequestRef.current || managerRef.current !== manager) return false;
-
-      source.onended = () => {
-        if (requestId !== soundboardRequestRef.current) return;
-        void (async () => {
-          await manager.replaceSoundboardTrack(null).catch((error) => console.warn('Não foi possível encerrar o efeito na chamada:', error));
-          await releaseSoundboardResources();
-        })();
-      };
-      source.start();
-      setBanner(`Efeito “${effect.name}” transmitido para a chamada.`);
+      const status = await channel.send({
+        type: 'broadcast',
+        event: 'play-sound',
+        payload: {
+          serverId,
+          senderId: localIdRef.current,
+          effectId: effect.id,
+          assetUrl: effect.assetUrl,
+        },
+      });
+      if (status !== 'ok') throw new Error('O Supabase não confirmou o envio do efeito.');
+      setBanner(`Efeito “${effect.name}” enviado para a chamada.`);
       return true;
     } catch (error) {
-      if (requestId !== soundboardRequestRef.current) return false;
-      await manager.replaceSoundboardTrack(null).catch((restoreError) => console.warn('Não foi possível encerrar o efeito na chamada:', restoreError));
-      await releaseSoundboardResources();
       console.error('Não foi possível transmitir o efeito sonoro:', error);
       setBanner(error instanceof Error ? error.message : 'Não foi possível transmitir o efeito sonoro.');
       return false;
     }
-  }, [phase]);
+  }, [phase, serverId, playSoundLocally]);
 
   async function toggleSharedScreenAudio() {
     const screenAudioTrack = screenAudioTrackRef.current;
