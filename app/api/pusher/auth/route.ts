@@ -1,96 +1,63 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { issueRoomSession } from '@/lib/roomSession';
-import { parseDirectVoiceRoomId } from '@/lib/directCalls';
+import { NextRequest, NextResponse } from 'next/server';
+import Pusher from 'pusher';
+import { verifyRoomSession } from '@/lib/roomSession';
 
 export const runtime = 'nodejs';
 
-export async function POST(request: Request) {
-  const accessToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (!accessToken) {
-    return NextResponse.json({ error: 'Entre no Sekai para participar da chamada.' }, { status: 401 });
+function getPusherServer() {
+  const appId = process.env.PUSHER_APP_ID;
+  const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+  const secret = process.env.PUSHER_SECRET;
+  const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+
+  if (!appId || !key || !secret || !cluster) {
+    return null;
   }
 
-  let body: { roomId?: unknown };
-  try {
-    body = await request.json() as { roomId?: unknown };
-  } catch {
-    return NextResponse.json({ error: 'Sala inválida.' }, { status: 400 });
+  return new Pusher({ appId, key, secret, cluster, useTLS: true });
+}
+
+// O navegador envia application/x-www-form-urlencoded (é assim que o pusher-js chama /api/pusher/auth)
+export async function POST(req: NextRequest) {
+  const pusher = getPusherServer();
+  if (!pusher) {
+    return NextResponse.json(
+      {
+        error:
+          'Sinalização não configurada no servidor. Defina PUSHER_APP_ID, PUSHER_SECRET, NEXT_PUBLIC_PUSHER_KEY e NEXT_PUBLIC_PUSHER_CLUSTER.',
+      },
+      { status: 500 }
+    );
   }
-  const roomId = body.roomId;
 
-  if (typeof roomId !== 'string' || !/^[a-z0-9-]{4,80}$/.test(roomId)) {
-    return NextResponse.json({ error: 'Código da sala inválido.' }, { status: 400 });
+  const body = await req.text();
+  const params = new URLSearchParams(body);
+  const socketId = params.get('socket_id');
+  const channelName = params.get('channel_name');
+  const userName = params.get('user_name')?.slice(0, 60) || 'Convidado';
+  const userAvatar = params.get('user_avatar') || null;
+  const userId = params.get('user_id') || '';
+  const roomSession = params.get('room_session');
+  const roomId = channelName?.startsWith('presence-room-') ? channelName.slice('presence-room-'.length) : '';
+
+  if (!socketId || !channelName || !/^[a-z0-9-]{4,80}$/.test(roomId) || !userId) {
+    return NextResponse.json({ error: 'Parâmetros ausentes.' }, { status: 400 });
   }
 
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'A conexão com o Sekai não está configurada.' }, { status: 503 });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-    });
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Sua sessão do Sekai expirou. Entre novamente.' }, { status: 401 });
-    }
-
-    const directPair = parseDirectVoiceRoomId(roomId);
-    if (directPair) {
-      if (!directPair.includes(user.id.toLowerCase())) {
-        return NextResponse.json({ error: 'Você não faz parte desta conversa.' }, { status: 403 });
-      }
-      const peerId = directPair.find((id) => id !== user.id.toLowerCase());
-      if (!peerId) return NextResponse.json({ error: 'Conversa privada inválida.' }, { status: 400 });
-
-      const { data: friendships } = await supabase.from('friendships').select('id')
-        .eq('status', 'accepted')
-        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${user.id})`)
-        .limit(1);
-      const isFriend = !!friendships?.length;
-      let sharesServer = false;
-      if (!isFriend) {
-        const { data: ownMemberships } = await supabase.from('members').select('server_id').eq('user_id', user.id);
-        const serverIds = Array.from(new Set((ownMemberships ?? []).map((row) => row.server_id).filter(Boolean)));
-        if (serverIds.length) {
-          const { data: sharedMemberships } = await supabase.from('members').select('server_id').eq('user_id', peerId).in('server_id', serverIds);
-          sharesServer = !!sharedMemberships?.length;
-        }
-      }
-      if (!isFriend && !sharesServer) {
-        return NextResponse.json({ error: 'A chamada privada exige amizade aceita ou um servidor em comum.' }, { status: 403 });
-      }
-    } else {
-      // RLS confirma que a pessoa pertence ao servidor que contém este canal.
-      const { data: channel } = await supabase
-        .from('channels')
-        .select('id, type')
-        .eq('id', roomId)
-        .eq('type', 'voice')
-        .maybeSingle();
-      if (!channel) {
-        return NextResponse.json({ error: 'Canal de voz não encontrado ou sem acesso.' }, { status: 403 });
-      }
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('display_name, username, avatar_url')
-      .eq('id', user.id)
-      .maybeSingle();
-    const displayName = profile?.display_name || profile?.username || 'Usuário';
-
-    const safeDisplayName = displayName.slice(0, 40);
-    const avatarUrl = profile?.avatar_url || null;
-    return NextResponse.json({
-      ...issueRoomSession(roomId, user.id, safeDisplayName, avatarUrl),
-      displayName: safeDisplayName,
-      avatarUrl,
-    });
-  } catch {
-    return NextResponse.json({ error: 'O servidor não conseguiu autorizar a entrada na sala.' }, { status: 503 });
+  // Só autorizamos canais de presença de sala (presence-room-*)
+  if (channelName !== `presence-room-${roomId}`) {
+    return NextResponse.json({ error: 'Canal não permitido.' }, { status: 403 });
   }
+
+  if (!verifyRoomSession(roomId, userId, roomSession, userName, userAvatar)) {
+    return NextResponse.json({ error: 'Sua sessão da sala expirou. Saia e entre novamente.' }, { status: 403 });
+  }
+
+  const presenceData = {
+    user_id: userId,
+    user_info: { name: userName, joinedAt: Date.now(), avatarUrl: userAvatar },
+  };
+
+  const authResponse = pusher.authorizeChannel(socketId, channelName, presenceData);
+  return NextResponse.json(authResponse);
 }
