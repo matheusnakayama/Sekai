@@ -143,33 +143,42 @@ export default function RoomClient({
     const track = cameraStreamRef.current?.getAudioTracks()[0];
     if (!track || !micOn || phase !== 'in-call' || deafened) {
       setLocalSpeaking(false);
+      updateLocalParticipant({ isSpeaking: false });
       return;
     }
     const context = new AudioContext();
     const analyser = context.createAnalyser();
     analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.65;
     const source = context.createMediaStreamSource(new MediaStream([track]));
     source.connect(analyser);
+    void context.resume().catch(() => {});
     const samples = new Uint8Array(analyser.fftSize);
     let frame = 0;
     let speaking = false;
-    let aboveThresholdSince = 0;
-    let belowThresholdSince = 0;
+    let aboveThresholdSince: number | null = null;
+    let belowThresholdSince: number | null = null;
+    let noiseFloor = 0.006;
     const sample = (time: number) => {
       analyser.getByteTimeDomainData(samples);
       let sum = 0;
       for (const value of samples) { const centered = (value - 128) / 128; sum += centered * centered; }
       const rms = Math.sqrt(sum / samples.length);
-      if (rms > 0.035) { aboveThresholdSince ||= time; belowThresholdSince = 0; }
-      else { belowThresholdSince ||= time; aboveThresholdSince = 0; }
-      // Um curto intervalo de confirmação evita que ruído de fundo ou pausas
-      // entre sílabas façam o anel piscar. A saída é mais lenta que a entrada.
-      const next = speaking ? !(time - belowThresholdSince > 620) : (time - aboveThresholdSince > 160);
+      const startThreshold = Math.min(0.05, Math.max(0.014, noiseFloor * 2.8));
+      const stopThreshold = Math.min(0.035, Math.max(0.009, noiseFloor * 1.65));
+      if (!speaking) noiseFloor = noiseFloor * 0.985 + Math.min(rms, 0.04) * 0.015;
+      if (!speaking && rms >= startThreshold) { aboveThresholdSince ??= time; belowThresholdSince = null; }
+      else if (speaking && rms < stopThreshold) { belowThresholdSince ??= time; aboveThresholdSince = null; }
+      else { aboveThresholdSince = null; belowThresholdSince = null; }
+      // Histerese + tempos distintos de entrada/saída evitam piscar entre sílabas.
+      const next = speaking
+        ? !(belowThresholdSince !== null && time - belowThresholdSince > 420)
+        : aboveThresholdSince !== null && time - aboveThresholdSince > 130;
       if (next !== speaking) { speaking = next; setLocalSpeaking(next); updateLocalParticipant({ isSpeaking: next }); }
       frame = window.requestAnimationFrame(sample);
     };
     frame = window.requestAnimationFrame(sample);
-    return () => { window.cancelAnimationFrame(frame); source.disconnect(); void context.close(); setLocalSpeaking(false); };
+    return () => { window.cancelAnimationFrame(frame); source.disconnect(); void context.close(); setLocalSpeaking(false); updateLocalParticipant({ isSpeaking: false }); };
   }, [micOn, phase, deafened]);
 
   function updateHost(nextHostId: string) {
