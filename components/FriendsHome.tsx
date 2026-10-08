@@ -501,7 +501,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           {message && <p role="alert" className="mx-5 -mt-2 mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
         </section>
         {profilePanelOpen && <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(86vw,320px)] shrink-0 flex-col overflow-y-auto border-l border-black/20 bg-discord-bg-secondary shadow-2xl xl:static xl:z-auto xl:w-[320px] xl:shadow-none">
-          <ProfileBanner src={activeFriend.banner_url} positionX={activeFriend.banner_position_x} positionY={activeFriend.banner_position_y} zoom={activeFriend.banner_zoom} className="aspect-[3.125/1] w-full shrink-0" style={{ backgroundColor: activeFriend.profile_card_color || "#202127" }}>
+          <ProfileBanner src={activeFriend.banner_url} positionX={activeFriend.banner_position_x} positionY={activeFriend.banner_position_y} zoom={activeFriend.banner_zoom} className="aspect-[3.125/1] w-full shrink-0" style={{ background: activeFriend.profile_card_color || "#202127" }}>
             <button onClick={() => setProfilePanelOpen(false)} title="Fechar perfil" aria-label="Fechar perfil" className="absolute right-3 top-3 rounded-full bg-black/40 p-1.5 text-white/80 hover:bg-black/65 hover:text-white xl:hidden"><X size={17}/></button>
           </ProfileBanner>
           <div className="relative flex-1 px-4 pb-5">
