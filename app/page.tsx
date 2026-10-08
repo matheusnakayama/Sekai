@@ -10,6 +10,8 @@ import { CreateServerModal } from "@/components/CreateServerModal";
 import { CreateChannelModal } from "@/components/CreateChannelModal";
 import { useDialogs } from "@/components/DialogProvider";
 import { ChannelSidebar, Channel, VoiceMemberPreview } from "@/components/ChannelSidebar";
+import { ChannelInviteModal } from "@/components/ChannelInviteModal";
+import { ChannelSettingsModal } from "@/components/ChannelSettingsModal";
 import { ChatArea } from "@/components/ChatArea";
 import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
@@ -19,6 +21,8 @@ import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { FriendsHome } from "@/components/FriendsHome";
 import type { Participant } from "@/lib/types";
+import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
+import { getServerTemplate } from "@/lib/serverTemplates";
 
 type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void };
 type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
@@ -46,28 +50,103 @@ function writeCachedChannels(userId: string, serverId: string, channels: Channel
 
 function LoginScreen() {
   const supabase = createClient();
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase();
+    if (mode === "signup") {
+      if (!/^[a-zA-Z0-9_.-]{2,32}$/.test(normalizedUsername)) {
+        setError("O usuário deve ter de 2 a 32 caracteres: letras, números, ponto, hífen ou sublinhado.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("A senha precisa ter pelo menos 6 caracteres.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("As senhas não coincidem.");
+        return;
+      }
+    }
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (mode === "login") {
+      const { error: loginError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      setLoading(false);
+      if (loginError) setError("E-mail ou senha inválidos.");
+      return;
+    }
+
+    const { data, error: signupError } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: {
+          username: normalizedUsername,
+          display_name: displayName.trim() || normalizedUsername,
+        },
+      },
+    });
     setLoading(false);
-    if (error) setError("E-mail ou senha inválidos.");
+    if (signupError) {
+      const message = signupError.message.toLowerCase();
+      if (message.includes("already registered") || message.includes("already been registered")) {
+        setError("Este e-mail já possui uma conta. Entre ou use outro e-mail.");
+      } else if (message.includes("signup is disabled") || message.includes("signups not allowed")) {
+        setError("O cadastro está desativado nas configurações de autenticação do Supabase.");
+      } else if (message.includes("database error saving new user")) {
+        setError("O Supabase não conseguiu criar o perfil. Confira se a migração de cadastro foi executada no banco.");
+      } else {
+        setError(signupError.message);
+      }
+      return;
+    }
+
+    if (data.session) {
+      // O listener de autenticação do app assume a sessão e abre a conta recém-criada.
+      setSuccess("Conta criada! Entrando no Sekai...");
+    } else {
+      setSuccess("Conta criada! Confira seu e-mail para confirmar o cadastro e depois entre no Sekai.");
+    }
   }
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-discord-bg-primary">
+    <div className="flex min-h-screen w-screen items-center justify-center overflow-y-auto bg-discord-bg-primary px-4 py-8">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-lg bg-discord-bg-secondary p-8 shadow-xl"
       >
-        <h1 className="mb-1 text-2xl font-bold text-discord-header-primary">Bem-vindo de volta!</h1>
-        <p className="mb-6 text-sm text-discord-text-muted">Entre no Sekai com seu convite.</p>
+        <h1 className="mb-1 text-2xl font-bold text-discord-header-primary">{mode === "login" ? "Bem-vindo de volta!" : "Crie sua conta"}</h1>
+        <p className="mb-5 text-sm text-discord-text-muted">{mode === "login" ? "Entre no Sekai com seu convite." : "Cadastre-se para começar a usar o Sekai."}</p>
+
+        <div className="mb-5 grid grid-cols-2 rounded-lg bg-discord-bg-primary p-1">
+          <button type="button" onClick={() => { setMode("login"); setError(""); setSuccess(""); }} className={`rounded-md px-3 py-2 text-sm font-medium transition ${mode === "login" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Entrar</button>
+          <button type="button" onClick={() => { setMode("signup"); setError(""); setSuccess(""); }} className={`rounded-md px-3 py-2 text-sm font-medium transition ${mode === "signup" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Criar conta</button>
+        </div>
+
+        {mode === "signup" && <>
+          <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
+            Nome de usuário
+            <input type="text" required minLength={2} maxLength={32} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))} placeholder="seu_usuario" className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+          </label>
+          <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
+            Nome de exibição <span className="normal-case font-normal">(opcional)</span>
+            <input type="text" maxLength={50} autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como você quer aparecer" className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+          </label>
+        </>}
 
         <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
           E-mail
@@ -75,6 +154,7 @@ function LoginScreen() {
             type="email"
             required
             value={email}
+            autoComplete="email"
             onChange={(e) => setEmail(e.target.value)}
             className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
           />
@@ -85,25 +165,29 @@ function LoginScreen() {
           <input
             type="password"
             required
+            minLength={mode === "signup" ? 6 : undefined}
             value={password}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
             onChange={(e) => setPassword(e.target.value)}
             className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
           />
         </label>
 
-        {error && <p className="mb-2 text-sm text-discord-danger">{error}</p>}
+        {mode === "signup" && <label className="mb-2 block text-xs font-semibold uppercase text-discord-text-muted">
+          Confirmar senha
+          <input type="password" required minLength={6} value={confirmPassword} autoComplete="new-password" onChange={(e) => setConfirmPassword(e.target.value)} className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+        </label>}
+
+        {error && <p role="alert" className="mb-2 text-sm text-discord-danger">{error}</p>}
+        {success && <p role="status" className="mb-2 text-sm text-emerald-400">{success}</p>}
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || Boolean(success)}
           className="mt-4 w-full rounded bg-theme-gradient py-2.5 font-medium text-white hover:brightness-110 disabled:opacity-60"
         >
-          {loading ? "Entrando..." : "Entrar"}
+          {loading ? (mode === "login" ? "Entrando..." : "Criando conta...") : (mode === "login" ? "Entrar" : "Criar conta")}
         </button>
-
-        <p className="mt-4 text-xs text-discord-text-muted">
-          Sem conta? Peça um convite pra quem administra o servidor.
-        </p>
       </form>
     </div>
   );
@@ -133,12 +217,14 @@ export default function Home() {
   const [activeChannelType, setActiveChannelType] = useState<"text" | "voice">("text");
   const [isServerLoading, setIsServerLoading] = useState(false);
   const serverLoadSequence = useRef(0);
-  const [inviteVoiceChannelId, setInviteVoiceChannelId] = useState<string | null>(null);
+  const [inviteChannelId, setInviteChannelId] = useState<string | null>(null);
   // Chamada de voz: fica montada enquanto você estiver conectado, mesmo ao trocar de canal.
   const [voiceSession, setVoiceSession] = useState<{
     channelId: string;
     channelName: string;
     accessToken: string;
+    kind: "server" | "dm";
+    peerUserId?: string;
   } | null>(null);
   const [callExpanded, setCallExpanded] = useState(false);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
@@ -167,6 +253,8 @@ export default function Home() {
   const bankaiAudioRequestRef = useRef(0);
   const bankaiCooldownByServerRef = useRef(new Map<string, number>());
   const [showCreateServer, setShowCreateServer] = useState(false);
+  const [channelInviteTarget, setChannelInviteTarget] = useState<Channel | null>(null);
+  const [channelSettingsTarget, setChannelSettingsTarget] = useState<Channel | null>(null);
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
@@ -378,7 +466,8 @@ export default function Home() {
         const { data: profile } = await supabase.from("profiles").select("id,username,display_name,avatar_url").eq("id", row.sender_id).maybeSingle();
         const name = profile?.display_name || profile?.username || "Nova mensagem";
         setDmUnreadByUser((previous) => ({ ...previous, [row.sender_id]: (previous[row.sender_id] || 0) + 1 }));
-        setDmToast({ userId: row.sender_id, name, avatarUrl: profile?.avatar_url ?? null, content: row.content || (row.attachment_url ? "Enviou uma imagem" : "Nova mensagem"), image: !!row.attachment_url });
+        const isCallInvite = row.content === DIRECT_CALL_INVITE;
+        setDmToast({ userId: row.sender_id, name, avatarUrl: profile?.avatar_url ?? null, content: isCallInvite ? "Ligação de voz recebida" : row.content || (row.attachment_url ? "Enviou uma imagem" : "Nova mensagem"), image: !!row.attachment_url });
         window.setTimeout(() => setDmToast((current) => current?.userId === row.sender_id ? null : current), 7000);
       })
       .subscribe();
@@ -634,7 +723,7 @@ export default function Home() {
       if (inviteCode) {
         const { data: joinedServerId, error } = await supabase.rpc("redeem_invite", { p_code: inviteCode });
         if (!error && joinedServerId) {
-          const requestedChannelId = params.get("voiceChannel");
+          const requestedChannelId = params.get("channel") || params.get("voiceChannel");
           const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
           if (joinedServer) {
             const optimisticList = [...serversRef.current.filter((server) => server.id !== joinedServer.id), {
@@ -647,7 +736,7 @@ export default function Home() {
             try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(optimisticList)); } catch { /* Cache local opcional. */ }
           }
           setActiveServerId(joinedServerId as string);
-          if (requestedChannelId) setInviteVoiceChannelId(requestedChannelId);
+          if (requestedChannelId) setInviteChannelId(requestedChannelId);
           await loadServers();
           window.history.replaceState({}, "", window.location.pathname);
           return;
@@ -657,16 +746,15 @@ export default function Home() {
         if (list?.[0]) setActiveServerId((current) => current || list[0].id);
         return;
       }
-      const requestedChannelId = params.get("voiceChannel");
+      const requestedChannelId = params.get("channel") || params.get("voiceChannel");
       if (requestedChannelId) {
         const { data: channel } = await supabase
           .from("channels")
           .select("id, server_id, type")
           .eq("id", requestedChannelId)
-          .eq("type", "voice")
           .maybeSingle();
         if (channel) {
-          setInviteVoiceChannelId(channel.id);
+          setInviteChannelId(channel.id);
           setActiveServerId(channel.server_id);
           return;
         }
@@ -713,24 +801,27 @@ export default function Home() {
     const cachedKey = channelCacheKey(currentUserId, serverId);
     const cachedChannels = serverChannelsCache.current.get(cachedKey) ?? readCachedChannels(currentUserId, serverId) ?? [];
     const cachedCategoryNames = new Map<string | null, string>(cachedChannels.map((channel): [string | null, string] => [channel.categoryId, channel.categoryName]));
+    const cachedCategoryPositions = new Map<string | null, number>(cachedChannels.map((channel): [string | null, number] => [channel.categoryId, channel.categoryPosition ?? 0]));
     const mappedChannels: Channel[] = (channelResult.data ?? []).map((channel: any) => ({
       id: channel.id,
       name: channel.name,
       type: channel.type,
       categoryId: channel.category_id,
       categoryName: cachedCategoryNames.get(channel.category_id) ?? "SEM CATEGORIA",
+      position: Number(channel.position ?? 0),
+      categoryPosition: cachedCategoryPositions.get(channel.category_id) ?? 0,
     }));
     serverChannelsCache.current.set(cachedKey, mappedChannels);
     writeCachedChannels(currentUserId, serverId, mappedChannels);
     setChannels(mappedChannels);
 
-    const invitedChannel = inviteVoiceChannelId
-      ? mappedChannels.find((channel) => channel.id === inviteVoiceChannelId && channel.type === "voice")
+    const invitedChannel = inviteChannelId
+      ? mappedChannels.find((channel) => channel.id === inviteChannelId)
       : undefined;
     if (invitedChannel) {
       setActiveChannelId(invitedChannel.id);
-      setActiveChannelType("voice");
-      setInviteVoiceChannelId(null);
+      setActiveChannelType(invitedChannel.type);
+      setInviteChannelId(null);
       window.history.replaceState({}, "", window.location.pathname);
     } else {
       const nextChannel = mappedChannels.find((channel) => channel.id === activeChannelId) ?? mappedChannels[0];
@@ -749,9 +840,11 @@ export default function Home() {
 
     if (!categoryResult.error) {
       const categoryNameById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, category.name]));
+      const categoryPositionById = new Map((categoryResult.data ?? []).map((category: any) => [category.id, Number(category.position ?? 0)]));
       const categorizedChannels = mappedChannels.map((channel) => ({
         ...channel,
         categoryName: channel.categoryId ? categoryNameById.get(channel.categoryId) ?? "SEM CATEGORIA" : "SEM CATEGORIA",
+        categoryPosition: channel.categoryId ? categoryPositionById.get(channel.categoryId) ?? 0 : Number.MAX_SAFE_INTEGER,
       }));
       serverChannelsCache.current.set(cachedKey, categorizedChannels);
       writeCachedChannels(currentUserId, serverId, categorizedChannels);
@@ -884,7 +977,7 @@ export default function Home() {
     setIsServerLoading(Boolean(activeServerId && !cachedChannels));
     void loadChannelsAndMembers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeServerId, currentUserId, isPlatformAdmin]);
+  }, [activeServerId, currentUserId, inviteChannelId, isPlatformAdmin]);
 
   useEffect(() => {
     if (!activeServerId) return;
@@ -939,6 +1032,7 @@ export default function Home() {
   }, [activeServerId, channels, currentUserId, supabase]);
 
   const canManageChannels = isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_CHANNELS");
+  const canCreateInvite = isOwner || isPlatformAdmin || hasPermission(myPermissions, "CREATE_INSTANT_INVITE");
 
   const handleVoiceParticipantsChange = useCallback((participants: Participant[]) => {
     setVoiceParticipants(participants);
@@ -1140,8 +1234,59 @@ export default function Home() {
       channelId: channel.id,
       channelName: channel.name,
       accessToken: data.session.access_token,
+      kind: "server",
     });
     setCallExpanded(true);
+  }
+
+  async function handleJoinDirectCall(peerId: string, peerName: string, sendInvite: boolean) {
+    if (!currentUserId || peerId === currentUserId || voiceConnecting) return;
+    setVoiceError("");
+    setVoiceConnecting(true);
+    const roomId = directVoiceRoomId(currentUserId, peerId);
+
+    if (sendInvite) {
+      const { error } = await supabase.from("sekai_direct_messages").insert({
+        sender_id: currentUserId,
+        receiver_id: peerId,
+        content: DIRECT_CALL_INVITE,
+      });
+      if (error) {
+        setVoiceConnecting(false);
+        await dialogs.notify({ title: "Não foi possível iniciar a chamada", message: error.message });
+        return;
+      }
+    }
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.access_token) {
+      setVoiceConnecting(false);
+      await dialogs.notify({ title: "Sessão expirada", message: "Entre novamente no Sekai para fazer uma chamada." });
+      return;
+    }
+    try {
+      const response = await fetch("/api/pusher/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify({ roomId }),
+      });
+      const payload = await response.json() as { token?: string; error?: string };
+      if (!response.ok || !payload.token) throw new Error(payload.error || "O Sekai não autorizou a chamada.");
+      setVoiceSession({
+        channelId: roomId,
+        channelName: `Ligação com ${peerName}`,
+        accessToken: data.session.access_token,
+        kind: "dm",
+        peerUserId: peerId,
+      });
+      setActiveServerId("");
+      setActiveChannelId("");
+      setCallExpanded(true);
+    } catch (error) {
+      await dialogs.notify({ title: "Não foi possível entrar na chamada", message: error instanceof Error ? error.message : "Tente novamente." });
+    } finally {
+      setVoiceConnecting(false);
+    }
   }
 
   function disconnectVoice() {
@@ -1173,7 +1318,7 @@ export default function Home() {
     void joinVoiceChannel(channel);
   }
 
-  async function handleSubmitCreateServer(name: string, iconFile: File | null) {
+  async function handleSubmitCreateServer(name: string, iconFile: File | null, templateId: string) {
     if (!currentUserId) return;
 
     const { data, error } = await supabase
@@ -1183,29 +1328,62 @@ export default function Home() {
       .single();
     if (error) throw new Error(error.message);
 
-    if (data && iconFile) {
-      const extension = iconFile.name.split(".").pop()?.toLowerCase();
-      const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
-      const path = `${data.id}/icon-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("server-icons")
-        .upload(path, iconFile, { upsert: true, contentType: iconFile.type });
-      if (!uploadError) {
-        const iconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
-        await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", data.id);
+    try {
+      if (iconFile) {
+        const extension = iconFile.name.split(".").pop()?.toLowerCase();
+        const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
+        const path = `${data.id}/icon-${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("server-icons")
+          .upload(path, iconFile, { upsert: true, contentType: iconFile.type });
+        if (!uploadError) {
+          const iconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
+          await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", data.id);
+        }
       }
+
+      // O banco cria canais padrão automaticamente. Troca essa base pelo modelo escolhido.
+      const { error: clearChannelsError } = await supabase.from("channels").delete().eq("server_id", data.id);
+      if (clearChannelsError) throw clearChannelsError;
+      const { error: clearCategoriesError } = await supabase.from("channel_categories").delete().eq("server_id", data.id);
+      if (clearCategoriesError) throw clearCategoriesError;
+
+      const template = getServerTemplate(templateId);
+      for (let categoryPosition = 0; categoryPosition < template.categories.length; categoryPosition += 1) {
+        const category = template.categories[categoryPosition];
+        const { data: categoryRow, error: categoryError } = await supabase.from("channel_categories")
+          .insert({ server_id: data.id, name: category.name, position: categoryPosition })
+          .select("id")
+          .single();
+        if (categoryError || !categoryRow) throw categoryError ?? new Error(`Não foi possível criar a categoria ${category.name}.`);
+
+        const channelRows = category.channels.map((channel, position) => ({
+          server_id: data.id,
+          category_id: categoryRow.id,
+          name: channel.name,
+          type: channel.type,
+          position,
+        }));
+        const { error: channelsError } = await supabase.from("channels").insert(channelRows);
+        if (channelsError) throw channelsError;
+      }
+    } catch (templateError) {
+      await supabase.from("servers").delete().eq("id", data.id);
+      throw new Error(`O servidor não terminou de ser criado. ${templateError instanceof Error ? templateError.message : "Confira as permissões de canais e categorias no Supabase."}`);
     }
 
     await loadServers();
-    if (data) setActiveServerId(data.id);
+    setActiveServerId(data.id);
   }
 
   async function handleSubmitJoinServer(rawCode: string) {
     // Aceita o código puro ou um link completo, preservando o parâmetro ?invite=.
     let code = rawCode.trim();
+    let requestedChannelId: string | null = null;
     try {
       const url = new URL(code, window.location.origin);
       code = url.searchParams.get("invite") || url.searchParams.get("code") || code;
+      requestedChannelId = url.searchParams.get("channel") || url.searchParams.get("voiceChannel");
       if (code === rawCode.trim() && url.pathname !== "/") {
         code = url.pathname.replace(/\/+$/, "").split("/").pop() || code;
       }
@@ -1231,7 +1409,52 @@ export default function Home() {
       }
     }
     await loadServers();
-    if (serverId) setActiveServerId(serverId as string);
+    if (serverId) {
+      if (requestedChannelId) setInviteChannelId(requestedChannelId);
+      setActiveServerId(serverId as string);
+    }
+  }
+
+  function handleEditChannel(channel: Channel) { setChannelSettingsTarget(channel); }
+
+  async function handleSaveChannelSettings(channel: Channel, name: string, categoryId: string | null) {
+    let position = channel.position ?? 0;
+    if (categoryId !== channel.categoryId) {
+      const positionQuery = supabase.from("channels").select("position").eq("server_id", activeServerId);
+      const { data: rows } = categoryId ? await positionQuery.eq("category_id", categoryId) : await positionQuery.is("category_id", null);
+      position = (rows ?? []).reduce((max, row) => Math.max(max, Number(row.position ?? -1)), -1) + 1;
+    }
+    const { error } = await supabase.from("channels").update({ name, category_id: categoryId, position }).eq("id", channel.id);
+    if (error) throw new Error(error.message);
+    await loadChannelsAndMembers();
+  }
+
+  function handleCreateChannelInvite(channel: Channel) { setChannelInviteTarget(channel); }
+
+  async function handleReorderChannels(nextChannels: Channel[]) {
+    if (!activeServerId || !canManageChannels) return;
+    setChannels(nextChannels);
+    const cacheKey = currentUserId ? channelCacheKey(currentUserId, activeServerId) : null;
+    if (cacheKey) {
+      serverChannelsCache.current.set(cacheKey, nextChannels);
+      writeCachedChannels(currentUserId!, activeServerId, nextChannels);
+    }
+
+    const byCategory = new Map<string, Channel[]>();
+    nextChannels.forEach((channel) => {
+      const key = channel.categoryId ?? "__uncategorized__";
+      byCategory.set(key, [...(byCategory.get(key) ?? []), channel]);
+    });
+    const results = await Promise.all(Array.from(byCategory.values()).flatMap((group) =>
+      group.map((channel, position) => supabase.from("channels").update({ category_id: channel.categoryId, position }).eq("id", channel.id))
+    ));
+    const failed = results.find((result) => result.error)?.error;
+    if (failed) {
+      await dialogs.notify({ title: "Não foi possível reorganizar os canais", message: failed.message });
+      await loadChannelsAndMembers();
+      return;
+    }
+    await loadChannelsAndMembers();
   }
 
   async function handleSubmitCreateChannel(name: string, type: "text" | "voice", categoryId: string | null) {
@@ -1334,8 +1557,9 @@ export default function Home() {
   if (!authChecked) return null;
   if (!currentUserId) return <LoginScreen />;
 
-  const callOpenHere =
-    callExpanded && !!voiceSession && activeChannelType === "voice" && activeChannelId === voiceSession.channelId;
+  const callOpenHere = callExpanded && !!voiceSession && (
+    voiceSession.kind === "dm" || (activeChannelType === "voice" && activeChannelId === voiceSession.channelId)
+  );
   const connectedHere = !!voiceSession && voiceSession.channelId === activeChannelId;
   const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking }));
   const visibleVoiceMembersByChannel = voiceSession
@@ -1362,8 +1586,12 @@ export default function Home() {
         activeChannelId={activeChannelId}
         onSelectChannel={handleSelectChannel}
         canManageChannels={canManageChannels}
+        canCreateInvite={canCreateInvite}
         onCreateChannel={(categoryId) => setCreateChannelCategoryId(categoryId)}
         onCreateCategory={handleCreateCategory}
+        onEditChannel={(channel) => void handleEditChannel(channel)}
+        onCreateChannelInvite={(channel) => void handleCreateChannelInvite(channel)}
+        onReorderChannels={(nextChannels) => void handleReorderChannels(nextChannels)}
         onDeleteChannel={async (channel) => {
           if (!await dialogs.confirm({ title: "Excluir canal", message: `Excluir #${channel.name}? Essa ação não pode ser desfeita.`, confirmLabel: "Excluir canal", danger: true })) return;
           const { error } = await supabase.from("channels").delete().eq("id", channel.id);
@@ -1422,6 +1650,23 @@ export default function Home() {
           onCreate={handleSubmitCreateChannel}
         />
       )}
+
+      {channelInviteTarget && activeServerId && currentUserId && <ChannelInviteModal
+        channel={channelInviteTarget}
+        serverId={activeServerId}
+        serverName={servers.find((server) => server.id === activeServerId)?.name ?? "Servidor"}
+        currentUserId={currentUserId}
+        onClose={() => setChannelInviteTarget(null)}
+      />}
+
+      {channelSettingsTarget && <ChannelSettingsModal
+        channel={channelSettingsTarget}
+        categories={Array.from(new Map(channels.map((channel) => [channel.categoryId, channel.categoryName] as const)).entries())
+          .filter(([id]) => id)
+          .map(([id, name]) => ({ id: id as string, name: String(name) }))}
+        onClose={() => setChannelSettingsTarget(null)}
+        onSave={handleSaveChannelSettings}
+      />}
 
       {showUserSettings && currentUserId && (
         <UserSettingsModal
@@ -1513,6 +1758,9 @@ export default function Home() {
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onOpenSettings={() => setShowUserSettings(true)}
           onPresenceChange={handlePresenceChange}
+          onJoinDirectCall={(peerId, peerName, sendInvite) => void handleJoinDirectCall(peerId, peerName, sendInvite)}
+          activeDirectCallPeerId={voiceSession?.kind === "dm" ? voiceSession.peerUserId : null}
+          onOpenDirectCall={() => setCallExpanded(true)}
           currentUserProfile={{
             display_name: myProfile?.displayName ?? "Você",
             username: myProfile?.username,
@@ -1532,7 +1780,7 @@ export default function Home() {
             status: myProfile?.presence ?? "offline",
           }}
           onJoined={(serverId, channelId) => {
-            if (channelId) setInviteVoiceChannelId(channelId);
+            if (channelId) setInviteChannelId(channelId);
             setActiveServerId(serverId);
           }}
         />
@@ -1612,7 +1860,7 @@ export default function Home() {
       />}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
-        <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Nova mensagem direta</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
+        <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">{dmToast.content === "Ligação de voz recebida" ? "Chamada recebida" : "Nova mensagem direta"}</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
       </button>}
       </div>
     </div>
