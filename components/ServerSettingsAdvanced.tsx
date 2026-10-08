@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Play, Volume2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useDialogs } from "@/components/DialogProvider";
 
@@ -185,8 +186,13 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const labels = { emoji: ["Emojis", "Cadastre emojis para identificar e organizar as expressões do servidor."], sticker: ["Figurinhas", "Gerencie imagens de figurinha disponíveis para a comunidade."], sound: ["Painel de efeitos sonoros", "Adicione efeitos curtos em formatos de áudio compatíveis com o navegador."] } as const;
+  const labels = {
+    emoji: ["Emojis", "Cadastre emojis Unicode ou imagens próprias para usar nas mensagens."],
+    sticker: ["Figurinhas", "Gerencie imagens de figurinha disponíveis para a comunidade."],
+    sound: ["Painel de efeitos sonoros", "Adicione áudios e toque um efeito para todas as pessoas conectadas ao servidor."],
+  } as const;
 
   async function load() {
     const { data, error: loadError } = await supabase.from("server_assets").select("id,name,asset_url,storage_path,created_at").eq("server_id", serverId).eq("kind", kind).order("created_at", { ascending: false });
@@ -194,7 +200,7 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
     setRows(data ?? []);
     setLoading(false);
   }
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [serverId, kind]);
+  useEffect(() => { setLoading(true); void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [serverId, kind]);
 
   async function addAsset(event: React.FormEvent) {
     event.preventDefault();
@@ -203,16 +209,25 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
     setSaving(true); setError("");
     let assetUrl = emoji.trim();
     let storagePath: string | null = null;
-    if (kind !== "emoji") {
+    const uploadFile = kind !== "emoji" || !!file;
+    if (uploadFile) {
       if (!file) { setError("Escolha um arquivo antes de adicionar."); setSaving(false); return; }
-      const valid = kind === "sticker" ? file.type.startsWith("image/") : file.type.startsWith("audio/");
-      if (!valid || file.size > 8 * 1024 * 1024) { setError(kind === "sticker" ? "Use imagem de até 8 MB." : "Use áudio de até 8 MB."); setSaving(false); return; }
+      const valid = kind === "sound" ? file.type.startsWith("audio/") : file.type.startsWith("image/");
+      if (!valid || file.size > 8 * 1024 * 1024) {
+        setError(kind === "sound" ? "Use um áudio de até 8 MB." : "Use uma imagem de até 8 MB.");
+        setSaving(false);
+        return;
+      }
       const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
       storagePath = `${serverId}/${currentUserId}/${kind}/${crypto.randomUUID()}.${ext}`;
       const { error: uploadError } = await supabase.storage.from("server-assets").upload(storagePath, file, { contentType: file.type, upsert: false });
       if (uploadError) { setError(uploadError.message); setSaving(false); return; }
       assetUrl = supabase.storage.from("server-assets").getPublicUrl(storagePath).data.publicUrl;
-    } else if (!assetUrl) { setError("Digite ou cole um emoji Unicode."); setSaving(false); return; }
+    } else if (!assetUrl) {
+      setError("Digite um emoji Unicode ou selecione uma imagem.");
+      setSaving(false);
+      return;
+    }
     const { error: insertError } = await supabase.from("server_assets").insert({ server_id: serverId, kind, name: cleanName, asset_url: assetUrl, storage_path: storagePath, created_by: currentUserId });
     setSaving(false);
     if (insertError) {
@@ -224,6 +239,37 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
     await load();
   }
 
+  async function playSound(row: any) {
+    setPlayingId(row.id); setError("");
+    const audio = new Audio(row.asset_url);
+    audio.volume = 0.85;
+    void audio.play().catch((playError) => {
+      console.warn("O navegador bloqueou o efeito sonoro local:", playError);
+    });
+    const channel = supabase.channel(`sekai-soundboard:${serverId}`, { config: { private: true } });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error("A conexão com o painel de som demorou demais.")), 8000);
+        channel.subscribe((status) => {
+          if (status === "SUBSCRIBED") { window.clearTimeout(timeout); resolve(); }
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") { window.clearTimeout(timeout); reject(new Error("Não foi possível conectar ao painel de som.")); }
+        });
+      });
+      const result = await channel.send({
+        type: "broadcast",
+        event: "play",
+        payload: { serverId, soundId: row.id, actorId: currentUserId },
+      });
+      if (result !== "ok") throw new Error("O servidor não confirmou a reprodução do efeito.");
+      await onAudit("soundboard.play", row.name, { soundId: row.id });
+    } catch (playError) {
+      setError(playError instanceof Error ? playError.message : "Não foi possível tocar o efeito para o servidor.");
+    } finally {
+      void supabase.removeChannel(channel);
+      setPlayingId(null);
+    }
+  }
+
   async function removeAsset(row: any) {
     if (!await dialogs.confirm({ title: "Remover recurso", message: `Remover ${row.name} do servidor?`, confirmLabel: "Remover", danger: true })) return;
     const { error: deleteError } = await supabase.from("server_assets").delete().eq("id", row.id);
@@ -233,8 +279,42 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
     await load();
   }
 
-  return <div className="mx-auto max-w-3xl"><Header title={labels[kind][0]} description={labels[kind][1]}/>{canManage && <form onSubmit={(event) => void addAsset(event)} className="mb-5 rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><div className="grid gap-3 sm:grid-cols-2"><Field label="Nome curto"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="ex: comemorar" className={inputClass}/></Field>{kind === "emoji" ? <Field label="Emoji"><input value={emoji} onChange={(event) => setEmoji(event.target.value)} placeholder="🎉" className={inputClass}/></Field> : <Field label={kind === "sticker" ? "Imagem" : "Áudio"}><input type="file" accept={kind === "sticker" ? "image/png,image/jpeg,image/webp,image/gif" : "audio/*"} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-2 block w-full text-xs text-discord-text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"/></Field>}</div>{error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}<button type="submit" disabled={saving} className="mt-4 rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Adicionando…" : "Adicionar recurso"}</button></form>}
-    {error && !canManage && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}{loading ? <p className="text-sm text-discord-text-muted">Carregando…</p> : rows.length === 0 ? <Empty title="Ainda não há recursos" text="Os recursos adicionados aparecerão aqui para gestão do servidor."/> : <div className="grid gap-2 sm:grid-cols-2">{rows.map((row) => <div key={row.id} className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-discord-bg-primary p-3"><div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-discord-bg-secondary text-2xl">{kind === "emoji" ? row.asset_url : kind === "sticker" ? <img src={row.asset_url} alt="" className="h-full w-full object-contain"/> : "♫"}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">:{row.name}:</p>{kind === "sound" && <audio controls src={row.asset_url} className="mt-1 h-7 max-w-full"/>}</div>{canManage && <button onClick={() => void removeAsset(row)} className="rounded-lg px-2 py-1 text-xs text-red-300 hover:bg-red-500/10">Remover</button>}</div>)}</div>}</div>;
+  const fileAccept = kind === "sound" ? "audio/*" : "image/png,image/jpeg,image/webp,image/gif";
+  const fileLabel = kind === "sound" ? "Arquivo de áudio" : kind === "sticker" ? "Imagem da figurinha" : "Imagem do emoji (opcional)";
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title={labels[kind][0]} description={labels[kind][1]} />
+      {canManage && <form onSubmit={(event) => void addAsset(event)} className="mb-5 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Nome curto"><input value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "sound" ? "ex: bankai" : "ex: festa"} className={inputClass} /></Field>
+          {kind === "emoji" && <Field label="Emoji Unicode"><input value={emoji} onChange={(event) => setEmoji(event.target.value)} placeholder="🎉 (opcional se enviar imagem)" className={inputClass} /></Field>}
+          <Field label={fileLabel}><input type="file" accept={fileAccept} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-2 block w-full text-xs text-discord-text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" /></Field>
+        </div>
+        {kind === "sound" && <p className="mt-2 text-xs text-discord-text-muted">Todos os membros conectados que não silenciaram você ouvirão o efeito.</p>}
+        {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
+        <button type="submit" disabled={saving} className="mt-4 rounded-xl bg-theme-gradient px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:opacity-50">{saving ? "Adicionando…" : "Adicionar recurso"}</button>
+      </form>}
+      {error && !canManage && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
+      {loading ? <p className="text-sm text-discord-text-muted">Carregando…</p> : rows.length === 0 ? <Empty title="Ainda não há recursos" text="Os recursos adicionados aparecerão aqui para gestão do servidor." /> : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {rows.map((row) => {
+            const isImage = kind === "sticker" || (kind === "emoji" && /^https?:\/\//i.test(row.asset_url));
+            return <article key={row.id} className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-3 shadow-sm">
+              <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-discord-bg-secondary text-2xl">
+                {isImage ? <img src={row.asset_url} alt={row.name} className="h-full w-full object-contain" /> : kind === "emoji" ? row.asset_url : "♫"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-discord-header-primary">:{row.name}:</p>
+                {kind === "sound" && <audio controls src={row.asset_url} className="mt-1 h-8 max-w-full" />}
+              </div>
+              {kind === "sound" && <button type="button" onClick={() => void playSound(row)} disabled={playingId !== null} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60" title="Tocar para o servidor"><Play size={14} fill="currentColor" />{playingId === row.id ? "Enviando…" : "Tocar para todos"}<Volume2 size={14} /></button>}
+              {canManage && <button type="button" onClick={() => void removeAsset(row)} className="shrink-0 rounded-lg px-2 py-1 text-xs text-red-300 hover:bg-red-500/10">Remover</button>}
+            </article>;
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ServerBansPanel({ serverId, canManage, onAudit }: { serverId: string; canManage: boolean; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void> }) {
