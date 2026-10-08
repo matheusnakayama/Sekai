@@ -16,6 +16,7 @@ export interface Participant {
   name: string;
   avatarUrl?: string | null;
   stream?: MediaStream;
+  soundboardTrack?: MediaStreamTrack;
   micOn: boolean;
   camOn: boolean;
   isSpeaking: boolean;
