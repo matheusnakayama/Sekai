@@ -82,9 +82,9 @@ export function ServerSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-2 backdrop-blur-sm sm:p-5">
-      <div className="flex h-[min(860px,96vh)] w-full max-w-6xl overflow-hidden rounded-2xl border border-white/[0.08] bg-discord-bg-secondary shadow-2xl">
-        <aside className="flex w-[min(260px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:p-4">
+    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-5">
+      <div className="flex h-[100dvh] w-full max-w-6xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(860px,96vh)] sm:rounded-2xl sm:border sm:border-white/[0.08]">
+        <aside className="hidden w-[min(260px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:flex sm:p-4">
           <div className="mb-3 border-b border-white/[0.08] px-2 pb-3"><p className="truncate text-sm font-bold text-discord-header-primary">{serverName}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[.14em] text-discord-text-muted">Configurações</p></div>
           <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             {SETTINGS_GROUPS.map((group) => <section key={group.title}><p className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted/80">{group.title}</p>{group.items.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={cn("mb-0.5 w-full rounded-lg px-2.5 py-2 text-left text-[13px] transition", tab === id ? "bg-discord-bg-modifier-hover text-discord-header-primary shadow-sm" : "text-discord-text-muted hover:bg-white/[0.04] hover:text-discord-text-normal")}>{label}</button>)}</section>)}
@@ -92,10 +92,15 @@ export function ServerSettingsModal({
           <button onClick={onClose} className="mt-3 flex items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-7">
-          <div className="mb-5 flex items-center justify-between border-b border-white/[0.06] pb-3">
-            <span className="text-xs font-semibold text-discord-text-muted">{SETTINGS_GROUPS.flatMap((group) => group.items).find(([id]) => id === tab)?.[1]}</span>
-            <button onClick={onClose} aria-label="Fechar configurações" className="rounded-lg p-2 text-discord-text-muted transition hover:bg-white/5 hover:text-white">
+        <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:p-7">
+          <div className="mb-4 flex items-center justify-between gap-2 border-b border-white/[0.06] pb-3 sm:mb-5">
+            <div className="min-w-0 flex-1">
+              <span className="hidden text-xs font-semibold text-discord-text-muted sm:block">{SETTINGS_GROUPS.flatMap((group) => group.items).find(([id]) => id === tab)?.[1]}</span>
+              <select value={tab} onChange={(event) => setTab(event.target.value as Tab)} aria-label="Seção das configurações do servidor" className="h-11 w-full min-w-0 rounded-xl border border-white/10 bg-discord-bg-primary px-3 text-sm font-semibold text-discord-header-primary outline-none focus:border-discord-brand sm:hidden">
+                {SETTINGS_GROUPS.map((group) => <optgroup key={group.title} label={group.title}>{group.items.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</optgroup>)}
+              </select>
+            </div>
+            <button onClick={onClose} aria-label="Fechar configurações" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted transition hover:bg-white/5 hover:text-white">
               <X className="h-5 w-5" />
             </button>
           </div>
