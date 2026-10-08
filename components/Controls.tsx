@@ -142,7 +142,7 @@ export default function Controls({
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold">Efeitos sonoros</h3>
-                <p className="mt-0.5 text-[11px] text-white/50">Os sons são transmitidos para esta chamada.</p>
+                <p className="mt-0.5 text-[11px] text-white/50">Para membros online do servidor, mesmo fora da call.</p>
               </div>
               <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-1 text-[10px] text-white/50">{soundEffects.length}</span>
             </div>
@@ -162,7 +162,7 @@ export default function Controls({
                     type="button"
                     disabled={playingSoundId !== null}
                     onClick={() => onPlaySoundEffect(effect)}
-                    title={`Reproduzir ${effect.name} para a chamada`}
+                    title={`Reproduzir ${effect.name} para o servidor`}
                     className="group flex min-w-0 items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.035] px-2.5 py-2.5 text-left transition hover:border-brand-400/35 hover:bg-brand-500/10 disabled:cursor-wait disabled:opacity-55"
                   >
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/70 group-hover:text-white">
