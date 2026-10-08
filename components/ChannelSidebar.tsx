@@ -13,6 +13,7 @@ import {
   UserPlus,
   Plus,
   PhoneOff,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ThemePicker from "@/components/ThemePicker";
@@ -89,6 +90,7 @@ interface ChannelSidebarProps {
   voiceMembersByChannel?: Record<string, VoiceMemberPreview[]>;
   onPresentScreen?: () => void;
   onPlaySoundEffect?: (effect: SoundboardEffect) => Promise<boolean>;
+  onCloseMobileNav?: () => void;
   onDisconnectVoice?: () => void;
 }
 
@@ -118,6 +120,7 @@ export function ChannelSidebar({
   voiceMembersByChannel = {},
   onPresentScreen,
   onPlaySoundEffect,
+  onCloseMobileNav,
   onDisconnectVoice,
 }: ChannelSidebarProps) {
   const supabase = createClient();
@@ -198,15 +201,15 @@ export function ChannelSidebar({
   }
 
   return (
-    <div className="server-view-enter flex h-full w-60 flex-col bg-discord-bg-dark">
+    <div className="server-view-enter flex h-full w-[min(15rem,calc(100vw-4.5rem))] shrink-0 flex-col bg-discord-bg-dark md:w-60">
       {/* Cabeçalho do servidor */}
-      <button
-        onClick={onOpenServerMenu}
-        className="bg-theme-wash flex h-12 items-center justify-between border-b border-black/20 px-4 shadow-sm hover:brightness-125"
-      >
-        <span className="truncate font-semibold text-discord-header-primary">{serverName}</span>
-        <ChevronDown className="h-4 w-4 text-discord-text-muted" />
-      </button>
+      <div className="bg-theme-wash flex h-12 shrink-0 items-center border-b border-black/20 px-3 shadow-sm">
+        <button onClick={onOpenServerMenu} className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left hover:brightness-125">
+          <span className="truncate font-semibold text-discord-header-primary">{serverName}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-discord-text-muted" />
+        </button>
+        {onCloseMobileNav && <button type="button" onClick={onCloseMobileNav} aria-label="Fechar navegação" className="ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/10 hover:text-white md:hidden"><X className="h-5 w-5"/></button>}
+      </div>
 
       {/* Lista de canais */}
       <div className="flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
@@ -222,7 +225,7 @@ export function ChannelSidebar({
                   onClick={() =>
                     setCollapsed((prev) => ({ ...prev, [category]: !prev[category] }))
                   }
-                  className="flex flex-1 items-center gap-1 text-xs font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary"
+                  className="flex min-h-10 flex-1 items-center gap-1 text-sm font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary md:min-h-0 md:text-xs"
                 >
                   <ChevronDown
                     className={cn("h-3 w-3 transition-transform", isCollapsed && "-rotate-90")}
@@ -259,7 +262,7 @@ export function ChannelSidebar({
                           <button
                             onClick={() => onSelectChannel(channel.id)}
                             className={cn(
-                              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm font-medium",
+                              "flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-[15px] font-medium md:min-h-0 md:gap-1.5 md:py-1.5 md:text-sm",
                               active
                                 ? "bg-discord-bg-modifier-hover text-discord-header-primary"
                                 : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
@@ -282,14 +285,14 @@ export function ChannelSidebar({
                         {channel.type === "voice" && (voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).length > 0 && (
                           <div className="ml-8 mt-0.5 max-w-[calc(100%-2rem)] space-y-1 border-l border-white/10 py-1 pl-2">
                             {(voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [])).map((member) => (
-                              <div key={member.id} className="flex min-w-0 items-center gap-2">
-                                <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
+                              <div key={member.id} className="flex min-h-9 min-w-0 items-center gap-2 md:min-h-0">
+                                <div className={`h-6 w-6 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-xs leading-6 text-white md:h-5 md:w-5 md:text-[10px] md:leading-5 ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
                                   {member.avatarUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
                                   ) : member.name[0]?.toUpperCase()}
                                 </div>
-                                <span className="truncate text-[11px] text-discord-text-normal">{member.name}</span>
+                                <span className="truncate text-sm text-discord-text-normal md:text-[11px]">{member.name}</span>
                               </div>
                             ))}
                           </div>
@@ -306,7 +309,7 @@ export function ChannelSidebar({
         {canManageChannels && (
           <button
             onClick={onCreateCategory}
-            className="flex w-full items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary"
+            className="flex min-h-10 w-full items-center gap-1.5 px-1 text-sm font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary md:min-h-0 md:text-xs"
           >
             <Plus className="h-3.5 w-3.5" /> Criar categoria
           </button>
@@ -320,11 +323,11 @@ export function ChannelSidebar({
         <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
           <div className="flex items-center gap-1.5">
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-discord-online"><Volume2 className="h-3.5 w-3.5"/>Voz conectada</p>
-              <p className="truncate pl-5 text-[11px] text-discord-text-muted">{connectedVoiceChannelName ?? "Canal de voz"}</p>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-discord-online md:text-xs"><Volume2 className="h-4 w-4 md:h-3.5 md:w-3.5"/>Voz conectada</p>
+              <p className="truncate pl-5 text-xs text-discord-text-muted md:text-[11px]">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
-            {onToggleMute && <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("rounded-md p-1.5 transition hover:bg-discord-bg-modifier-hover", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-4 w-4"/> : <Mic className="h-4 w-4"/>}</button>}
-            {onToggleDeafen && <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("rounded-md p-1.5 transition hover:bg-discord-bg-modifier-hover", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-4 w-4"/></button>}
+            {onToggleMute && <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-10 w-10 place-items-center rounded-lg transition hover:bg-discord-bg-modifier-hover md:h-auto md:w-auto md:rounded-md md:p-1.5", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5 md:h-4 md:w-4"/> : <Mic className="h-5 w-5 md:h-4 md:w-4"/>}</button>}
+            {onToggleDeafen && <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-10 w-10 place-items-center rounded-lg transition hover:bg-discord-bg-modifier-hover md:h-auto md:w-auto md:rounded-md md:p-1.5", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-5 w-5 md:h-4 md:w-4"/></button>}
             <button
               onClick={onDisconnectVoice}
               title="Desconectar da chamada"
