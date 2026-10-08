@@ -148,6 +148,16 @@ export default function Home() {
   const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const [mutedSoundEffectUserIds, setMutedSoundEffectUserIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("sekai-muted-sound-effect-users") || "[]");
+      return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const mutedSoundEffectUsersRef = useRef(new Set(mutedSoundEffectUserIds));
   const [directMessageUserId, setDirectMessageUserId] = useState<string | null>(null);
   const [dmUnreadByUser, setDmUnreadByUser] = useState<Record<string, number>>({});
   const [dmToast, setDmToast] = useState<{ userId: string; name: string; avatarUrl: string | null; content: string; image: boolean } | null>(null);
@@ -165,9 +175,18 @@ export default function Home() {
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
+  useEffect(() => {
+    mutedSoundEffectUsersRef.current = new Set(mutedSoundEffectUserIds);
+    try {
+      window.localStorage.setItem("sekai-muted-sound-effect-users", JSON.stringify(mutedSoundEffectUserIds));
+    } catch {
+      // A preferência continua valendo enquanto esta página estiver aberta.
+    }
+  }, [mutedSoundEffectUserIds]);
+
   const playBankaiSound = useCallback(async () => {
     if (myProfile?.presence === "dnd") return;
-    const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+    const audio = bankaiAudioRef.current ?? new Audio("/sounds/BANKAI.mp3");
     bankaiAudioRef.current = audio;
     audio.preload = "auto";
     // Invalida a tentativa silenciosa de desbloqueio que possa estar pendente.
@@ -180,16 +199,17 @@ export default function Home() {
     try {
       await audio.play();
       bankaiAudioUnlockedRef.current = true;
-    } catch {
+    } catch (error) {
       // O navegador pode bloquear som iniciado remotamente. A primeira
       // interação local tenta liberar o mesmo áudio sem abrir uma confirmação.
+      console.warn("Não foi possível reproduzir o áudio BANKAI. Confira o arquivo public/sounds/BANKAI.mp3 e a permissão de áudio do navegador.", error);
     }
   }, [myProfile?.presence]);
 
   useEffect(() => {
     function unlockBankaiAudio() {
       if (bankaiAudioUnlockedRef.current || bankaiAudioUnlockingRef.current) return;
-      const audio = bankaiAudioRef.current ?? new Audio("/sounds/bankai.mp3");
+      const audio = bankaiAudioRef.current ?? new Audio("/sounds/BANKAI.mp3");
       bankaiAudioRef.current = audio;
       audio.preload = "auto";
       audio.muted = true;
@@ -286,6 +306,69 @@ export default function Home() {
       if (realtimeChannel) void supabase.removeChannel(realtimeChannel);
     };
   }, [channelListVersion, currentUserId, playBankaiSound, serverListVersion, supabase]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let cancelled = false;
+    const soundChannels: ReturnType<typeof supabase.channel>[] = [];
+
+    async function subscribeToSoundboards() {
+      const { data: memberships, error } = await supabase
+        .from("members")
+        .select("server_id")
+        .eq("user_id", currentUserId);
+      if (cancelled) return;
+      if (error) {
+        console.warn("Não foi possível carregar os servidores para os efeitos sonoros:", error.message);
+        return;
+      }
+
+      const serverIds = [...new Set((memberships ?? []).map((row: any) => row.server_id).filter(Boolean))];
+      for (const serverId of serverIds) {
+        if (cancelled) return;
+        const channel = supabase.channel(`sekai-soundboard:${serverId}`, { config: { private: true } });
+        channel.on("broadcast", { event: "play" }, ({ payload }) => {
+          const request = payload as { serverId?: string; soundId?: string; actorId?: string };
+          if (
+            request.serverId !== serverId ||
+            !request.soundId ||
+            !request.actorId ||
+            request.actorId === currentUserId ||
+            myProfile?.presence === "dnd" ||
+            mutedSoundEffectUsersRef.current.has(request.actorId)
+          ) return;
+
+          void supabase
+            .from("server_assets")
+            .select("asset_url")
+            .eq("id", request.soundId)
+            .eq("server_id", serverId)
+            .eq("kind", "sound")
+            .maybeSingle()
+            .then(({ data, error: assetError }) => {
+              if (cancelled || assetError || !data?.asset_url) return;
+              const audio = new Audio(data.asset_url);
+              audio.volume = 0.85;
+              void audio.play().catch((playError) => {
+                console.warn("O navegador bloqueou o efeito sonoro recebido:", playError);
+              });
+            });
+        });
+        soundChannels.push(channel);
+        channel.subscribe((status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn(`A conexão dos efeitos sonoros do servidor ${serverId} foi interrompida:`, status);
+          }
+        });
+      }
+    }
+
+    void subscribeToSoundboards();
+    return () => {
+      cancelled = true;
+      soundChannels.forEach((channel) => void supabase.removeChannel(channel));
+    };
+  }, [currentUserId, myProfile?.presence, serverListVersion, supabase]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -1013,6 +1096,16 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
+  function handleToggleSoundEffects(userId: string, muted: boolean) {
+    setMutedSoundEffectUserIds((previous) => {
+      const next = new Set(previous);
+      if (muted) next.add(userId);
+      else next.delete(userId);
+      mutedSoundEffectUsersRef.current = next;
+      return Array.from(next);
+    });
+  }
+
   async function handleQuickDirectMessage(member: MemberItem, content: string) {
     if (!currentUserId || member.id === currentUserId) throw new Error("Não é possível enviar uma mensagem para a própria conta.");
     const { error } = await supabase.from("sekai_direct_messages").insert({
@@ -1467,6 +1560,7 @@ export default function Home() {
       ) : (
         <ChatArea
           key={activeChannelId}
+          serverId={activeServerId}
           channelName={activeChannel?.name ?? ""}
           messages={messages}
           loading={isChannelLoading}
@@ -1513,6 +1607,8 @@ export default function Home() {
         canManageRoles={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_ROLES")}
         canManageSelfRoles={isOwner || isPlatformAdmin}
         onToggleRole={handleToggleMemberRole}
+        mutedSoundEffectUserIds={mutedSoundEffectUserIds}
+        onToggleSoundEffects={handleToggleSoundEffects}
       />}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
