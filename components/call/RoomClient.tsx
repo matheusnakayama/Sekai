@@ -45,7 +45,6 @@ export default function RoomClient({
   onAddFriend,
   onControlsReady,
   onControlStateChange,
-  onPlayServerSoundEffect,
   mutedSoundEffectUserIds = [],
   autoJoin = false,
 }: {
@@ -61,7 +60,6 @@ export default function RoomClient({
   onAddFriend?: (userId: string) => void;
   onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> } | null) => void;
   onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
-  onPlayServerSoundEffect?: (serverId: string, effect: SoundboardEffect) => Promise<boolean>;
   mutedSoundEffectUserIds?: string[];
   /** Entra direto, sem a tela de pré-visualização (microfone ligado, câmera desligada). */
   autoJoin?: boolean;
@@ -637,10 +635,23 @@ export default function RoomClient({
   }, []);
 
   const playSoundboardEffect = useCallback(async (effect: SoundboardEffect) => {
-    if (!serverId || !onPlayServerSoundEffect) return false;
+    if (!serverId) return false;
     setPlayingSoundId(effect.id);
     try {
-      const sent = await onPlayServerSoundEffect(serverId, effect);
+      const sent = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        let timeout: number | undefined;
+        const finish = (result: boolean) => {
+          if (settled) return;
+          settled = true;
+          if (timeout !== undefined) window.clearTimeout(timeout);
+          resolve(result);
+        };
+        timeout = window.setTimeout(() => finish(false), 8000);
+        window.dispatchEvent(new CustomEvent("sekai:play-server-sound-effect", {
+          detail: { serverId, effect, resolve: finish },
+        }));
+      });
       if (!sent) return false;
       setBanner(`Efeito “${effect.name}” enviado aos membros online do servidor.`);
       return sent;
@@ -651,7 +662,7 @@ export default function RoomClient({
     } finally {
       window.setTimeout(() => setPlayingSoundId((current) => current === effect.id ? null : current), 900);
     }
-  }, [serverId, onPlayServerSoundEffect]);
+  }, [serverId]);
 
   async function toggleSharedScreenAudio() {
     const screenAudioTrack = screenAudioTrackRef.current;
