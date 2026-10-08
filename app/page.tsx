@@ -421,6 +421,31 @@ export default function Home() {
   }, [currentUserId, ensureServerSoundboardChannel, playServerSoundLocally]);
 
   useEffect(() => {
+    const handleCallSoundEffect = (event: Event) => {
+      const request = (event as CustomEvent<{
+        serverId?: unknown;
+        effect?: unknown;
+        resolve?: (played: boolean) => void;
+      }>).detail;
+      if (!request || typeof request.resolve !== "function") return;
+      if (typeof request.serverId !== "string" || !request.effect || typeof request.effect !== "object") {
+        request.resolve(false);
+        return;
+      }
+
+      void playServerSoundEffect(request.serverId, request.effect as SoundboardEffect)
+        .then(request.resolve)
+        .catch((error) => {
+          showSoundboardNotice(error instanceof Error ? error.message : "Não foi possível enviar o efeito sonoro.");
+          request.resolve?.(false);
+        });
+    };
+
+    window.addEventListener("sekai:play-server-sound-effect", handleCallSoundEffect);
+    return () => window.removeEventListener("sekai:play-server-sound-effect", handleCallSoundEffect);
+  }, [playServerSoundEffect, showSoundboardNotice]);
+
+  useEffect(() => {
     if (!currentUserId) return;
     let cancelled = false;
     void supabase.from("members").select("server_id").eq("user_id", currentUserId).then(({ data, error }) => {
@@ -1911,7 +1936,6 @@ export default function Home() {
             initialName={currentMember?.displayName ?? "Você"}
             accessToken={voiceSession.accessToken}
             mutedSoundEffectUserIds={mutedSoundEffectUserIds}
-            onPlayServerSoundEffect={playServerSoundEffect}
             autoJoin
             onParticipantsChange={handleVoiceParticipantsChange}
             onControlsReady={handleVoiceControlsReady}
