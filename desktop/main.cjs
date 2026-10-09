@@ -19,7 +19,8 @@ function allowedUrl(target) {
     return host === 'murasakidev.com.br'
       || host === 'www.murasakidev.com.br'
       || host === 'localhost'
-      || host === '127.0.0.1';
+      || host === '127.0.0.1'
+      || host === 'accounts.spotify.com';
   } catch {
     return false;
   }

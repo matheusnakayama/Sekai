@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
+import { ChatMessageBody } from "@/components/ChatMessageBody";
+import { useChatDisplay } from "@/lib/chatPreferences";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
@@ -18,14 +19,6 @@ import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 const STANDARD_EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🙂", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "🙃", "😴", "😭", "😡", "🥳", "🤯", "😱", "🤗", "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "✨", "🔥", "🎉", "🎊", "🎂", "🌟", "💀", "👀", "🐱", "🐶", "🌈", "☕", "🍕", "🍿", "🎮", "🚀"];
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
-
-function insertCustomEmojiMarkdown(content: string, emojis: Map<string, ServerEmoji>) {
-  return content.replace(/:([a-z0-9_-]{1,32}):/gi, (token, rawName: string) => {
-    const emoji = emojis.get(rawName.toLowerCase());
-    if (!emoji || !/^https?:\/\//i.test(emoji.asset_url)) return token;
-    return `![${rawName}](<${emoji.asset_url}>)`;
-  });
-}
 
 export interface ChatMessage {
   id: string;
@@ -139,6 +132,11 @@ export function ChatArea({
     () => new Map(serverEmojis.filter((emoji) => /^https?:\/\//i.test(emoji.asset_url)).map((emoji) => [emoji.name.toLowerCase(), emoji])),
     [serverEmojis],
   );
+  const emojiImages = useMemo(
+    () => new Map(Array.from(imageEmojisByName, ([name, emoji]) => [name, emoji.asset_url])),
+    [imageEmojisByName],
+  );
+  const chatDisplay = useChatDisplay(currentUserId);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,8 +305,8 @@ export function ChatArea({
           return (
           <div key={message.id}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
-          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className="group flex gap-2 rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] sm:gap-3 sm:px-2">
-            <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
+          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2`}>
+            {chatDisplay.showAvatars && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
                   <CroppedProfileImage
@@ -327,7 +325,7 @@ export function ChatArea({
                 )}
               </span>
               {authorStatus && <PresenceIndicator presence={authorStatus} avatarBadge borderColor="rgb(var(--d-primary))" cutoutColor="rgb(var(--d-primary))" />}
-            </button>
+            </button>}
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
@@ -344,11 +342,10 @@ export function ChatArea({
                     <button type="button" onClick={() => setPrankOpen(true)} className="shrink-0 rounded-lg bg-theme-gradient px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110">Abrir</button>
                   </div>
                 ) : <p className="mt-1 text-xs italic text-discord-text-muted">Um convite para a brincadeira foi enviado a um membro.</p>;
-                const contentWithEmojis = insertCustomEmojiMarkdown(message.content, imageEmojisByName);
-                return <div className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm"><ReactMarkdown components={{ img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji personalizado"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" /> }}>{contentWithEmojis}</ReactMarkdown></div>;
+                return <ChatMessageBody content={message.content} preferences={chatDisplay} emojiImages={emojiImages} />;
               })()}
 
-              {message.attachmentUrl && (
+              {chatDisplay.showUploads && message.attachmentUrl && (
                 <HoverGifImage
                   src={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl}
                   alt="anexo"
@@ -356,7 +353,7 @@ export function ChatArea({
                 />
               )}
 
-              {message.reactions && message.reactions.length > 0 && (
+              {chatDisplay.showReactions && message.reactions && message.reactions.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {message.reactions.map((r) => (
                     <button
@@ -429,6 +426,13 @@ export function ChatArea({
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {chatDisplay.composerPreview && draft.trim() && !draft.startsWith("/") && !draft.startsWith("!") && (
+          <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
+            <ChatMessageBody content={draft} preferences={chatDisplay} emojiImages={emojiImages} previewLinks={false} />
           </div>
         )}
 

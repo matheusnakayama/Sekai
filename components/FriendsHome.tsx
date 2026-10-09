@@ -14,6 +14,9 @@ import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { PresenceIndicator, type Presence } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 import { DIRECT_CALL_INVITE } from "@/lib/directCalls";
+import { ChatMessageBody } from "@/components/ChatMessageBody";
+import { NowPlayingCard, useNowPlaying } from "@/components/NowPlayingCard";
+import { useChatDisplay } from "@/lib/chatPreferences";
 
 interface FriendHomeProps {
   currentUserId: string;
@@ -65,6 +68,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   const [signedDmImageUrls, setSignedDmImageUrls] = useState<Record<string, string>>({});
   const signedDmImageCache = useRef(new Map<string, string>());
   const [dmDraft, setDmDraft] = useState("");
+  const chatDisplay = useChatDisplay(currentUserId);
   const [recentProfiles, setRecentProfiles] = useState<Profile[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(true);
@@ -295,6 +299,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     return query ? dmMessages.filter((item) => item.content.toLocaleLowerCase("pt-BR").includes(query)) : dmMessages;
   }, [dmMessages, messageSearch]);
   const activeFriend = selectedFriend ? { ...selectedFriend, status: resolvePresence(selectedFriend) } : null;
+  const friendActivity = useNowPlaying(activeFriend?.id ?? "", activeFriend?.status ?? "offline");
 
   function other(item: Friendship) { return item.sender_id === currentUserId ? item.receiver : item.sender; }
 
@@ -473,8 +478,8 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                 const author = item.sender_id === currentUserId ? ownProfile() : activeFriend;
                 return <div key={item.id}>
                   {showDate && <div className="my-5 flex items-center gap-3 text-[11px] font-semibold text-discord-text-muted"><span className="h-px flex-1 bg-white/10"/><span>{formatDirectMessageDate(timestamp)}</span><span className="h-px flex-1 bg-white/10"/></div>}
-                  <article className={`group flex gap-3 rounded-md px-2 py-1.5 transition hover:bg-white/[0.025] ${grouped ? "pt-0.5" : "mt-2"}`}>
-                    <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" isHovered={hoveredDmProfileId === author.id}/></button>}</div>
+                  <article className={`group flex rounded-md px-2 py-1.5 transition hover:bg-white/[0.025] ${chatDisplay.showAvatars ? "gap-3" : ""} ${grouped ? "pt-0.5" : "mt-2"}`}>
+                    {chatDisplay.showAvatars && <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" isHovered={hoveredDmProfileId === author.id}/></button>}</div>}
                     <div className="min-w-0 flex-1">
                       {!grouped && <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} className="rounded-sm text-sm font-semibold text-discord-header-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{author.display_name || author.username}</button><time className="text-[10px] text-discord-text-muted">{timestamp.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</time></div>}
                       {item.content === DIRECT_CALL_INVITE ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-discord-brand/30 bg-discord-brand/10 px-4 py-3">
@@ -484,14 +489,20 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                           const fresh = Date.now() - timestamp.getTime() < 2 * 60 * 1000;
                           return <button type="button" disabled={!fresh} onClick={() => onJoinDirectCall?.(item.sender_id, author.display_name || author.username, false)} className="rounded-lg bg-discord-brand px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">{fresh ? "Atender" : "Expirada"}</button>;
                         })()}
-                      </div> : item.content && <p className="whitespace-pre-wrap break-words text-sm leading-[1.45rem] text-discord-text-normal">{item.content}</p>}
-                      {item.attachment_url && <a href={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
+                      </div> : item.content ? <ChatMessageBody content={item.content} preferences={chatDisplay} /> : null}
+                      {chatDisplay.showUploads && item.attachment_url && <a href={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
                     </div>
                   </article>
                 </div>;
               })}
             </div> : <div className="rounded-lg bg-discord-bg-secondary/60 p-4 text-sm text-discord-text-muted">{messageSearch ? "Nenhuma mensagem corresponde à busca." : "Ainda não há mensagens nesta conversa."}</div>}
           </div>
+          {chatDisplay.composerPreview && dmDraft.trim() && !dmDraft.startsWith("/") && !dmDraft.startsWith("!") && (
+            <div className="mx-2 mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 sm:mx-5">
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
+              <ChatMessageBody content={dmDraft} preferences={chatDisplay} previewLinks={false} />
+            </div>
+          )}
           <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex min-h-14 items-center gap-1 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:mx-5 sm:gap-3 sm:px-4 sm:py-2">
             <label title="Enviar imagem" aria-label="Enviar imagem" className={`grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={21}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
             <input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
@@ -515,6 +526,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
               {!!activeFriend.badges?.length && <div className="mt-2"><CustomBadgeList badges={activeFriend.badges} limit={5} size="medium" /></div>}
               {activeFriend.pronouns && <p className="mt-1 text-xs text-discord-text-muted">{activeFriend.pronouns}</p>}
               {activeFriend.custom_status && <p className="mt-3 border-t border-white/10 pt-3 text-sm text-discord-text-normal">{activeFriend.custom_status}</p>}
+              {friendActivity && <NowPlayingCard activity={friendActivity} />}
               {activeFriend.bio && <div className="mt-3 border-t border-white/10 pt-3"><h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-discord-text-muted">Sobre mim</h3><p className="whitespace-pre-wrap break-words text-sm text-discord-text-normal">{activeFriend.bio}</p></div>}
             </div>
           </div>

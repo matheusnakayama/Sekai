@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, LogOut, Plus, Trash2,
+  Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, Link2, LogOut, MessageSquare, Plus, Trash2,
   Monitor, Palette, Settings2, Shield, UserRound, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -14,10 +14,12 @@ import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/Pro
 import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { SpotifyConnections } from "@/components/SpotifyConnections";
+import { CHAT_PREFERENCES_EVENT, DEFAULT_CHAT_DISPLAY, type ChatDisplayPreferences } from "@/lib/chatPreferences";
 
-type Section = "perfil" | "aparencia" | "acessibilidade" | "privacidade" | "conta" | "insignias";
+type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias";
 type Presence = "online" | "idle" | "dnd" | "offline";
-type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean };
+type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean; chat: ChatDisplayPreferences };
 
 interface UserSettingsModalProps {
   userId: string;
@@ -49,7 +51,9 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
   { id: "privacidade", label: "Privacidade", icon: Shield, group: "Conta" },
   { id: "conta", label: "Minha conta", icon: Settings2, group: "Conta" },
   { id: "aparencia", label: "Aparência", icon: Palette, group: "Aplicativo" },
+  { id: "mensagens", label: "Mensagens", icon: MessageSquare, group: "Aplicativo" },
   { id: "acessibilidade", label: "Acessibilidade", icon: Accessibility, group: "Aplicativo" },
+  { id: "conexoes", label: "Conexões", icon: Link2, group: "Conexões" },
   { id: "insignias", label: "Insígnias", icon: Award, group: "Gestão" },
 ];
 
@@ -60,7 +64,7 @@ function readProfileCardColors(value?: string | null) {
   return colors.length ? colors : ["#202127"];
 }
 
-const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false };
+const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false, chat: DEFAULT_CHAT_DISPLAY };
 type ImageScope = "user" | "server";
 type ImageEditorTarget = { kind: ProfileImageKind; scope: ImageScope; src: string; file: File | null; crop: ImageCrop; pending: boolean };
 const DEFAULT_CROP: ImageCrop = { x: 50, y: 50, zoom: 100 };
@@ -74,7 +78,8 @@ const PRESENCE: { id: Presence; label: string; description: string; color: strin
 function loadPreferences(userId: string): Preferences {
   try {
     const value = JSON.parse(localStorage.getItem(`sekai-preferences:${userId}`) || "null");
-    return { ...DEFAULT_PREFERENCES, ...value };
+    if (!value || typeof value !== "object") return DEFAULT_PREFERENCES;
+    return { ...DEFAULT_PREFERENCES, ...value, chat: { ...DEFAULT_CHAT_DISPLAY, ...(value.chat ?? {}) } };
   } catch { return DEFAULT_PREFERENCES; }
 }
 
@@ -119,6 +124,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   const [removeServerAvatar, setRemoveServerAvatar] = useState(false);
   const [removeServerBanner, setRemoveServerBanner] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
+  const preferencesHydrated = useRef(false);
   const [email, setEmail] = useState("");
   const [emailDraft, setEmailDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -157,6 +163,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   }
 
   useEffect(() => {
+    preferencesHydrated.current = false;
     setPreferences(loadPreferences(userId));
     void supabase.auth.getUser().then(({ data }) => { const currentEmail = data.user?.email ?? ""; setEmail(currentEmail); setEmailDraft(currentEmail); });
   }, [supabase, userId]);
@@ -212,10 +219,17 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
   }, [initial.displayName, serverId, supabase, userId]);
 
   useEffect(() => {
+    if (!preferencesHydrated.current) {
+      preferencesHydrated.current = true;
+      return;
+    }
     document.documentElement.dataset.density = preferences.density;
     document.documentElement.dataset.fontScale = preferences.fontScale;
     document.documentElement.dataset.reducedMotion = String(preferences.reducedMotion);
-    try { localStorage.setItem(`sekai-preferences:${userId}`, JSON.stringify(preferences)); } catch { /* Preferências valem até fechar a página. */ }
+    try {
+      localStorage.setItem(`sekai-preferences:${userId}`, JSON.stringify(preferences));
+      window.dispatchEvent(new Event(CHAT_PREFERENCES_EVENT));
+    } catch { /* Preferências valem até fechar a página. */ }
   }, [preferences, userId]);
 
   useEffect(() => () => {
@@ -250,6 +264,10 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
 
   function setPreference<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPreferences((current) => ({ ...current, [key]: value }));
+  }
+
+  function setChat<K extends keyof ChatDisplayPreferences>(key: K, value: ChatDisplayPreferences[K]) {
+    setPreferences((current) => ({ ...current, chat: { ...current.chat, [key]: value } }));
   }
 
   function getImageCrop(kind: ProfileImageKind, scope: ImageScope) {
@@ -489,7 +507,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-theme-gradient text-white"><Settings2 size={18}/></div>
             <div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Sekai</p><h2 id="user-settings-title" className="font-semibold text-discord-header-primary">Configurações</h2></div>
           </div>
-          {(["Conta", "Aplicativo", "Gestão"] as const).map((group) => {
+          {(["Conta", "Aplicativo", "Conexões", "Gestão"] as const).map((group) => {
             const items = visibleNavigation.filter((item) => item.group === group);
             if (!items.length) return null;
             return <div key={group} className="mb-5">
@@ -615,6 +633,40 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
                 </div>
               </section>}
 
+              {section === "mensagens" && <section className="settings-section-enter">
+                <SectionIntro eyebrow="Exibição" title="Mensagens" text="Escolha o que aparece nas conversas dos servidores e nas mensagens diretas. A mudança vale neste navegador, na hora." />
+                <p className="text-sm font-semibold text-discord-header-primary">Mostrar imagens, vídeos e memes…</p>
+                <ToggleRow title="Quando publicados como links no chat." description="Incorpora GIF, imagem ou vídeo quando o endereço termina com a extensão do arquivo." checked={preferences.chat.embedLinkMedia} onChange={(value) => setChat("embedLinkMedia", value)} />
+                <ToggleRow title="Quando o envio é feito diretamente no Sekai." description="Mostra as imagens anexadas pelo botão de envio." checked={preferences.chat.showUploads} onChange={(value) => setChat("showUploads", value)} />
+                <ToggleRow title="Mostrar anexos e prévia de links" description="Carrega um cartão com título e imagem dos links https." checked={preferences.chat.showLinkPreviews} onChange={(value) => setChat("showLinkPreviews", value)} />
+                <ToggleRow title="Mostrar reações de emoji" description="Exibe as reações abaixo de cada mensagem." checked={preferences.chat.showReactions} onChange={(value) => setChat("showReactions", value)} />
+                <div className="flex items-center justify-between gap-4 border-b border-white/5 py-5">
+                  <div>
+                    <h4 className="text-sm font-semibold text-discord-header-primary">Mostrar spoilers</h4>
+                    <p className="mt-1 text-xs text-discord-text-muted">O texto entre ||barras|| pode ficar oculto até o clique.</p>
+                  </div>
+                  <select aria-label="Como mostrar spoilers" value={preferences.chat.spoilerDisplay} onChange={(event) => setChat("spoilerDisplay", event.target.value === "always" ? "always" : "click")} className="rounded-lg border border-white/10 bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70">
+                    <option value="click">Ao clicar</option>
+                    <option value="always">Sempre</option>
+                  </select>
+                </div>
+                <ToggleRow title="Mostrar avatares dos usuários" description={preferences.density === "compact" ? "A densidade compacta oculta os avatares. Mude isso em Aparência." : "Mostra a foto de quem enviou a mensagem."} checked={preferences.density !== "compact" && preferences.chat.showAvatars} disabled={preferences.density === "compact"} onChange={(value) => setChat("showAvatars", value)} />
+                <div className="mt-6">
+                  <p className="mb-2 text-xs font-semibold text-discord-text-muted">Configurações relacionadas</p>
+                  <button type="button" onClick={() => setSection("aparencia")} className="flex w-full items-center gap-3 rounded-xl border border-white/5 bg-discord-bg-primary p-3 text-left transition hover:bg-white/[0.03]">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/5 text-discord-text-normal"><Palette size={18} /></span>
+                    <span className="min-w-0"><span className="block text-sm font-semibold text-discord-header-primary">Aparência</span><span className="mt-0.5 block text-xs leading-5 text-discord-text-muted">Selecione Compacta em Densidade da interface para ocultar os avatares.</span></span>
+                    <ChevronRight size={16} className="ml-auto shrink-0 text-discord-text-muted" />
+                  </button>
+                </div>
+                <div className="mt-8">
+                  <h2 className="text-lg font-bold text-discord-header-primary">Caixa de chat</h2>
+                  <ToggleRow title="Preveja emojis, menções e sintaxe de markdown enquanto digita" description="Mostra a mensagem formatada acima do campo, antes do envio." checked={preferences.chat.composerPreview} onChange={(value) => setChat("composerPreview", value)} />
+                </div>
+              </section>}
+
+              {section === "conexoes" && <SpotifyConnections userId={userId} />}
+
               {section === "acessibilidade" && <section className="settings-section-enter">
                 <SectionIntro eyebrow="Conforto" title="Acessibilidade" text="Ajuste leitura e movimento para tornar o Sekai mais confortável."/>
                 <PreferenceCard icon={Accessibility} title="Tamanho do texto" description="Aumente o texto da interface sem alterar o conteúdo das mensagens."><div className="grid grid-cols-2 gap-2">{([['normal', 'Padrão'], ['large', 'Maior']] as const).map(([value, label]) => <Choice key={value} active={preferences.fontScale === value} onClick={() => setPreference("fontScale", value)}>{label}</Choice>)}</div></PreferenceCard>
@@ -638,7 +690,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
           </div>
 
           {(error || notice) && <div className={`mx-5 mb-3 rounded-lg px-3 py-2 text-sm sm:mx-9 ${error ? "bg-discord-danger/10 text-discord-danger" : "bg-emerald-500/10 text-emerald-300"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
       {imagePicker && <ProfileImagePickerModal kind={imagePicker.kind} recentImages={recentImages} onSelect={selectProfileMedia} onClose={() => setImagePicker(null)}/>}
@@ -665,6 +717,6 @@ function Choice({ active, onClick, children }: { active: boolean; onClick: () =>
   return <button type="button" onClick={onClick} className={`rounded-lg border px-3 py-2.5 text-sm transition ${active ? "border-discord-brand bg-discord-brand/10 text-discord-text-normal" : "border-white/10 text-discord-text-muted hover:bg-discord-bg-modifier-hover"}`}>{children}</button>;
 }
 
-function ToggleRow({ title, description, checked, onChange }: { title: string; description: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return <div className="flex items-center justify-between gap-4 border-b border-white/5 py-5"><div><h4 className="text-sm font-semibold text-discord-header-primary">{title}</h4><p className="mt-1 text-xs text-discord-text-muted">{description}</p></div><button type="button" role="switch" aria-checked={checked} aria-label={title} onClick={() => onChange(!checked)} className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-discord-brand" : "bg-white/15"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${checked ? "left-6" : "left-1"}`}/></button></div>;
+function ToggleRow({ title, description, checked, onChange, disabled = false }: { title: string; description: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return <div className="flex items-center justify-between gap-4 border-b border-white/5 py-5"><div><h4 className="text-sm font-semibold text-discord-header-primary">{title}</h4><p className="mt-1 text-xs text-discord-text-muted">{description}</p></div><button type="button" role="switch" aria-checked={checked} aria-label={title} disabled={disabled} onClick={() => { if (!disabled) onChange(!checked); }} className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-discord-brand" : "bg-white/15"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${checked ? "left-6" : "left-1"}`}/></button></div>;
 }

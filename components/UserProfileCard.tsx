@@ -11,6 +11,7 @@ import type { RoleBadge } from "@/components/RoleBadgeList";
 import type { CustomBadge } from "@/lib/badges";
 import { cn, getProfilePalette } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { NowPlayingCard, useNowPlaying } from "@/components/NowPlayingCard";
 
 export interface ProfileCardUser {
   id: string;
@@ -178,6 +179,7 @@ export function UserProfileCard({
   const [quickMessageError, setQuickMessageError] = useState("");
   const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
   const [resolvedPosition, setResolvedPosition] = useState(position);
+  const listening = useNowPlaying(profile.id, profile.status);
   const isOtherUser = profile.id !== currentUserId;
   const username = profile.username || profile.id.slice(0, 8);
   const profilePalette = getProfilePalette(profile.profileCardColor);
@@ -435,6 +437,7 @@ export function UserProfileCard({
               <span className="min-w-0 truncate text-xs font-semibold">{profile.customStatus}</span>
             </div>
           )}
+          {listening && <NowPlayingCard activity={listening} />}
 
           {profile.bio && (
             <div className="mt-3 border-t border-white/[0.08] pt-3">

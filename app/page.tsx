@@ -22,6 +22,7 @@ import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { refreshUnlockedThemes } from "@/lib/useTheme";
 import { FriendsHome } from "@/components/FriendsHome";
+import { SpotifyActivityPublisher } from "@/components/SpotifyActivityPublisher";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { getServerTemplate } from "@/lib/serverTemplates";
@@ -1760,6 +1761,7 @@ export default function Home() {
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
