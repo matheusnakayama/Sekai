@@ -28,20 +28,31 @@ export default function VideoTile({
   const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
 
   useEffect(() => {
+    const video = videoRef.current;
     const tracks = participant.stream?.getVideoTracks() ?? [];
-    const update = () => setVideoLive(tracks.some((track) => track.readyState === 'live' && !track.muted));
+    const update = () => {
+      const trackLive = tracks.some((track) => track.readyState === 'live' && !track.muted);
+      const hasFrames = (video?.videoWidth ?? 0) > 0;
+      setVideoLive(trackLive || hasFrames);
+    };
     update();
     tracks.forEach((track) => {
       track.addEventListener('unmute', update);
       track.addEventListener('mute', update);
       track.addEventListener('ended', update);
     });
+    video?.addEventListener('resize', update);
+    video?.addEventListener('loadeddata', update);
+    video?.addEventListener('playing', update);
     return () => {
       tracks.forEach((track) => {
         track.removeEventListener('unmute', update);
         track.removeEventListener('mute', update);
         track.removeEventListener('ended', update);
       });
+      video?.removeEventListener('resize', update);
+      video?.removeEventListener('loadeddata', update);
+      video?.removeEventListener('playing', update);
     };
   }, [participant.stream]);
 

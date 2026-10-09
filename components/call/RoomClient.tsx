@@ -383,7 +383,7 @@ export default function RoomClient({
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
           return { ...prev, [peerId]: { ...participant, connectionState: state } };
         });
-        if (state === 'failed' || state === 'disconnected') {
+        if (state === 'failed') {
           setBanner('A conexão com um dos participantes ficou instável.');
         }
       };
@@ -445,6 +445,7 @@ export default function RoomClient({
               setBanner(`Não foi possível conectar com ${m.info?.name || 'um participante'}.`);
             });
           }
+          if (currentSharingRef.current) void manager.offerScreenTo(m.id);
         });
       });
 
@@ -472,7 +473,10 @@ export default function RoomClient({
         }
         // Avisa o recém-chegado sobre nosso estado atual (ele só recebe eventos futuros).
         manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: currentCamRef.current });
-        if (currentSharingRef.current) manager.broadcastScreenShareState(true);
+        if (currentSharingRef.current) {
+          manager.broadcastScreenShareState(true);
+          void manager.offerScreenTo(member.id);
+        }
       });
 
       channel.bind('pusher:member_removed', (member: PresenceMember) => {
@@ -1378,7 +1382,7 @@ export default function RoomClient({
         />
         {sharingScreen && screenCaptureInfo && (
           <p className="mt-2 text-center text-xs text-white/55">
-            Captura: {screenCaptureInfo}. A apresentação sai na qualidade escolhida desde o início.
+            Captura: {screenCaptureInfo}. A tela vai numa transmissão só de ida, separada da voz, na qualidade escolhida desde o início.
           </p>
         )}
       </footer>
