@@ -89,8 +89,9 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
     event.stopPropagation();
     setContextMenu({ x: event.clientX, y: event.clientY, member, trigger });
   }
-  // O Discord agrupa todos os membros pelo cargo mais alto, inclusive offline.
-  const groups = groupByRole(members);
+  // Online, ausente e não perturbe ficam no cargo. Offline vai todo para o fim.
+  const groups = groupByRole(members.filter((member) => member.status !== "offline"));
+  const offlineMembers = members.filter((member) => member.status === "offline");
 
   return (
     <>
@@ -112,6 +113,20 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
         </section>
       ))}
+      {offlineMembers.length > 0 && (
+        <section className="mb-3">
+          <div className="flex min-h-10 min-w-0 items-center gap-1.5 px-2 py-2 md:min-h-0">
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-discord-text-muted md:text-xs">
+              Offline — {offlineMembers.length}
+            </p>
+          </div>
+          <div className="space-y-0.5">
+            {offlineMembers.map((m) => (
+              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+            ))}
+          </div>
+        </section>
+      )}
 
     </div>
       {selected && <UserProfileCard
