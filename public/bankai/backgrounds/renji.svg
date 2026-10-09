@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
+<path d="M40 120c70-90 120 20 180-10 70-34 80 80 150 40 60-34 90 10 140-20" stroke="#C89D43" stroke-opacity="0.55" stroke-width="7" stroke-linecap="round" fill="none"/>
+<path d="M70 150c60-70 110 30 160 0 55-32 90 50 140 20" stroke="#771A2B" stroke-opacity="0.45" stroke-width="3" stroke-linecap="round" fill="none"/>
+<circle cx="392" cy="118" r="7" fill="#C89D43" fill-opacity="0.7"/>
+<circle cx="404" cy="108" r="3" fill="#E6D7C0" fill-opacity="0.8"/>
+<path d="M80 420c80 70 40-80 140-20 90 54 40-90 150-30 80 44 70-20 160 10" stroke="#C89D43" stroke-opacity="0.42" stroke-width="6" stroke-linecap="round" fill="none"/>
+<path d="M110 450c60 40 20-50 110-10 70 34 30-60 120-16" stroke="#E2553A" stroke-opacity="0.28" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+<path d="M470 250c40 10 55-30 90-8 28 18 20 48-8 58-34 12-48-18-70-8-18 8-28-24-12-42z" fill="#771A2B" fill-opacity="0.35"/>
+<path d="M500 268l18-22M518 262l16 8" stroke="#C89D43" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round"/>
+<path d="M180 560c30 8 42-22 70-6 22 14 16 36-6 44" stroke="#C89D43" stroke-opacity="0.4" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

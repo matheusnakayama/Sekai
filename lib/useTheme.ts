@@ -77,8 +77,13 @@ function applyTheme(id: string) {
   document.documentElement.setAttribute("data-theme", id);
   const selected = THEMES.find((item) => item.id === id);
   const root = document.documentElement;
-  if (selected?.overlay) root.setAttribute("data-theme-overlay", selected.overlay);
-  else root.removeAttribute("data-theme-overlay");
+  if (selected?.overlay) {
+    root.setAttribute("data-theme-overlay", selected.overlay);
+    root.style.setProperty("--chat-theme-art", `url("/bankai/backgrounds/${selected.overlay}.svg")`);
+  } else {
+    root.removeAttribute("data-theme-overlay");
+    root.style.removeProperty("--chat-theme-art");
+  }
   ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900"].forEach((step) => root.style.removeProperty(`--brand-${step}`));
   [
     "--d-brand", "--d-brand-hover", "--surface", "--surface-soft", "--surface-card", "--surface-border",

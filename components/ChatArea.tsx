@@ -11,6 +11,7 @@ import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { PrankSimulation } from "@/components/PrankSimulation";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 
@@ -274,7 +275,8 @@ export function ChatArea({
   }
 
   return (
-    <div className="server-view-enter flex h-full min-h-0 min-w-0 flex-1 flex-col bg-discord-bg-primary">
+    <div className="chat-theme-canvas server-view-enter relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-discord-bg-primary">
+      <div className="chat-theme-art" aria-hidden="true" />
       {/* Cabeçalho do canal */}
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-discord-bg-dark/35 px-3 shadow-sm sm:h-12 sm:px-4">
         <Hash className="h-5 w-5 text-discord-text-muted" />
@@ -328,8 +330,9 @@ export function ChatArea({
             </button>
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
+              <div className="flex items-center gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
                 <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
+                <CustomBadgeList badges={memberById.get(message.authorId)?.badges} limit={2} />
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
               </div>
 

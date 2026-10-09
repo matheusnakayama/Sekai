@@ -1,3 +1,5 @@
+import { BANKAIS } from "@/lib/bankai";
+
 export interface CustomBadge {
   id: string;
   name: string;
@@ -31,4 +33,9 @@ export function mapUserBadgeRows(rows: unknown): Map<string, CustomBadge[]> {
   }
 
   return badgesByUser;
+}
+
+/** Nome da Bankai no hover; insígnias comuns continuam com o próprio nome. */
+export function badgeHoverLabel(badge: { id: string; name: string }) {
+  return BANKAIS.find((item) => item.badgeId === badge.id)?.bankai ?? badge.name;
 }

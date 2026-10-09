@@ -109,7 +109,12 @@ export default function ThemePicker({ placement = "down", align = "right", class
                 >
                   <span
                     className="relative block h-11 w-full overflow-hidden"
-                    style={{ backgroundImage: gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]]) }}
+                    style={{
+                      backgroundImage: option.overlay
+                        ? `url(/bankai/backgrounds/${option.overlay}.svg), ${gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]])}`
+                        : gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]]),
+                      backgroundSize: option.overlay ? "140px 140px, cover" : undefined,
+                    }}
                   >
                     <span className="absolute left-2 top-2 h-5 w-9 rounded-md border border-white/25 bg-white/15 shadow-sm backdrop-blur-sm" />
                     <span className="absolute bottom-2 right-2 h-3 w-5 rounded-full border border-white/20 bg-black/15" />
@@ -129,7 +134,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
             })}
           </div>
           <p className="mt-2 text-[11px] leading-4 text-discord-text-muted">
-            Muda só as cores, neste navegador.
+            As cores mudam neste navegador. Temas secretos desenham o fundo do chat.
           </p>
         </div>, document.body
       )}

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
+
+<g transform="translate(140 140)" stroke="#F0C449" fill="none">
+  <circle r="18" stroke-opacity="0.55" stroke-width="1.4"/>
+  <circle r="34" stroke-opacity="0.38" stroke-width="1.2"/>
+  <circle r="52" stroke-opacity="0.22" stroke-width="1"/>
+  <circle r="3" fill="#FF5B83" fill-opacity="0.7" stroke="none"/>
+  <path d="M8 -46 l10 22 -16 2 14 16 -8 4" stroke="#FF5B83" stroke-opacity="0.7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<g transform="translate(460 180)" stroke="#F0C449" fill="none">
+  <circle r="18" stroke-opacity="0.55" stroke-width="1.4"/>
+  <circle r="34" stroke-opacity="0.38" stroke-width="1.2"/>
+  <circle r="52" stroke-opacity="0.22" stroke-width="1"/>
+  <circle r="3" fill="#FF5B83" fill-opacity="0.7" stroke="none"/>
+  <path d="M8 -46 l10 22 -16 2 14 16 -8 4" stroke="#FF5B83" stroke-opacity="0.7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<g transform="translate(200 460)" stroke="#F0C449" fill="none">
+  <circle r="18" stroke-opacity="0.55" stroke-width="1.4"/>
+  <circle r="34" stroke-opacity="0.38" stroke-width="1.2"/>
+  <circle r="52" stroke-opacity="0.22" stroke-width="1"/>
+  <circle r="3" fill="#FF5B83" fill-opacity="0.7" stroke="none"/>
+  <path d="M8 -46 l10 22 -16 2 14 16 -8 4" stroke="#FF5B83" stroke-opacity="0.7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<g transform="translate(520 480)" stroke="#F0C449" fill="none">
+  <circle r="18" stroke-opacity="0.55" stroke-width="1.4"/>
+  <circle r="34" stroke-opacity="0.38" stroke-width="1.2"/>
+  <circle r="52" stroke-opacity="0.22" stroke-width="1"/>
+  <circle r="3" fill="#FF5B83" fill-opacity="0.7" stroke="none"/>
+  <path d="M8 -46 l10 22 -16 2 14 16 -8 4" stroke="#FF5B83" stroke-opacity="0.7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+</svg>

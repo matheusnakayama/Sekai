@@ -9,6 +9,7 @@ import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
+import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { UserPlus } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
 
@@ -216,6 +217,7 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1.5 leading-5">
           <span className="min-w-0 truncate text-[15px] font-medium md:text-sm" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
+          <CustomBadgeList badges={member.badges} limit={2} />
         </span>
         {member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
       </span>

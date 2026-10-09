@@ -7,8 +7,8 @@ export interface ThemeOption {
   backgroundStops?: [string, string]; // o fundo usa apenas duas cores
   /** Tema secreto: só entra na lista depois de desbloqueado. */
   secret?: boolean;
-  /** Detalhe visual sobre o fundo, usado pelos temas de Bankai. */
-  overlay?: "ash" | "stitch" | "slash" | "rings";
+  /** Desenho de fundo do chat, usado pelos temas de Bankai. */
+  overlay?: "byakuya" | "renji" | "rukia" | "toshiro" | "yamamoto" | "shunsui" | "mayuri" | "soi-fon" | "urahara" | "ichigo" | "komamura" | "gin" | "tosen" | "kensei" | "rose";
 }
 
 export const DEFAULT_THEME = "azul";
