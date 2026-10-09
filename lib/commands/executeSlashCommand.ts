@@ -10,7 +10,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "help", description: "Lista todos os comandos disponíveis", usage: "/help" },
   { name: "roll", description: "Rola um dado de N lados (padrão 6)", usage: "/roll [N]" },
   { name: "troll", description: "Envia uma simulação visual inofensiva para um membro abrir se quiser", usage: ".troll @usuario" },
-  { name: "bankai", description: "Sorteia uma Bankai, com insígnia e tema secreto", usage: "!bankai" },
+  { name: "bankai", description: "Sorteia uma Bankai uma única vez, com insígnia e tema secreto", usage: "!bankai" },
 ];
 
 interface CommandContext {
