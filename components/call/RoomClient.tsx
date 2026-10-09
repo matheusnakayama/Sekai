@@ -14,6 +14,7 @@ import GoLivePicker, { type GoLiveSelection } from '@/components/call/GoLivePick
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusherClient';
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
+import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
 import type {
   CallError,
   IceServerConfig,
@@ -62,14 +63,14 @@ export default function RoomClient({
   onControlsReady?: (controls: { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> } | null) => void;
   onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
   mutedSoundEffectUserIds?: string[];
-  /** Entra direto, sem a tela de pré-visualização (microfone ligado, câmera desligada). */
+  /** Entra direto, sem a tela de pré-visualização. A câmera começa desligada e o microfone segue o último estado da call. */
   autoJoin?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>('pre-join');
   const [autoJoining, setAutoJoining] = useState(autoJoin);
   const [participants, setParticipants] = useState<Record<string, Participant>>({});
-  const [micOn, setMicOn] = useState(true);
-  const [deafened, setDeafened] = useState(false);
+  const [micOn, setMicOn] = useState(() => readCallAudioPreference().micOn);
+  const [deafened, setDeafened] = useState(() => readCallAudioPreference().deafened);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [micLockedByHost, setMicLockedByHost] = useState(false);
   const [camOn, setCamOn] = useState(true);
@@ -91,7 +92,8 @@ export default function RoomClient({
   const [hostId, setHostId] = useState('');
   const [focusedPresentationId, setFocusedPresentationId] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<CallError | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ message: string; connection: boolean } | null>(null);
+  const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
   const [pendingPrankPrompt, setPendingPrankPrompt] = useState<{ senderName: string } | null>(null);
 
   const localIdRef = useRef<string>('');
@@ -268,7 +270,9 @@ export default function RoomClient({
     setShowChat(false);
     chatOpenRef.current = false;
     cameraStreamRef.current = opts.stream;
+    currentMicRef.current = opts.micOn;
     setMicOn(opts.micOn);
+    if (opts.micOn) setDeafened(false);
     setCamOn(opts.camOn);
 
     try {
@@ -387,7 +391,7 @@ export default function RoomClient({
           return { ...prev, [peerId]: { ...participant, connectionState: state } };
         });
         if (state === 'failed') {
-          setBanner('A conexão com um dos participantes ficou instável.');
+          showProblem('A conexão com um dos participantes ficou instável.', true);
         }
       };
 
@@ -445,7 +449,7 @@ export default function RoomClient({
           manager.preparePeerConnection(m.id);
           if (localIdRef.current < m.id) {
             manager.callPeer(m.id).catch(() => {
-              setBanner(`Não foi possível conectar com ${m.info?.name || 'um participante'}.`);
+              showProblem(`Não foi possível conectar com ${m.info?.name || 'um participante'}.`, true);
             });
           }
           if (currentSharingRef.current) void manager.offerScreenTo(m.id);
@@ -471,7 +475,7 @@ export default function RoomClient({
         manager.preparePeerConnection(member.id);
         if (localIdRef.current < member.id) {
           manager.callPeer(member.id).catch(() => {
-            setBanner(`Não foi possível conectar com ${memberName}.`);
+            showProblem(`Não foi possível conectar com ${memberName}.`, true);
           });
         }
         // Avisa o recém-chegado sobre nosso estado atual (ele só recebe eventos futuros).
@@ -507,7 +511,7 @@ export default function RoomClient({
       const pusher = getPusherClient(joinedName, localIdRef.current, roomId, roomSessionRef.current, avatarUrl);
       pusher.connection.bind('state_change', (states: { current: string }) => {
         if (states.current === 'unavailable' || states.current === 'failed') {
-          setBanner('Sua conexão com o servidor de sinalização está instável.');
+          showProblem('Sua conexão com o servidor de sinalização está instável.', true);
         }
       });
     } catch (err) {
@@ -529,6 +533,12 @@ export default function RoomClient({
   useEffect(() => {
     currentMicRef.current = micOn;
   }, [micOn]);
+
+  useEffect(() => {
+    if (!banner || banner.connection) return;
+    const timer = window.setTimeout(() => setBanner(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [banner]);
   useEffect(() => {
     currentCamRef.current = camOn;
   }, [camOn]);
@@ -539,6 +549,16 @@ export default function RoomClient({
   function appendChatMessage(message: RoomChatMessage) {
     setChatMessages((previous) => [...previous.slice(-199), message]);
     if (!chatOpenRef.current) setChatUnreadCount((count) => Math.min(count + 1, 999));
+  }
+
+  function rememberCallAudio(patch: Partial<CallAudioPreference>) {
+    const next = { ...audioPreferenceRef.current, ...patch };
+    audioPreferenceRef.current = next;
+    writeCallAudioPreference(next);
+  }
+
+  function showProblem(message: string, connection = false) {
+    setBanner({ message, connection });
   }
 
   function appendSystemChatMessage(text: string) {
@@ -588,12 +608,13 @@ export default function RoomClient({
       }
     } catch (error) {
       console.error('Não foi possível aplicar o controle do microfone pelo anfitrião:', error);
-      setBanner('O estado do microfone mudou, mas não foi possível atualizar o áudio enviado.');
+      showProblem('O estado do microfone mudou, mas não foi possível atualizar o áudio enviado.');
     }
 
+    if (microphoneTracks.length > 0 || muted) rememberCallAudio({ micOn: nextMicOn });
     manager?.broadcastMediaState({ micOn: nextMicOn, camOn: currentCamRef.current });
     if (!muted && !microphoneTracks.length) {
-      setBanner('O anfitrião liberou seu microfone, mas não há microfone disponível neste dispositivo.');
+      showProblem('O anfitrião liberou seu microfone, mas não há microfone disponível neste dispositivo.');
     }
   }
 
@@ -660,11 +681,10 @@ export default function RoomClient({
         }));
       });
       if (!sent) return false;
-      setBanner(`Efeito “${effect.name}” enviado aos membros online do servidor.`);
       return sent;
     } catch (error) {
       console.error('Não foi possível enviar o efeito sonoro:', error);
-      setBanner(error instanceof Error ? error.message : 'Não foi possível enviar o efeito sonoro.');
+      showProblem(error instanceof Error ? error.message : 'Não foi possível enviar o efeito sonoro.');
       return false;
     } finally {
       window.setTimeout(() => setPlayingSoundId((current) => current === effect.id ? null : current), 900);
@@ -681,28 +701,26 @@ export default function RoomClient({
       screenAudioEnabledRef.current = nextEnabled;
       setScreenAudioEnabled(nextEnabled);
       setMuteRemoteAudioDuringShare(nextEnabled && muteRemoteAudioFallbackRef.current);
-      setBanner(nextEnabled
-        ? 'Áudio da tela transmitido. Ele pode incluir as vozes e sons de outros aplicativos; desligue “Áudio da tela” para evitar isso.'
-        : 'Áudio da tela silenciado. Seu microfone continua ativo.');
     } catch (error) {
       console.error('Não foi possível alterar o áudio compartilhado da tela:', error);
-      setBanner('Não foi possível alterar o áudio da tela. Tente novamente.');
+      showProblem('Não foi possível alterar o áudio da tela.');
     }
   }
 
   const toggleMic = useCallback(() => {
     if (micLockedByHostRef.current) {
-      setBanner('O anfitrião bloqueou seu microfone. Aguarde ele liberar o áudio.');
+      showProblem('O anfitrião bloqueou seu microfone. Aguarde ele liberar o áudio.');
       return;
     }
     const tracks = cameraStreamRef.current?.getAudioTracks() ?? [];
     if (tracks.length === 0) {
-      setBanner('Nenhum microfone está ativo. Permita o acesso ao microfone e entre novamente na sala.');
+      showProblem('Nenhum microfone está ativo. Permita o acesso ao microfone e entre novamente na sala.');
       return;
     }
 
     const next = !micOn;
     currentMicRef.current = next;
+    rememberCallAudio({ micOn: next });
     setMicOn(next);
     tracks.forEach((t) => (t.enabled = next));
     updateLocalParticipant({ micOn: next });
@@ -711,6 +729,7 @@ export default function RoomClient({
 
   const toggleDeafen = useCallback(() => {
     const next = !deafened;
+    rememberCallAudio({ deafened: next, micOn: next ? false : micOn });
     setDeafened(next);
     if (next && micOn) toggleMic();
   }, [deafened, micOn, toggleMic]);
@@ -754,14 +773,14 @@ export default function RoomClient({
       await managerRef.current?.replaceVideoTrack(camTrack, cameraStreamRef.current);
     } catch (err) {
       console.error('Não foi possível restaurar a câmera após compartilhar a tela:', err);
-      setBanner('A tela parou de ser compartilhada, mas não foi possível restaurar a câmera.');
+      showProblem('A tela parou de ser compartilhada, mas não foi possível restaurar a câmera.');
     }
 
     try {
       await setOutgoingScreenAudio(null);
     } catch (err) {
       console.error('Não foi possível restaurar o microfone após compartilhar a tela:', err);
-      setBanner('A apresentação parou, mas não foi possível restaurar o áudio do microfone.');
+      showProblem('A apresentação parou, mas não foi possível restaurar o áudio do microfone.');
     }
     display?.getTracks().forEach((track) => track.stop());
 
@@ -820,7 +839,7 @@ export default function RoomClient({
       const screenTrack = display.getVideoTracks()[0];
       if (!screenTrack) {
         display.getTracks().forEach((track) => track.stop());
-        setBanner('O navegador não forneceu uma faixa de vídeo para compartilhar.');
+        showProblem('O navegador não forneceu uma faixa de vídeo para compartilhar.');
         return;
       }
 
@@ -871,7 +890,7 @@ export default function RoomClient({
             cameraStreamRef.current
           )
           .catch(() => {});
-        setBanner('A tela foi capturada, mas não foi possível enviá-la aos participantes.');
+        showProblem('A tela foi capturada, mas não foi possível enviá-la aos participantes.');
         return;
       }
 
@@ -880,14 +899,9 @@ export default function RoomClient({
         await setOutgoingScreenAudio(sendAudio ? displayAudioTrack : null);
         screenAudioEnabledRef.current = Boolean(sendAudio);
         setScreenAudioEnabled(Boolean(sendAudio));
-        setBanner(sendAudio
-          ? 'A tela está no ar com o áudio do aplicativo. Seu microfone continua junto.'
-          : displayAudioTrack
-            ? 'A tela está no ar. O áudio capturado fica desligado até você usar “Áudio da tela”.'
-            : 'A tela está no ar. Para mandar o som do aplicativo, marque “Compartilhar áudio” antes de ir ao vivo.');
       } catch (err) {
         console.error('Não foi possível preparar o áudio da apresentação:', err);
-        setBanner('A tela será compartilhada, mas não foi possível preparar o áudio.');
+        showProblem('A tela será compartilhada, mas não foi possível preparar o áudio.');
       }
 
       setGoLiveOpen(false);
@@ -913,7 +927,7 @@ export default function RoomClient({
         setScreenAudioEnabled(false);
         setMuteRemoteAudioDuringShare(false);
         void setOutgoingScreenAudio(null).catch(() => {});
-        setBanner('O navegador encerrou o áudio compartilhado; seu microfone continua ativo.');
+        appendSystemChatMessage('O navegador encerrou o áudio compartilhado. Seu microfone continua ativo.');
       }, { once: true });
     } catch (err) {
       const cancelled = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError');
@@ -927,7 +941,7 @@ export default function RoomClient({
       setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
       setGoLiveOpen(false);
-      setBanner(selection.sourceId
+      showProblem(selection.sourceId
         ? 'Não foi possível transmitir essa janela. Abra a lista de novo e escolha outra.'
         : 'Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
     } finally {
@@ -959,14 +973,14 @@ export default function RoomClient({
 
     try {
       if (!channel.trigger('client-chat-message', message)) {
-        setBanner('Não foi possível enviar a mensagem. Verifique se ainda está conectado à sala.');
+        showProblem('Não foi possível enviar a mensagem. Verifique se ainda está conectado à sala.');
         return false;
       }
       appendChatMessage(message);
       return true;
     } catch (error) {
       console.error('Não foi possível enviar a mensagem do chat:', error);
-      setBanner('Não foi possível enviar a mensagem. Tente novamente.');
+      showProblem('Não foi possível enviar a mensagem.');
       return false;
     }
   }
@@ -1025,7 +1039,7 @@ export default function RoomClient({
         return true;
       }
       if (action === 'epstein') {
-        setBanner(`Pedido de brincadeira enviado para ${target.name}; os arquivos só serão baixados se a pessoa aceitar.`);
+        appendSystemChatMessage(`Pedido de brincadeira enviado para ${target.name}. Os arquivos só serão baixados se a pessoa aceitar.`);
         return true;
       }
       const notice = action === 'kick'
@@ -1045,7 +1059,6 @@ export default function RoomClient({
   }
 
   function showCommandFeedback(message: string) {
-    setBanner(message);
     appendSystemChatMessage(message);
   }
 
@@ -1064,7 +1077,7 @@ export default function RoomClient({
     }
     window.setTimeout(() => URL.revokeObjectURL(fileUrl), 30_000);
     setPendingPrankPrompt(null);
-    setBanner('Brincadeira aceita: o navegador iniciou o download dos arquivos vazios.');
+    appendSystemChatMessage('Brincadeira aceita: o navegador iniciou o download dos arquivos vazios.');
   }
 
   async function sendChatImage(file: File) {
@@ -1134,7 +1147,7 @@ export default function RoomClient({
       .eq('type', 'voice')
       .maybeSingle();
     if (channelError || !channel) {
-      setBanner('Não foi possível localizar o servidor deste canal.');
+      showProblem('Não foi possível localizar o servidor deste canal.');
       return;
     }
 
@@ -1144,7 +1157,7 @@ export default function RoomClient({
       .select('code')
       .single();
     if (inviteError || !invite) {
-      setBanner('Você não tem permissão para criar um convite ou falta aplicar a migração do Supabase.');
+      showProblem('Você não tem permissão para criar um convite ou falta aplicar a migração do Supabase.');
       return;
     }
 
@@ -1153,9 +1166,9 @@ export default function RoomClient({
     url.searchParams.set('voiceChannel', roomId);
     try {
       await navigator.clipboard.writeText(url.toString());
-      setBanner(null);
+      appendSystemChatMessage('Convite copiado.');
     } catch {
-      setBanner(`Convite criado: ${url.toString()}`);
+      appendSystemChatMessage(`Convite criado: ${url.toString()}`);
     }
   }
 
@@ -1186,13 +1199,16 @@ export default function RoomClient({
         return;
       }
 
+      const preference = readCallAudioPreference();
+      const micEnabled = microphoneEnabledOnJoin(stream.getAudioTracks().length > 0, preference);
       stream.getVideoTracks().forEach((track) => (track.enabled = false));
+      stream.getAudioTracks().forEach((track) => (track.enabled = micEnabled));
       setAutoJoining(false);
       await handleJoin({
         name: initialName,
         stream,
         camOn: false,
-        micOn: stream.getAudioTracks().length > 0,
+        micOn: micEnabled,
       });
     }
 
@@ -1339,7 +1355,13 @@ export default function RoomClient({
       {banner && (
         <div className="px-4 pt-3">
           <div className="max-w-xl mx-auto">
-            <ErrorBanner title="Aviso de conexão" message={banner} onRetry={() => setBanner(null)} />
+            <ErrorBanner
+              title={banner.connection ? "Aviso de conexão" : "Aviso"}
+              message={banner.message}
+              tone={banner.connection ? "danger" : "neutral"}
+              actionLabel="Fechar"
+              onRetry={() => setBanner(null)}
+            />
           </div>
         </div>
       )}

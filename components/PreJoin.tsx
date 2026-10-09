@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CamIcon, MicIcon } from './icons';
 import ErrorBanner from './ErrorBanner';
 import type { CallError } from '@/lib/types';
+import { readCallAudioPreference, writeCallAudioPreference } from '@/lib/callAudioPreference';
 
 export default function PreJoin({
   roomId,
@@ -24,7 +25,10 @@ export default function PreJoin({
   const [selectedAudioInput, setSelectedAudioInput] = useState('');
   const [name, setName] = useState(initialName);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [micOn, setMicOn] = useState(true);
+  const [micOn, setMicOn] = useState(() => {
+    const saved = readCallAudioPreference();
+    return saved.micOn && !saved.deafened;
+  });
   const [camOn, setCamOn] = useState(true);
   const [deviceError, setDeviceError] = useState<CallError | null>(null);
   const [loadingDevices, setLoadingDevices] = useState(true);
@@ -61,7 +65,10 @@ export default function PreJoin({
         activeStreamRef.current = localStream;
         setStream(localStream);
         setCamOn(true);
-        setMicOn(true);
+        setMicOn(() => {
+          const saved = readCallAudioPreference();
+          return saved.micOn && !saved.deafened;
+        });
         void refreshAudioInputs(localStream.getAudioTracks()[0]?.getSettings().deviceId);
       } catch (combinedError) {
         if (cancelled) return;
@@ -76,7 +83,10 @@ export default function PreJoin({
           activeStreamRef.current = localStream;
           setStream(localStream);
           setCamOn(false);
-          setMicOn(true);
+          setMicOn(() => {
+            const saved = readCallAudioPreference();
+            return saved.micOn && !saved.deafened;
+          });
           void refreshAudioInputs(localStream.getAudioTracks()[0]?.getSettings().deviceId);
         } catch {
           // Ainda tente oferecer a chamada com vídeo se apenas o microfone falhar.
@@ -161,10 +171,9 @@ export default function PreJoin({
 
       const currentStream = activeStreamRef.current;
       const nextStream = new MediaStream([...(currentStream?.getVideoTracks() ?? []), replacementTrack]);
+      replacementTrack.enabled = micOn;
       activeStreamRef.current = nextStream;
       setStream(nextStream);
-      setMicOn(true);
-      replacementTrack.enabled = true;
       currentStream?.getAudioTracks().forEach((track) => track.stop());
       setSelectedAudioInput(deviceId);
       setDeviceError(null);
@@ -204,7 +213,12 @@ export default function PreJoin({
             <div className="absolute bottom-3 inset-x-0 flex items-center justify-center gap-3">
               <button
                 type="button"
-                onClick={() => setMicOn((v) => !v)}
+                onClick={() => setMicOn((current) => {
+                  const next = !current;
+                  const saved = readCallAudioPreference();
+                  writeCallAudioPreference({ micOn: next, deafened: next ? saved.deafened : false });
+                  return next;
+                })}
                 disabled={!stream?.getAudioTracks().length}
                 aria-pressed={!micOn}
                 aria-label={micOn ? 'Silenciar microfone' : 'Ativar microfone'}

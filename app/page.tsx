@@ -1478,7 +1478,7 @@ export default function Home() {
     setCallExpanded(false);
     setVoiceParticipants([]);
     voiceControlsRef.current = null;
-    setVoiceControlState({ micOn: true, deafened: false, isSpeaking: false });
+    setVoiceControlState((current) => ({ ...current, isSpeaking: false }));
   }
 
   // Um clique entra diretamente na tela da chamada dentro da mesma aba.
