@@ -10,6 +10,7 @@ import ParticipantsPanel from '@/components/ParticipantsPanel';
 import ChatPanel from '@/components/ChatPanel';
 import ErrorBanner from '@/components/ErrorBanner';
 import ThemePicker from '@/components/ThemePicker';
+import GoLivePicker, { type GoLiveSelection } from '@/components/call/GoLivePicker';
 import { createClient } from '@/lib/supabase/client';
 import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusherClient';
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
@@ -76,6 +77,8 @@ export default function RoomClient({
   const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
   const [screenAudioEnabled, setScreenAudioEnabled] = useState(false);
   const [screenShareSettings, setScreenShareSettings] = useState<ScreenShareSettings>({ height: 1080, frameRate: 60 });
+  const [goLiveOpen, setGoLiveOpen] = useState(false);
+  const [goLiveBusy, setGoLiveBusy] = useState(false);
   const [screenCaptureInfo, setScreenCaptureInfo] = useState('');
   const [soundEffects, setSoundEffects] = useState<SoundboardEffect[]>([]);
   const [soundEffectsLoading, setSoundEffectsLoading] = useState(false);
@@ -784,17 +787,27 @@ export default function RoomClient({
       await stopScreenShare();
       return;
     }
+    setGoLiveOpen(true);
+  }
+
+  async function confirmGoLive(selection: GoLiveSelection) {
+    const manager = managerRef.current;
+    if (!manager || screenShareOperationRef.current) return;
     screenShareOperationRef.current = true;
+    setGoLiveBusy(true);
 
     try {
       const displayOptions = {
-        video: getScreenVideoConstraints(screenShareSettings),
-        audio: { restrictOwnAudio: true },
-        // Mantém o seletor nativo de áudio da tela/janela. O áudio começa
-        // desligado no app e pode ser ativado pelo apresentador quando quiser.
-        systemAudio: 'include',
-        windowAudio: 'window',
-        selfBrowserSurface: 'exclude',
+        video: {
+          ...getScreenVideoConstraints(screenShareSettings),
+          displaySurface: selection.surface,
+        },
+        audio: selection.shareAudio ? { restrictOwnAudio: true } : false,
+        systemAudio: selection.shareAudio ? 'include' : 'exclude',
+        windowAudio: selection.surface === 'window' ? 'window' : undefined,
+        selfBrowserSurface: selection.surface === 'browser' ? 'include' : 'exclude',
+        monitorTypeSurfaces: selection.surface === 'monitor' ? 'include' : 'exclude',
+        surfaceSwitching: 'include',
       } as unknown as DisplayMediaStreamOptions;
       const display = await navigator.mediaDevices.getDisplayMedia(displayOptions);
       const screenTrack = display.getVideoTracks()[0];
@@ -856,17 +869,21 @@ export default function RoomClient({
       }
 
       try {
-        // Mantém o microfone ativo, mas deixa o áudio capturado da tela
-        // desligado até o apresentador ativá-lo no controle da chamada.
-        await setOutgoingScreenAudio(null);
-        setBanner(displayAudioTrack
-          ? 'A tela foi iniciada com o áudio capturado desligado. Use “Áudio da tela” para ativá-lo; ele pode incluir sons de outros aplicativos, como o Discord.'
-          : 'A tela está sendo compartilhada sem áudio. Para habilitar o controle de áudio, marque “Compartilhar áudio” no seletor do navegador.');
+        const sendAudio = selection.shareAudio && displayAudioTrack;
+        await setOutgoingScreenAudio(sendAudio ? displayAudioTrack : null);
+        screenAudioEnabledRef.current = Boolean(sendAudio);
+        setScreenAudioEnabled(Boolean(sendAudio));
+        setBanner(sendAudio
+          ? 'A tela está no ar com o áudio do aplicativo. Seu microfone continua junto.'
+          : displayAudioTrack
+            ? 'A tela está no ar. O áudio capturado fica desligado até você usar “Áudio da tela”.'
+            : 'A tela está no ar. Para mandar o som do aplicativo, marque “Compartilhar áudio” antes de ir ao vivo.');
       } catch (err) {
         console.error('Não foi possível preparar o áudio da apresentação:', err);
         setBanner('A tela será compartilhada, mas não foi possível preparar o áudio.');
       }
 
+      setGoLiveOpen(false);
       currentSharingRef.current = true;
       setSharingScreen(true);
       setScreenCaptureInfo(actualCaptureInfo);
@@ -892,6 +909,8 @@ export default function RoomClient({
         setBanner('O navegador encerrou o áudio compartilhado; seu microfone continua ativo.');
       }, { once: true });
     } catch (err) {
+      const cancelled = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError');
+      if (cancelled) return;
       console.error('Não foi possível iniciar a apresentação de tela:', err);
       screenAudioTrackRef.current = null;
       screenAudioEnabledRef.current = false;
@@ -900,9 +919,11 @@ export default function RoomClient({
       setScreenAudioEnabled(false);
       setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
+      setGoLiveOpen(false);
       setBanner('Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
     } finally {
       screenShareOperationRef.current = false;
+      setGoLiveBusy(false);
     }
   }
 
@@ -1387,6 +1408,15 @@ export default function RoomClient({
         )}
       </footer>
 
+      {goLiveOpen && (
+        <GoLivePicker
+          settings={screenShareSettings}
+          busy={goLiveBusy}
+          onSettingsChange={setScreenShareSettings}
+          onCancel={() => { if (!goLiveBusy) setGoLiveOpen(false); }}
+          onConfirm={(selection) => { void confirmGoLive(selection); }}
+        />
+      )}
       {showParticipants && (
         <ParticipantsPanel participants={participantList} onClose={() => setShowParticipants(false)} onAddFriend={onAddFriend} />
       )}
