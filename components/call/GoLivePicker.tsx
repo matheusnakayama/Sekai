@@ -9,6 +9,8 @@ export type GoLiveSurface = 'window' | 'monitor' | 'browser';
 export interface GoLiveSelection {
   surface: GoLiveSurface;
   shareAudio: boolean;
+  /** Janela ou monitor escolhido no programa Sekai. */
+  sourceId?: string;
 }
 
 const RESOLUTIONS: ScreenResolution[] = [480, 720, 1080, 1440, 2160];
@@ -45,13 +47,20 @@ export default function GoLivePicker({
   onCancel: () => void;
   onConfirm: (selection: GoLiveSelection) => void;
 }) {
+  const desktopAvailable = typeof window !== 'undefined' && Boolean(window.sekaiDesktop);
   const [tab, setTab] = useState<'applications' | 'screens'>(initialTab);
-  const [selectedId, setSelectedId] = useState('window');
+  const [selectedId, setSelectedId] = useState(desktopAvailable ? '' : 'window');
   const [shareAudio, setShareAudio] = useState(false);
   const [screens, setScreens] = useState<ScreenChoice[] | null>(null);
   const [loadingScreens, setLoadingScreens] = useState(false);
+  const [desktopSources, setDesktopSources] = useState<SekaiDesktopSource[] | null>(null);
+  const [loadingDesktop, setLoadingDesktop] = useState(desktopAvailable);
 
   useEffect(() => {
+    if (window.sekaiDesktop) {
+      void loadDesktop(initialTab === 'screens' ? 'screen' : 'window');
+      return;
+    }
     if (initialTab === 'screens') void openScreens();
     // A aba inicial só vale na abertura do seletor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,6 +73,25 @@ export default function GoLivePicker({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [busy, onCancel]);
+
+  async function loadDesktop(kind: 'window' | 'screen') {
+    const api = window.sekaiDesktop;
+    if (!api) return;
+    setTab(kind === 'screen' ? 'screens' : 'applications');
+    setLoadingDesktop(true);
+    setDesktopSources(null);
+    try {
+      const sources = await api.listSources(kind);
+      setDesktopSources(sources);
+      setSelectedId((current) => sources.some((source) => source.id === current) ? current : (sources[0]?.id ?? ''));
+    } catch (error) {
+      console.error('Não foi possível listar as janelas:', error);
+      setDesktopSources([]);
+      setSelectedId('');
+    } finally {
+      setLoadingDesktop(false);
+    }
+  }
 
   async function openScreens() {
     setTab('screens');
@@ -95,6 +123,15 @@ export default function GoLivePicker({
 
   function confirm() {
     if (busy) return;
+    if (window.sekaiDesktop) {
+      if (!selectedId) return;
+      onConfirm({
+        surface: tab === 'screens' ? 'monitor' : 'window',
+        shareAudio,
+        sourceId: selectedId,
+      });
+      return;
+    }
     if (tab === 'applications') {
       const choice = APPLICATION_CHOICES.find((item) => item.id === selectedId) ?? APPLICATION_CHOICES[0];
       onConfirm({ surface: choice.surface, shareAudio });
@@ -113,7 +150,7 @@ export default function GoLivePicker({
         role="dialog"
         aria-modal="true"
         aria-labelledby="golive-title"
-        className="w-full max-w-[460px] overflow-hidden rounded-lg bg-discord-bg-dark text-discord-text-normal shadow-2xl"
+        className={`w-full overflow-hidden rounded-lg bg-discord-bg-dark text-discord-text-normal shadow-2xl ${desktopAvailable ? 'max-w-[560px]' : 'max-w-[460px]'}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="relative h-[128px] bg-discord-bg-darkest">
@@ -137,16 +174,42 @@ export default function GoLivePicker({
         </div>
 
         <div className="mt-3 flex gap-5 border-b border-black/30 px-5" role="tablist">
-          <TabButton active={tab === 'applications'} onClick={() => { setTab('applications'); setSelectedId('window'); }}>
+          <TabButton active={tab === 'applications'} onClick={() => { if (window.sekaiDesktop) void loadDesktop('window'); else { setTab('applications'); setSelectedId('window'); } }}>
             Aplicativos
           </TabButton>
-          <TabButton active={tab === 'screens'} onClick={() => { void openScreens(); }}>
+          <TabButton active={tab === 'screens'} onClick={() => { if (window.sekaiDesktop) void loadDesktop('screen'); else void openScreens(); }}>
             Telas
           </TabButton>
+          {desktopAvailable && (
+            <button
+              type="button"
+              onClick={() => { void loadDesktop(tab === 'screens' ? 'screen' : 'window'); }}
+              className="mb-2 ml-auto text-[11px] font-medium text-discord-text-muted hover:text-white"
+            >
+              Atualizar
+            </button>
+          )}
         </div>
 
-        <div className="grid min-h-[236px] grid-cols-2 gap-3 px-4 py-4" role="listbox" aria-label={tab === 'applications' ? 'Aplicativos' : 'Telas'}>
-          {tab === 'applications' ? APPLICATION_CHOICES.map((choice) => (
+        <div className="grid max-h-[320px] min-h-[236px] grid-cols-2 gap-3 overflow-y-auto px-4 py-4" role="listbox" aria-label={tab === 'applications' ? 'Aplicativos' : 'Telas'}>
+          {desktopAvailable ? (
+            loadingDesktop ? (
+              <p className="col-span-2 self-center text-center text-xs text-discord-text-muted">Procurando janelas abertas…</p>
+            ) : desktopSources && desktopSources.length > 0 ? desktopSources.map((source) => (
+              <SourceCard
+                key={source.id}
+                label={source.name}
+                detail=""
+                selected={selectedId === source.id}
+                onSelect={() => setSelectedId(source.id)}
+                thumbnail={source.thumbnail}
+              >
+                {tab === 'screens' ? <MonitorPreview /> : <WindowPreview />}
+              </SourceCard>
+            )) : (
+              <p className="col-span-2 self-center text-center text-xs text-discord-text-muted">Nenhuma janela encontrada. Abra o programa e clique em Atualizar.</p>
+            )
+          ) : tab === 'applications' ? APPLICATION_CHOICES.map((choice) => (
             <SourceCard
               key={choice.id}
               label={choice.label}
@@ -172,9 +235,11 @@ export default function GoLivePicker({
         </div>
 
         <p className="px-5 pb-3 text-[11px] leading-4 text-discord-text-muted">
-          {tab === 'applications'
-            ? 'Ao vivo abre a confirmação do navegador já na lista de janelas ou de guias.'
-            : 'Ao vivo abre a confirmação do navegador já na tela inteira.'}
+          {desktopAvailable
+            ? 'Ao vivo começa a transmitir a janela escolhida.'
+            : tab === 'applications'
+              ? 'Ao vivo abre a confirmação do navegador já na lista de janelas ou de guias.'
+              : 'Ao vivo abre a confirmação do navegador já na tela inteira.'}
         </p>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-black/25 px-4 py-3">
@@ -231,7 +296,7 @@ export default function GoLivePicker({
               disabled={busy || !selectedId}
               className="rounded bg-discord-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-discord-brand-hover disabled:cursor-wait disabled:opacity-60"
             >
-              {busy ? 'Abrindo…' : 'Ao vivo'}
+              {busy ? (desktopAvailable ? 'Transmitindo…' : 'Abrindo…') : 'Ao vivo'}
             </button>
           </div>
         </div>
@@ -262,12 +327,14 @@ function SourceCard({
   detail,
   selected,
   onSelect,
+  thumbnail,
   children,
 }: {
   label: string;
   detail: string;
   selected: boolean;
   onSelect: () => void;
+  thumbnail?: string;
   children: ReactNode;
 }) {
   return (
@@ -278,9 +345,11 @@ function SourceCard({
       onClick={onSelect}
       className={`overflow-hidden rounded-md border-2 bg-black/30 text-left transition ${selected ? 'border-discord-brand' : 'border-transparent hover:border-white/25'}`}
     >
-      <div className="relative h-[104px] bg-[#111214]">{children}</div>
-      <span className="block truncate px-2 pb-2 pt-1.5 text-[12px] font-medium text-discord-header-primary">{label}</span>
-      <span className="block truncate px-2 pb-2 text-[10px] text-discord-text-muted">{detail}</span>
+      <div className="relative h-[104px] bg-[#111214]">
+        {thumbnail ? <img src={thumbnail} alt="" className="h-full w-full object-cover object-top" /> : children}
+      </div>
+      <span className={`block truncate px-2 pt-1.5 text-[12px] font-medium text-discord-header-primary ${detail ? '' : 'pb-2'}`}>{label}</span>
+      {detail ? <span className="block truncate px-2 pb-2 text-[10px] text-discord-text-muted">{detail}</span> : null}
     </button>
   );
 }

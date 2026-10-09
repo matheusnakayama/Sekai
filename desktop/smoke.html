@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sekai smoke</title>
+<script>
+const sourceId = new URLSearchParams(location.search).get('id');
+window.sekaiDesktop.prepareCapture(sourceId, false);
+navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
+  .then((stream) => {
+    const track = stream.getVideoTracks()[0];
+    document.title = track ? `CAPTURE:${track.readyState}:${track.label || 'tela'}` : 'CAPTURE:none';
+    stream.getTracks().forEach((item) => item.stop());
+  })
+  .catch((error) => {
+    document.title = `CAPTURE_FAIL:${error.name || 'error'}`;
+  });
+</script>

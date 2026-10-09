@@ -797,19 +797,26 @@ export default function RoomClient({
     setGoLiveBusy(true);
 
     try {
-      const displayOptions = {
-        video: {
-          ...getScreenVideoConstraints(screenShareSettings),
-          displaySurface: selection.surface,
-        },
-        audio: selection.shareAudio ? { restrictOwnAudio: true } : false,
-        systemAudio: selection.shareAudio ? 'include' : 'exclude',
-        windowAudio: selection.surface === 'window' ? 'window' : undefined,
-        selfBrowserSurface: selection.surface === 'browser' ? 'include' : 'exclude',
-        monitorTypeSurfaces: selection.surface === 'monitor' ? 'include' : 'exclude',
-        surfaceSwitching: 'include',
-      } as unknown as DisplayMediaStreamOptions;
-      const display = await navigator.mediaDevices.getDisplayMedia(displayOptions);
+      const desktop = window.sekaiDesktop;
+      if (selection.sourceId && desktop) desktop.prepareCapture(selection.sourceId, selection.shareAudio);
+      const displayOptions = selection.sourceId && desktop
+        ? {
+          video: getScreenVideoConstraints(screenShareSettings),
+          audio: selection.shareAudio,
+        }
+        : {
+          video: {
+            ...getScreenVideoConstraints(screenShareSettings),
+            displaySurface: selection.surface,
+          },
+          audio: selection.shareAudio ? { restrictOwnAudio: true } : false,
+          systemAudio: selection.shareAudio ? 'include' : 'exclude',
+          windowAudio: selection.surface === 'window' ? 'window' : undefined,
+          selfBrowserSurface: selection.surface === 'browser' ? 'include' : 'exclude',
+          monitorTypeSurfaces: selection.surface === 'monitor' ? 'include' : 'exclude',
+          surfaceSwitching: 'include',
+        };
+      const display = await navigator.mediaDevices.getDisplayMedia(displayOptions as unknown as DisplayMediaStreamOptions);
       const screenTrack = display.getVideoTracks()[0];
       if (!screenTrack) {
         display.getTracks().forEach((track) => track.stop());
@@ -920,7 +927,9 @@ export default function RoomClient({
       setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
       setGoLiveOpen(false);
-      setBanner('Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
+      setBanner(selection.sourceId
+        ? 'Não foi possível transmitir essa janela. Abra a lista de novo e escolha outra.'
+        : 'Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
     } finally {
       screenShareOperationRef.current = false;
       setGoLiveBusy(false);
