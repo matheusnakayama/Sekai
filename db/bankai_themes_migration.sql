@@ -23,6 +23,9 @@ alter table public.custom_badges add column if not exists image_path text;
 alter table public.custom_badges add column if not exists created_by uuid references public.profiles(id) on delete set null;
 alter table public.custom_badges add column if not exists created_at timestamptz not null default now();
 
+-- Insígnias de Bankai são do sistema, então não têm um autor obrigatório.
+alter table public.custom_badges alter column created_by drop not null;
+
 create unique index if not exists custom_badges_slug_key on public.custom_badges (slug) where slug is not null;
 
 alter table public.custom_badges enable row level security;
@@ -222,3 +225,5 @@ begin
     alter publication supabase_realtime add table public.user_badges;
   end if;
 end $$;
+
+notify pgrst, 'reload schema';
