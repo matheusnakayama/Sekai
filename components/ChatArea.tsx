@@ -407,20 +407,28 @@ export function ChatArea({
       {/* Campo de mensagem */}
       <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">
         {showAutocomplete && filteredCommands.length > 0 && (
-          <div className="absolute bottom-[calc(100%+8px)] w-full overflow-hidden rounded-lg bg-discord-bg-floating shadow-xl">
-            <div className="border-b border-black/30 px-3 py-2 text-xs font-semibold uppercase text-discord-text-muted">
-              {commandPrefix === "!" ? "Comandos" : "Comandos com barra"}
+          <div className="absolute bottom-[calc(100%+10px)] w-full overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-floating shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
+              <p className="text-[11px] font-bold uppercase tracking-[.14em] text-discord-text-muted">{commandPrefix === "!" ? "Comandos" : "Comandos com barra"}</p>
+              <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-discord-text-muted">{filteredCommands.length}</span>
             </div>
-            {filteredCommands.map((cmd) => (
-              <button
-                key={cmd.name}
-                onClick={() => pickCommand(cmd.name, cmd.usage?.startsWith("!") ? "!" : "/")}
-                className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-discord-bg-modifier-hover"
-              >
-                <span className="font-medium text-discord-header-primary">{cmd.usage?.startsWith("!") ? "!" : "/"}{cmd.name}</span>
-                <span className="truncate pl-3 text-xs text-discord-text-muted">{cmd.description}</span>
-              </button>
-            ))}
+            {filteredCommands.map((cmd) => {
+              const prefix = cmd.usage?.startsWith("!") ? "!" : "/";
+              return (
+                <button
+                  key={cmd.name}
+                  onClick={() => pickCommand(cmd.name, prefix)}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-white/[0.05]"
+                >
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] font-mono text-xs font-bold text-white">{prefix}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-discord-header-primary">{prefix}{cmd.name}</span>
+                    <span className="block truncate text-xs text-discord-text-muted">{cmd.description}</span>
+                  </span>
+                  {cmd.usage && <span className="hidden shrink-0 font-mono text-[11px] text-discord-text-muted sm:block">{cmd.usage}</span>}
+                </button>
+              );
+            })}
           </div>
         )}
 

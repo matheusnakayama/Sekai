@@ -17,9 +17,6 @@ export interface ScreenShareSettings {
   frameRate: ScreenFrameRate;
 }
 
-const RESOLUTIONS: ScreenResolution[] = [480, 720, 1080, 1440, 2160];
-const FRAME_RATES: ScreenFrameRate[] = [30, 60, 90, 120];
-
 export default function Controls({
   micOn,
   deafened,
@@ -27,8 +24,6 @@ export default function Controls({
   sharingScreen,
   screenAudioAvailable,
   screenAudioEnabled,
-  screenShareSettings,
-  onScreenShareSettingsChange,
   participantCount,
   chatUnreadCount,
   isHost,
@@ -53,8 +48,6 @@ export default function Controls({
   sharingScreen: boolean;
   screenAudioAvailable: boolean;
   screenAudioEnabled: boolean;
-  screenShareSettings: ScreenShareSettings;
-  onScreenShareSettingsChange: (settings: ScreenShareSettings) => void;
   participantCount: number;
   chatUnreadCount: number;
   isHost: boolean;
@@ -200,58 +193,6 @@ export default function Controls({
           {!screenAudioAvailable ? 'Áudio indisponível' : screenAudioEnabled ? 'Áudio da tela: ligado' : 'Áudio da tela: desligado'}
         </button>
       )}
-
-      <div className="flex items-center gap-2">
-        <label className="w-36 rounded-2xl border border-surface-border bg-surface-card px-3 py-2 text-xs text-white/75 sm:w-44">
-          <span className="flex items-center justify-between gap-2">
-            <span>Resolução</span>
-            <output className="font-semibold text-white">
-              {screenShareSettings.height === 2160 ? '4K' : `${screenShareSettings.height}p`}
-            </output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max={RESOLUTIONS.length - 1}
-            step="1"
-            value={RESOLUTIONS.indexOf(screenShareSettings.height)}
-            disabled={sharingScreen}
-            aria-label="Resolução da apresentação, de 480p a 4K"
-            title="Resolução máxima desejada. O envio ajusta o bitrate conforme sua conexão e a quantidade de participantes."
-            onChange={(event) => onScreenShareSettingsChange({
-              ...screenShareSettings,
-              height: RESOLUTIONS[Number(event.target.value)],
-            })}
-            className="mt-1.5 h-1.5 w-full cursor-pointer accent-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          <span className="mt-0.5 flex justify-between text-[9px] text-white/40"><span>480p</span><span>4K</span></span>
-          <span className="mt-1 block text-[9px] text-white/40">adapta à conexão</span>
-        </label>
-
-        <label className="w-28 rounded-2xl border border-surface-border bg-surface-card px-3 py-2 text-xs text-white/75 sm:w-36">
-          <span className="flex items-center justify-between gap-2">
-            <span>Quadros</span>
-            <output className="font-semibold text-white">{screenShareSettings.frameRate} fps</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max={FRAME_RATES.length - 1}
-            step="1"
-            value={FRAME_RATES.indexOf(screenShareSettings.frameRate)}
-            disabled={sharingScreen}
-            aria-label="Taxa de quadros da apresentação, de 30 a 120 fps"
-            title="Taxa máxima desejada. O navegador e a conexão podem ajustá-la durante a apresentação."
-            onChange={(event) => onScreenShareSettingsChange({
-              ...screenShareSettings,
-              frameRate: FRAME_RATES[Number(event.target.value)],
-            })}
-            className="mt-1.5 h-1.5 w-full cursor-pointer accent-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          <span className="mt-0.5 flex justify-between text-[9px] text-white/40"><span>30 fps</span><span>120 fps</span></span>
-          <span className="mt-1 block text-[9px] text-white/40">adapta à conexão</span>
-        </label>
-      </div>
 
       <button
         onClick={onToggleParticipants}

@@ -1394,8 +1394,6 @@ export default function RoomClient({
           soundEffectsLoading={soundEffectsLoading}
           playingSoundId={playingSoundId}
           onPlaySoundEffect={(effect) => { void playSoundboardEffect(effect); }}
-          screenShareSettings={screenShareSettings}
-          onScreenShareSettingsChange={setScreenShareSettings}
           participantCount={participantList.length}
           onToggleMic={toggleMic}
           onToggleDeafen={toggleDeafen}

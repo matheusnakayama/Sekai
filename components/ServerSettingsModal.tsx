@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon } from "lucide-react";
+import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon, ImagePlus, Activity, AppWindow, Ban, FolderTree, Hash, Link2, Lock, Music2, Puzzle, ScrollText, Server, Shield, Smile, Sparkles, Sticker, Tag, Volume2, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
@@ -26,14 +26,41 @@ import {
 
 type Tab = "geral" | "tag" | "engajamento" | "impulso" | "emoji" | "stickers" | "soundboard" | "cargos" | "canais" | "membros" | "convites" | "acesso" | "integracoes" | "apps" | "seguranca" | "auditoria" | "banimentos" | "automod" | "comunidade" | "modelo";
 
-const SETTINGS_GROUPS: { title: string; items: [Tab, string][] }[] = [
-  { title: "Servidor", items: [["geral", "Perfil do servidor"], ["tag", "Tag do servidor"], ["engajamento", "Engajamento"], ["impulso", "Vantagens de impulso"]] },
-  { title: "Expressões", items: [["emoji", "Emoji"], ["stickers", "Figurinhas"], ["soundboard", "Painel de efeitos sonoros"]] },
-  { title: "Pessoas", items: [["membros", "Membros"], ["cargos", "Cargos"], ["convites", "Convites"], ["acesso", "Acesso"]] },
-  { title: "Apps", items: [["integracoes", "Integrações"], ["apps", "Diretório de apps"]] },
-  { title: "Moderação", items: [["seguranca", "Configurações de segurança"], ["auditoria", "Registro de auditoria"], ["banimentos", "Banimentos"], ["automod", "AutoMod"]] },
-  { title: "Comunidade", items: [["comunidade", "Habilitar comunidade"], ["modelo", "Modelo do servidor"]] },
-  { title: "Organização", items: [["canais", "Canais e categorias"]] },
+const SETTINGS_GROUPS: { title: string; items: { id: Tab; label: string; icon: LucideIcon }[] }[] = [
+  { title: "Servidor", items: [
+    { id: "geral", label: "Perfil do servidor", icon: Server },
+    { id: "tag", label: "Tag do servidor", icon: Tag },
+    { id: "engajamento", label: "Engajamento", icon: Activity },
+    { id: "impulso", label: "Vantagens de impulso", icon: Sparkles },
+  ] },
+  { title: "Expressões", items: [
+    { id: "emoji", label: "Emoji", icon: Smile },
+    { id: "stickers", label: "Figurinhas", icon: Sticker },
+    { id: "soundboard", label: "Painel de efeitos sonoros", icon: Music2 },
+  ] },
+  { title: "Pessoas", items: [
+    { id: "membros", label: "Membros", icon: Users },
+    { id: "cargos", label: "Cargos", icon: Shield },
+    { id: "convites", label: "Convites", icon: Link2 },
+    { id: "acesso", label: "Acesso", icon: Lock },
+  ] },
+  { title: "Apps", items: [
+    { id: "integracoes", label: "Integrações", icon: Puzzle },
+    { id: "apps", label: "Diretório de apps", icon: AppWindow },
+  ] },
+  { title: "Moderação", items: [
+    { id: "seguranca", label: "Configurações de segurança", icon: ShieldCheck },
+    { id: "auditoria", label: "Registro de auditoria", icon: ScrollText },
+    { id: "banimentos", label: "Banimentos", icon: Ban },
+    { id: "automod", label: "AutoMod", icon: Sparkles },
+  ] },
+  { title: "Comunidade", items: [
+    { id: "comunidade", label: "Habilitar comunidade", icon: Users },
+    { id: "modelo", label: "Modelo do servidor", icon: FolderTree },
+  ] },
+  { title: "Organização", items: [
+    { id: "canais", label: "Canais e categorias", icon: Hash },
+  ] },
 ];
 
 interface ServerSettingsModalProps {
@@ -84,20 +111,37 @@ export function ServerSettingsModal({
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-5">
       <div className="flex h-[100dvh] w-full max-w-6xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(860px,96vh)] sm:rounded-2xl sm:border sm:border-white/[0.08]">
-        <aside className="hidden w-[min(260px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:flex sm:p-4">
-          <div className="mb-3 border-b border-white/[0.08] px-2 pb-3"><p className="truncate text-sm font-bold text-discord-header-primary">{serverName}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[.14em] text-discord-text-muted">Configurações</p></div>
+        <aside className="hidden w-[min(272px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:flex sm:p-4">
+          <div className="mb-4 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-3 py-3">
+            <p className="truncate text-sm font-bold text-white">{serverName}</p>
+            <p className="mt-0.5 text-[11px] text-discord-text-muted">Configurações do servidor</p>
+          </div>
           <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-            {SETTINGS_GROUPS.map((group) => <section key={group.title}><p className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted/80">{group.title}</p>{group.items.map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={cn("mb-0.5 w-full rounded-lg px-2.5 py-2 text-left text-[13px] transition", tab === id ? "bg-discord-bg-modifier-hover text-discord-header-primary shadow-sm" : "text-discord-text-muted hover:bg-white/[0.04] hover:text-discord-text-normal")}>{label}</button>)}</section>)}
+            {SETTINGS_GROUPS.map((group) => (
+              <section key={group.title}>
+                <p className="mb-1.5 px-2.5 text-[10px] font-bold uppercase tracking-[.16em] text-discord-text-muted/70">{group.title}</p>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = tab === item.id;
+                  return (
+                    <button key={item.id} onClick={() => setTab(item.id)} className={cn("mb-0.5 flex w-full items-center gap-2.5 rounded-xl border-l-[3px] px-2.5 py-2 text-left text-[13px] transition", active ? "border-white bg-white/[0.08] text-white" : "border-transparent text-discord-text-muted hover:bg-white/[0.04] hover:text-discord-text-normal")}>
+                      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-white" : "opacity-70")} />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </section>
+            ))}
           </nav>
-          <button onClick={onClose} className="mt-3 flex items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
+          <button onClick={onClose} className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.08] px-3 py-2.5 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:p-7">
           <div className="mb-4 flex items-center justify-between gap-2 border-b border-white/[0.06] pb-3 sm:mb-5">
             <div className="min-w-0 flex-1">
-              <span className="hidden text-xs font-semibold text-discord-text-muted sm:block">{SETTINGS_GROUPS.flatMap((group) => group.items).find(([id]) => id === tab)?.[1]}</span>
-              <select value={tab} onChange={(event) => setTab(event.target.value as Tab)} aria-label="Seção das configurações do servidor" className="h-11 w-full min-w-0 rounded-xl border border-white/10 bg-discord-bg-primary px-3 text-sm font-semibold text-discord-header-primary outline-none focus:border-discord-brand sm:hidden">
-                {SETTINGS_GROUPS.map((group) => <optgroup key={group.title} label={group.title}>{group.items.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</optgroup>)}
+              <span className="hidden text-xs font-semibold text-discord-text-muted sm:block">{SETTINGS_GROUPS.flatMap((group) => group.items).find((item) => item.id === tab)?.label}</span>
+              <select value={tab} onChange={(event) => setTab(event.target.value as Tab)} aria-label="Seção das configurações do servidor" className="settings-field h-11 w-full min-w-0 font-semibold text-discord-header-primary sm:hidden">
+                {SETTINGS_GROUPS.map((group) => <optgroup key={group.title} label={group.title}>{group.items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</optgroup>)}
               </select>
             </div>
             <button onClick={onClose} aria-label="Fechar configurações" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted transition hover:bg-white/5 hover:text-white">
@@ -177,8 +221,17 @@ function GeralTab({
   const supabase = createClient();
   const dialogs = useDialogs();
   const [name, setName] = useState(serverName);
+  const [iconUrl, setIconUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.from("servers").select("icon_url").eq("id", serverId).maybeSingle().then(({ data }) => {
+      if (!cancelled) setIconUrl((data?.icon_url as string | null) ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [serverId, supabase]);
 
   async function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -194,9 +247,10 @@ function GeralTab({
       await dialogs.notify({ title: "Falha no upload", message: error.message });
       return;
     }
-    const iconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
-    const { error: updateError } = await supabase.from("servers").update({ icon_url: iconUrl }).eq("id", serverId);
+    const nextIconUrl = supabase.storage.from("server-icons").getPublicUrl(path).data.publicUrl;
+    const { error: updateError } = await supabase.from("servers").update({ icon_url: nextIconUrl }).eq("id", serverId);
     if (updateError) { await dialogs.notify({ title: "Falha ao salvar ícone", message: updateError.message }); return; }
+    setIconUrl(nextIconUrl);
     onChanged();
   }
 
@@ -237,53 +291,64 @@ function GeralTab({
   }
 
   return (
-    <div>
-      <label className="mb-2 block text-xs font-semibold uppercase text-discord-text-muted">
-        Ícone do servidor
-      </label>
-      <label className={cn("mb-4 inline-block", canEdit && "cursor-pointer")}>
-        <input type="file" accept="image/gif,image/*" className="hidden" disabled={!canEdit} onChange={handleIconUpload} />
-        <span className="rounded bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">
-          Enviar imagem
-        </span>
-      </label>
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Servidor</p>
+        <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Perfil do servidor</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">O nome e o ícone aparecem na barra lateral e nos convites.</p>
+      </header>
 
-      <label className="mb-2 block text-xs font-semibold uppercase text-discord-text-muted">
-        Nome do servidor
-        <input
-          value={name}
-          disabled={!canEdit}
-          onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2 text-discord-text-normal focus:outline-none disabled:opacity-60"
-        />
-      </label>
+      <section className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10 sm:p-5">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/10 bg-black/20 text-2xl font-bold text-white">
+            {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-cover" /> : serverName.slice(0, 1).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-discord-header-primary">Ícone do servidor</h3>
+            <p className="mt-1 text-xs leading-5 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB</p>
+            <label className={cn("mt-3 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.08]", canEdit ? "cursor-pointer" : "cursor-not-allowed opacity-50")}>
+              <input type="file" accept="image/gif,image/*" className="hidden" disabled={!canEdit} onChange={handleIconUpload} />
+              <ImagePlus className="h-3.5 w-3.5" />
+              {iconUrl ? "Trocar imagem" : "Enviar imagem"}
+            </label>
+          </div>
+        </div>
 
-      {canEdit && (
-        <button
-          onClick={handleSaveName}
-          disabled={saving}
-          className="mt-2 rounded bg-discord-brand px-4 py-2 text-sm font-medium text-white hover:bg-discord-brand-hover"
-        >
-          {saving ? "Salvando..." : "Salvar"}
-        </button>
-      )}
-      {!canEdit && (
-        <p className="mt-2 text-xs text-discord-text-muted">
-          Você não tem permissão para editar as informações do servidor.
-        </p>
-      )}
+        <label className="mt-5 block text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">
+          Nome do servidor
+          <input
+            value={name}
+            disabled={!canEdit}
+            onChange={(e) => setName(e.target.value)}
+            className="settings-field disabled:opacity-60"
+          />
+        </label>
+
+        {canEdit && (
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleSaveName}
+              disabled={saving || !name.trim()}
+              className="rounded-xl bg-theme-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110 disabled:opacity-50"
+            >
+              {saving ? "Salvando..." : "Salvar alterações"}
+            </button>
+          </div>
+        )}
+        {!canEdit && (
+          <p className="mt-4 text-xs text-discord-text-muted">Você não tem permissão para editar as informações do servidor.</p>
+        )}
+      </section>
 
       {isOwner && (
-        <section className="mt-8 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
-          <h3 className="font-semibold text-red-300">Zona de perigo</h3>
-          <p className="mt-1 text-sm text-discord-text-muted">
-            Excluir o servidor remove também os canais e os dados relacionados.
-          </p>
+        <section className="mt-5 rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] p-5">
+          <h3 className="font-semibold text-rose-200">Zona de perigo</h3>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-discord-text-muted">Excluir o servidor remove os canais, as mensagens e os membros ligados a ele.</p>
           <button
             type="button"
             onClick={() => void handleDeleteServer()}
             disabled={deleting}
-            className="mt-3 flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
           >
             <Trash2 size={16} />
             {deleting ? "Excluindo…" : "Excluir servidor"}
@@ -692,7 +757,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
 
         {selectedRole ? <section className="min-w-0 p-4 sm:p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-discord-text-muted">Editar cargo</p><h3 className="mt-1 text-lg font-bold text-discord-header-primary" style={{ color: selectedRole.color || undefined }}>{selectedRole.name}</h3></div><div className="rounded-full bg-white/[0.06] px-3 py-1.5 text-xs text-discord-text-muted">{selectedRole.memberCount} membro{selectedRole.memberCount === 1 ? "" : "s"}</div></div>
-          <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-white/[0.08]">{([ ["display", "Exibição", Eye], ["permissions", "Permissões", ShieldCheck], ["members", `Gerenciar membros (${selectedRole.memberCount})`, Users] ] as const).map(([id, label, Icon]) => <button key={id} type="button" onClick={() => setSection(id)} className={cn("flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold transition", section === id ? "border-discord-brand text-discord-brand" : "border-transparent text-discord-text-muted hover:text-discord-text-normal")}><Icon size={14}/>{label}</button>)}</nav>
+          <nav className="settings-segment mb-5">{([ ["display", "Exibição", Eye], ["permissions", "Permissões", ShieldCheck], ["members", `Membros (${selectedRole.memberCount})`, Users] ] as const).map(([id, label, Icon]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)} className="inline-flex items-center gap-2"><Icon size={14}/>{label}</button>)}</nav>
           {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">{error}</p>}
 
           {section === "display" && <div className="space-y-4">
@@ -820,41 +885,56 @@ function CanaisTab({ serverId, canEdit, onChanged }: { serverId: string; canEdit
     onChanged();
   }
 
+  const looseChannels = channels.filter((channel) => !channel.category_id || !categories.some((category) => category.id === channel.category_id));
+  const groups = [
+    ...categories.map((category) => ({ ...category, channels: channels.filter((channel) => channel.category_id === category.id) })),
+    ...(looseChannels.length ? [{ id: "loose", name: "Sem categoria", channels: looseChannels, loose: true }] : []),
+  ];
+
   return (
-    <div>
-      {categories.map((cat) => (
-        <div key={cat.id} className="mb-4">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase text-discord-text-muted">{cat.name}</p>
-            {canEdit && (
-              <div className="flex gap-2">
-                <button onClick={() => handleRenameCategory(cat.id, cat.name)} className="text-xs text-discord-text-muted hover:text-discord-text-normal">
-                  renomear
-                </button>
-                <button onClick={() => handleDeleteCategory(cat.id)} className="text-discord-danger">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Organização</p>
+        <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Canais e categorias</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">Renomeie ou remova canais sem sair da lista do servidor.</p>
+      </header>
+      {groups.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center">
+          <Hash className="mx-auto h-5 w-5 text-discord-text-muted" />
+          <p className="mt-3 font-semibold text-discord-header-primary">Nenhum canal ainda</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-discord-text-muted">Os canais criados no servidor aparecem agrupados por categoria.</p>
+        </div>
+      ) : groups.map((group) => (
+        <section key={group.id} className="mb-4 overflow-hidden rounded-2xl border border-white/[0.08] bg-discord-bg-primary">
+          <header className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-white/[0.025] px-4 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-[.14em] text-discord-text-muted">{group.name}</p>
+            {canEdit && !("loose" in group) && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => handleRenameCategory(group.id, group.name)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Renomear</button>
+                <button onClick={() => handleDeleteCategory(group.id)} aria-label={`Apagar categoria ${group.name}`} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             )}
-          </div>
-          {channels
-            .filter((c) => c.category_id === cat.id)
-            .map((c) => (
-              <div key={c.id} className="flex items-center justify-between py-1 pl-2 text-sm text-discord-text-normal">
-                <span>{c.type === "text" ? "#" : "🔊"} {c.name}</span>
+          </header>
+          <div className="divide-y divide-white/[0.05]">
+            {group.channels.length === 0 ? <p className="px-4 py-4 text-sm text-discord-text-muted">Nenhum canal nesta categoria.</p> : group.channels.map((channel: { id: string; name: string; type: string }) => (
+              <div key={channel.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-discord-text-muted">
+                  {channel.type === "text" ? <Hash className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-discord-header-primary">{channel.name}</p>
+                  <p className="text-[11px] text-discord-text-muted">{channel.type === "text" ? "Canal de texto" : "Canal de voz"}</p>
+                </div>
                 {canEdit && (
-                  <div className="flex gap-2">
-                    <button onClick={() => handleRenameChannel(c.id, c.name)} className="text-xs text-discord-text-muted hover:text-discord-text-normal">
-                      renomear
-                    </button>
-                    <button onClick={() => handleDeleteChannel(c.id)} className="text-discord-danger">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => handleRenameChannel(channel.id, channel.name)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Renomear</button>
+                    <button onClick={() => handleDeleteChannel(channel.id)} aria-label={`Apagar canal ${channel.name}`} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
                 )}
               </div>
             ))}
-        </div>
+          </div>
+        </section>
       ))}
     </div>
   );
@@ -920,35 +1000,42 @@ function ConvitesTab({
   }
 
   return (
-    <div>
-      {canCreate && (
-        <button
-          onClick={handleCreateInvite}
-          className="mb-4 flex items-center gap-1.5 rounded bg-discord-brand px-3 py-2 text-sm font-medium text-white hover:bg-discord-brand-hover"
-        >
-          <Plus className="h-4 w-4" /> Gerar novo convite
-        </button>
-      )}
-
-      {invites.map((inv) => (
-        <div key={inv.code} className="mb-2 flex items-center justify-between rounded bg-discord-bg-primary px-3 py-2">
-          <div>
-            <p className="font-mono text-sm text-discord-header-primary">{inv.code}</p>
-            <p className="text-xs text-discord-text-muted">
-              {inv.uses} usos{inv.max_uses > 0 ? ` / ${inv.max_uses}` : " (ilimitado)"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleCopy(inv.code)} className="text-discord-text-muted hover:text-discord-text-normal">
-              <Copy className="h-4 w-4" />
-            </button>
-            <button onClick={() => handleRevoke(inv.code)} className="text-discord-danger">
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </div>
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Pessoas</p>
+          <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Convites</h2>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">Gere um código e compartilhe com quem deve entrar no servidor.</p>
         </div>
-      ))}
-      {invites.length === 0 && <p className="text-sm text-discord-text-muted">Nenhum convite ativo ainda.</p>}
+        {canCreate && (
+          <button onClick={handleCreateInvite} className="inline-flex items-center gap-2 rounded-xl bg-theme-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110">
+            <Plus className="h-4 w-4" /> Gerar convite
+          </button>
+        )}
+      </header>
+      {invites.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center">
+          <Link2 className="mx-auto h-5 w-5 text-discord-text-muted" />
+          <p className="mt-3 font-semibold text-discord-header-primary">Nenhum convite ativo</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-discord-text-muted">Os códigos criados ficam nesta lista, com a contagem de usos.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {invites.map((inv) => (
+            <article key={inv.code} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.08] bg-discord-bg-primary px-4 py-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-discord-text-muted"><Link2 className="h-4 w-4" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-sm font-semibold tracking-wide text-discord-header-primary">{inv.code}</p>
+                <p className="mt-0.5 text-xs text-discord-text-muted">{inv.uses} usos{inv.max_uses > 0 ? ` de ${inv.max_uses}` : " · sem limite"}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => handleCopy(inv.code)} aria-label={`Copiar convite ${inv.code}`} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white"><Copy className="h-3.5 w-3.5" />Copiar</button>
+                <button onClick={() => handleRevoke(inv.code)} aria-label={`Revogar convite ${inv.code}`} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1051,51 +1138,58 @@ function MembrosTab({
   }
 
   return (
-    <div>
-      {members.map((m) => (
-        <div key={m.user_id} className="mb-2 rounded bg-discord-bg-primary p-3">
-          <div className="mb-1 flex items-center justify-between">
-            <p className="text-sm font-medium text-discord-header-primary">
-              {m.profiles?.display_name || m.profiles?.username}
-            </p>
-            {m.user_id !== currentUserId && (
-              <div className="flex gap-3">
-                {canKick && (
-                  <button onClick={() => handleKick(m.user_id)} className="text-xs text-discord-text-muted hover:text-discord-header-primary">
-                    Expulsar
-                  </button>
-                )}
-                {canBan && (
-                  <button onClick={() => handleBan(m.user_id)} className="text-xs text-discord-danger hover:underline">
-                    Banir
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          {canAssignRoles && (
-            <div className="flex flex-wrap gap-2">
-              {roles.map((r) => {
-                const has = m.roleIds.includes(r.id);
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => toggleRole(m.user_id, r.id, has)}
-                    className={cn(
-                      "rounded-full border px-2 py-0.5 text-xs",
-                      has
-                        ? "border-transparent bg-discord-brand text-white"
-                        : "border-discord-text-muted text-discord-text-muted hover:text-discord-text-normal"
-                    )}
-                  >
-                    {r.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Pessoas</p>
+        <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Membros</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">Atribua cargos e aplique moderação sem abrir o perfil de cada pessoa.</p>
+      </header>
+      {members.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center">
+          <Users className="mx-auto h-5 w-5 text-discord-text-muted" />
+          <p className="mt-3 font-semibold text-discord-header-primary">Nenhum membro encontrado</p>
         </div>
-      ))}
+      ) : (
+        <div className="space-y-2">
+          {members.map((member) => {
+            const label = member.profiles?.display_name || member.profiles?.username || "Membro";
+            return (
+              <article key={member.user_id} className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/[0.06] text-sm font-bold text-white">{label.slice(0, 1).toUpperCase()}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-discord-header-primary">{label}</p>
+                    <p className="truncate text-xs text-discord-text-muted">@{member.profiles?.username || "sem-usuario"}</p>
+                  </div>
+                  {member.user_id !== currentUserId && (
+                    <div className="flex gap-1">
+                      {canKick && <button onClick={() => handleKick(member.user_id)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-discord-text-muted transition hover:bg-white/[0.06] hover:text-white">Expulsar</button>}
+                      {canBan && <button onClick={() => handleBan(member.user_id)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/10">Banir</button>}
+                    </div>
+                  )}
+                </div>
+                {canAssignRoles && roles.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {roles.map((role) => {
+                      const has = member.roleIds.includes(role.id);
+                      return (
+                        <button
+                          key={role.id}
+                          onClick={() => toggleRole(member.user_id, role.id, has)}
+                          className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold transition", has ? "border-transparent text-white" : "border-white/10 bg-transparent text-discord-text-muted hover:border-white/25 hover:text-white")}
+                          style={has ? { backgroundColor: role.color || "#5865f2" } : undefined}
+                        >
+                          {role.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

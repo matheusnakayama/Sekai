@@ -137,32 +137,35 @@ function LoginScreen() {
     }
   }
 
+  const fieldLabel = "mb-4 block text-[11px] font-semibold uppercase tracking-[.08em] text-discord-text-muted";
+
   return (
     <div className="flex min-h-screen w-screen items-center justify-center overflow-y-auto bg-discord-bg-primary px-4 py-8">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-lg bg-discord-bg-secondary p-8 shadow-xl"
+        className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 shadow-2xl shadow-black/30 sm:p-8"
       >
-        <h1 className="mb-1 text-2xl font-bold text-discord-header-primary">{mode === "login" ? "Bem-vindo de volta!" : "Crie sua conta"}</h1>
-        <p className="mb-5 text-sm text-discord-text-muted">{mode === "login" ? "Entre no Sekai com seu convite." : "Cadastre-se para começar a usar o Sekai."}</p>
+        <p className="text-[11px] font-bold uppercase tracking-[.2em] text-discord-text-muted">Sekai</p>
+        <h1 className="mt-2 text-[28px] font-bold leading-tight text-discord-header-primary">{mode === "login" ? "Bem-vindo de volta" : "Crie sua conta"}</h1>
+        <p className="mt-2 text-sm leading-6 text-discord-text-muted">{mode === "login" ? "Entre para voltar aos seus servidores." : "Um nome, um e-mail e você já pode conversar."}</p>
 
-        <div className="mb-5 grid grid-cols-2 rounded-lg bg-discord-bg-primary p-1">
-          <button type="button" onClick={() => { setMode("login"); setError(""); setSuccess(""); }} className={`rounded-md px-3 py-2 text-sm font-medium transition ${mode === "login" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Entrar</button>
-          <button type="button" onClick={() => { setMode("signup"); setError(""); setSuccess(""); }} className={`rounded-md px-3 py-2 text-sm font-medium transition ${mode === "signup" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-discord-text-normal"}`}>Criar conta</button>
+        <div className="settings-segment mb-6 mt-6 w-full">
+          <button type="button" aria-pressed={mode === "login"} onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>Entrar</button>
+          <button type="button" aria-pressed={mode === "signup"} onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}>Criar conta</button>
         </div>
 
         {mode === "signup" && <>
-          <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
+          <label className={fieldLabel}>
             Nome de usuário
-            <input type="text" required minLength={2} maxLength={32} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))} placeholder="seu_usuario" className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+            <input type="text" required minLength={2} maxLength={32} autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))} placeholder="seu_usuario" className="settings-field" />
           </label>
-          <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
-            Nome de exibição <span className="normal-case font-normal">(opcional)</span>
-            <input type="text" maxLength={50} autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como você quer aparecer" className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+          <label className={fieldLabel}>
+            Nome de exibição <span className="normal-case font-normal tracking-normal">(opcional)</span>
+            <input type="text" maxLength={50} autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como você quer aparecer" className="settings-field" />
           </label>
         </>}
 
-        <label className="mb-4 block text-xs font-semibold uppercase text-discord-text-muted">
+        <label className={fieldLabel}>
           E-mail
           <input
             type="email"
@@ -170,11 +173,12 @@ function LoginScreen() {
             value={email}
             autoComplete="email"
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+            placeholder="voce@exemplo.com"
+            className="settings-field"
           />
         </label>
 
-        <label className="mb-2 block text-xs font-semibold uppercase text-discord-text-muted">
+        <label className={fieldLabel}>
           Senha
           <input
             type="password"
@@ -183,22 +187,23 @@ function LoginScreen() {
             value={password}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+            placeholder={mode === "signup" ? "Pelo menos 6 caracteres" : "Sua senha"}
+            className="settings-field"
           />
         </label>
 
-        {mode === "signup" && <label className="mb-2 block text-xs font-semibold uppercase text-discord-text-muted">
+        {mode === "signup" && <label className={fieldLabel}>
           Confirmar senha
-          <input type="password" required minLength={6} value={confirmPassword} autoComplete="new-password" onChange={(e) => setConfirmPassword(e.target.value)} className="mt-1 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none" />
+          <input type="password" required minLength={6} value={confirmPassword} autoComplete="new-password" onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repita a senha" className="settings-field" />
         </label>}
 
-        {error && <p role="alert" className="mb-2 text-sm text-discord-danger">{error}</p>}
-        {success && <p role="status" className="mb-2 text-sm text-emerald-400">{success}</p>}
+        {error && <p role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
+        {success && <p role="status" className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">{success}</p>}
 
         <button
           type="submit"
           disabled={loading || Boolean(success)}
-          className="mt-4 w-full rounded bg-theme-gradient py-2.5 font-medium text-white hover:brightness-110 disabled:opacity-60"
+          className="mt-2 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 transition hover:brightness-110 disabled:opacity-60"
         >
           {loading ? (mode === "login" ? "Entrando..." : "Criando conta...") : (mode === "login" ? "Entrar" : "Criar conta")}
         </button>

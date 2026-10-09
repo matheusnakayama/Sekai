@@ -47,10 +47,13 @@ export function CreateChannelModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-lg bg-discord-bg-secondary p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-discord-header-primary">Criar canal</h2>
-          <button onClick={onClose} className="text-discord-text-muted hover:text-discord-text-normal">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-text-muted">Organização</p>
+            <h2 className="mt-1 text-lg font-bold text-discord-header-primary">Criar canal</h2>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" className="rounded-xl p-2 text-discord-text-muted transition hover:bg-white/5 hover:text-white">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -93,7 +96,7 @@ export function CreateChannelModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="novo-canal"
-          className="mb-4 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+          className="settings-field mb-4"
         />
 
         {categories.length > 0 && (
@@ -104,7 +107,7 @@ export function CreateChannelModal({
             <select
               value={categoryId ?? ""}
               onChange={(e) => setCategoryId(e.target.value || null)}
-              className="mb-4 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+              className="settings-field mb-4"
             >
               <option value="">Sem categoria</option>
               {categories.map((c) => (
@@ -121,7 +124,7 @@ export function CreateChannelModal({
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full rounded bg-theme-gradient py-2.5 font-medium text-white hover:brightness-110 disabled:opacity-60"
+          className="w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Criando..." : "Criar canal"}
         </button>

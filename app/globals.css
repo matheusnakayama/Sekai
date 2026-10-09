@@ -729,6 +729,47 @@ html[data-reduced-motion="true"] *::after {
   transform-origin: 50% 44%;
 }
 .settings-section-enter { animation: settings-section-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.settings-segment {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px;
+  border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  background: rgb(0 0 0 / 28%);
+}
+.settings-segment.w-full { width: 100%; }
+.settings-segment > button {
+  flex: 1 0 auto;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 62%);
+}
+.settings-segment > button[aria-pressed="true"] {
+  background-image: linear-gradient(135deg, var(--g1), var(--g3), var(--g5));
+  color: white;
+  box-shadow: 0 8px 18px rgb(0 0 0 / 22%);
+}
+.settings-field {
+  margin-top: 0.5rem;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(0 0 0 / 22%);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.875rem;
+  color: rgb(var(--d-text, 220 222 225));
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.settings-field:focus {
+  border-color: rgb(255 255 255 / 28%);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 8%);
+}
 .settings-profile-tab { position: relative; }
 .settings-profile-tab::after {
   position: absolute;

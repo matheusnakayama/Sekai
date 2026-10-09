@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Play, Volume2 } from "lucide-react";
+import { Ban, Hash, Inbox, Link2, Lock, MessageSquare, Play, Puzzle, ScrollText, Settings2, Shield, Sparkles, Users, Volume2, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useDialogs } from "@/components/DialogProvider";
 
@@ -134,7 +134,7 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
               <Toggle checked={prefs.blockInviteLinks} disabled={!canManage || !prefs.autoModEnabled} onChange={(value) => update("blockInviteLinks", value)} title="Bloquear links de convite" text="Bloqueia convites de servidor detectados no texto."/>
               <Field label="Modo lento padrão" hint="segundos por mensagem"><select value={prefs.slowmodeSeconds} disabled={!canManage} onChange={(event) => update("slowmodeSeconds", Number(event.target.value))} className={inputClass}>{[0, 3, 5, 10, 15, 30, 60].map((seconds) => <option key={seconds} value={seconds}>{seconds === 0 ? "Desativado" : `${seconds} segundos`}</option>)}</select></Field>
             </Card>
-            <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs leading-5 text-amber-100/80">Mensagens rejeitadas continuam aparecendo para o remetente como um aviso e não são gravadas no canal.</div>
+            <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-xs leading-5 text-amber-100/85">Mensagens rejeitadas continuam aparecendo para o remetente como um aviso e não são gravadas no canal.</div>
           </>}
 
           {section === "community" && <>
@@ -174,7 +174,39 @@ export function ServerMetricsPanel({ serverId, serverName }: { serverId: string;
     void load();
     return () => { cancelled = true; };
   }, [serverId, supabase]);
-  return <div className="mx-auto max-w-3xl"><Header title="Engajamento" description={`Acompanhe a atividade de ${serverName} com dados reais do servidor.`}/>{loading ? <p className="text-sm text-discord-text-muted">Calculando…</p> : <div className="grid gap-3 sm:grid-cols-2">{[["Membros", counts.members], ["Canais", counts.channels], ["Convites", counts.invites], ["Mensagens", counts.messages]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-5"><p className="text-xs font-semibold uppercase tracking-wider text-discord-text-muted">{label}</p><p className="mt-3 text-3xl font-bold text-discord-header-primary">{value}</p></div>)}</div>}<div className="mt-5 rounded-xl border border-white/[0.08] p-4"><h3 className="font-semibold text-discord-header-primary">Vantagens de impulso</h3><p className="mt-2 text-sm leading-6 text-discord-text-muted">O Sekai ainda não processa impulsos ou pagamentos. As chamadas de voz usam o serviço LiveKit configurado pelo administrador do projeto.</p></div></div>;
+  const stats: { label: string; value: number; icon: LucideIcon }[] = [
+    { label: "Membros", value: counts.members, icon: Users },
+    { label: "Canais", value: counts.channels, icon: Hash },
+    { label: "Convites", value: counts.invites, icon: Link2 },
+    { label: "Mensagens", value: counts.messages, icon: MessageSquare },
+  ];
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Engajamento" description={`Acompanhe a atividade de ${serverName} com os números reais do servidor.`} />
+      {loading ? <p className="text-sm text-discord-text-muted">Calculando…</p> : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {stats.map((stat) => (
+            <article key={stat.label} className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-bold uppercase tracking-[.14em] text-discord-text-muted">{stat.label}</p>
+                <span className="grid h-8 w-8 place-items-center rounded-xl bg-white/[0.05] text-discord-text-muted"><stat.icon className="h-4 w-4" /></span>
+              </div>
+              <p className="mt-4 text-3xl font-bold tabular-nums text-discord-header-primary">{stat.value}</p>
+            </article>
+          ))}
+        </div>
+      )}
+      <div className="mt-5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-discord-text-muted"><Sparkles className="h-4 w-4" /></span>
+          <div>
+            <h3 className="font-semibold text-discord-header-primary">Vantagens de impulso</h3>
+            <p className="mt-1 text-sm leading-6 text-discord-text-muted">O Sekai ainda não processa impulsos ou pagamentos. As chamadas de voz usam o serviço configurado por quem mantém o projeto.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, onAudit, onPlaySoundEffect }: { serverId: string; currentUserId: string; kind: "emoji" | "sticker" | "sound"; canManage: boolean; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void>; onPlaySoundEffect?: (serverId: string, sound: { id: string; name: string; asset_url: string }) => Promise<boolean> }) {
@@ -274,11 +306,18 @@ export function ServerAssetsPanel({ serverId, currentUserId, kind, canManage, on
   return (
     <div className="mx-auto max-w-3xl">
       <Header title={labels[kind][0]} description={labels[kind][1]} />
-      {canManage && <form onSubmit={(event) => void addAsset(event)} className="mb-5 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10">
+      {canManage && <form onSubmit={(event) => void addAsset(event)} className="mb-5 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10 sm:p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/[0.05] text-discord-text-muted"><Sparkles className="h-4 w-4" /></span>
+          <div>
+            <h3 className="text-sm font-semibold text-discord-header-primary">Novo recurso</h3>
+            <p className="text-xs text-discord-text-muted">O nome vira o atalho usado no chat.</p>
+          </div>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Nome curto"><input value={name} onChange={(event) => setName(event.target.value)} placeholder={kind === "sound" ? "ex: bankai" : "ex: festa"} className={inputClass} /></Field>
           {kind === "emoji" && <Field label="Emoji Unicode"><input value={emoji} onChange={(event) => setEmoji(event.target.value)} placeholder="🎉 (opcional se enviar imagem)" className={inputClass} /></Field>}
-          <Field label={fileLabel}><input type="file" accept={fileAccept} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="mt-2 block w-full text-xs text-discord-text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" /></Field>
+          <Field label={fileLabel}><input type="file" accept={fileAccept} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="settings-field cursor-pointer py-2 text-xs text-discord-text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" /></Field>
         </div>
         {kind === "sound" && <p className="mt-2 text-xs text-discord-text-muted">Entre em uma chamada de voz deste servidor para transmitir os sons. Fora da chamada, o botão toca apenas uma prévia local.</p>}
         {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
@@ -315,7 +354,29 @@ export function ServerBansPanel({ serverId, canManage, onAudit }: { serverId: st
   async function load() { const { data, error: loadError } = await supabase.from("guild_bans").select("user_id,reason,created_at,profiles(username,display_name)").eq("server_id", serverId).order("created_at", { ascending: false }); setRows(data ?? []); setError(loadError?.message ?? ""); }
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [serverId]);
   async function unban(userId: string) { const { error: deleteError } = await supabase.from("guild_bans").delete().match({ server_id: serverId, user_id: userId }); if (deleteError) { setError(deleteError.message); return; } await onAudit("member.unban", userId); await load(); }
-  return <div className="mx-auto max-w-3xl"><Header title="Banimentos" description="Revise os banimentos e permita que uma pessoa volte ao servidor."/>{error && <p className="mb-3 text-sm text-red-300">{error}</p>}{rows.length === 0 ? <Empty title="Nenhum banimento ativo" text="Quando alguém for banido, o registro e o motivo aparecerão nesta lista."/> : <div className="space-y-2">{rows.map((row) => <div key={row.user_id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><div className="min-w-0 flex-1"><p className="truncate font-semibold text-white">{row.profiles?.display_name || row.profiles?.username || row.user_id}</p><p className="mt-1 text-xs text-discord-text-muted">{row.reason || "Sem motivo informado"} · {new Date(row.created_at).toLocaleDateString("pt-BR")}</p></div>{canManage && <button onClick={() => void unban(row.user_id)} className="rounded-lg bg-white/5 px-3 py-2 text-xs font-semibold text-discord-text-normal hover:bg-white/10">Desbanir</button>}</div>)}</div>}</div>;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Banimentos" description="Revise quem está impedido de entrar e libere o acesso quando fizer sentido." />
+      {error && <p className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
+      {rows.length === 0 ? <Empty icon={Ban} title="Nenhum banimento ativo" text="Quando alguém for banido, o nome, a data e o motivo aparecem nesta lista." /> : (
+        <div className="space-y-2">
+          {rows.map((row) => {
+            const label = row.profiles?.display_name || row.profiles?.username || "Membro";
+            return (
+              <article key={row.user_id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-500/15 text-sm font-bold text-rose-100">{String(label).slice(0, 1).toUpperCase()}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-white">{label}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-discord-text-muted">{row.reason || "Sem motivo informado"} · {new Date(row.created_at).toLocaleDateString("pt-BR")}</p>
+                </div>
+                {canManage && <button onClick={() => void unban(row.user_id)} className="rounded-xl bg-white/[0.06] px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/10">Desbanir</button>}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ServerAuditPanel({ serverId, canView }: { serverId: string; canView: boolean }) {
@@ -323,17 +384,40 @@ export function ServerAuditPanel({ serverId, canView }: { serverId: string; canV
   const [rows, setRows] = useState<any[]>([]);
   const [error, setError] = useState("");
   useEffect(() => { if (!canView) return; let cancelled = false; void (async () => { const { data, error: resultError } = await supabase.from("server_audit_logs").select("id,actor_id,action,target,details,created_at,profiles(username,display_name)").eq("server_id", serverId).order("created_at", { ascending: false }).limit(100); if (cancelled) return; setRows(data ?? []); setError(resultError?.message ?? ""); })(); return () => { cancelled = true; }; }, [serverId, supabase, canView]);
-  const actionLabels: Record<string, string> = {
-    "member.kick": "Membro expulso",
-    "member.ban": "Membro banido",
-    "member.role.add": "Cargo atribuído",
-    "member.role.remove": "Cargo removido",
-    "role.create": "Cargo criado",
-    "role.update": "Cargo atualizado",
-    "role.delete": "Cargo excluído",
-    "role.permissions.update": "Permissões de cargo alteradas",
-  };
-  return <div className="mx-auto max-w-3xl"><Header title="Registro de auditoria" description="Ações administrativas recentes registradas no servidor."/>{!canView ? <Empty title="Sem permissão para visualizar" text="A permissão Ver registro de auditoria é necessária para abrir esta página."/> : error ? <p className="mb-3 text-sm text-red-300">{error}</p> : rows.length === 0 ? <Empty title="Sem atividades registradas" text="Alterações administrativas aparecerão aqui conforme forem feitas."/> : <div className="space-y-2">{rows.map((row) => <article key={row.id} className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-discord-header-primary">{actionLabels[row.action] || row.action.replace(/[._]/g, " ")}</p><time className="text-xs text-discord-text-muted">{new Date(row.created_at).toLocaleString("pt-BR")}</time></div><p className="mt-1 text-sm text-discord-text-normal">{row.target || "Servidor"} <span className="text-discord-text-muted">por {row.profiles?.display_name || row.profiles?.username || "administrador"}</span></p>{row.details?.role_name && <p className="mt-1 text-xs text-discord-text-muted">Cargo: {row.details.role_name}</p>}{row.details?.reason && <p className="mt-1 text-xs text-discord-text-muted">Motivo: {row.details.reason}</p>}</article>)}</div>}</div>;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Registro de auditoria" description="As ações administrativas recentes ficam nesta linha do tempo, com quem fez e quando." />
+      {!canView ? <Empty icon={Lock} title="Sem permissão para visualizar" text="A permissão Ver registro de auditoria é necessária para abrir esta página." /> : error ? <p className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p> : rows.length === 0 ? <Empty icon={ScrollText} title="Sem atividades registradas" text="Alterações de cargos, membros, emojis e segurança aparecem aqui conforme forem feitas." /> : (
+        <ol className="space-y-2">
+          {rows.map((row) => {
+            const tone = auditTone(row.action);
+            const Icon = tone.icon;
+            const actor = row.profiles?.display_name || row.profiles?.username || "administrador";
+            return (
+              <li key={row.id}>
+                <article className="flex gap-3 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4">
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone.className}`}><Icon className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-semibold text-discord-header-primary">{actionTitle(row.action)}</p>
+                      <time className="rounded-full bg-white/[0.05] px-2 py-1 text-[11px] text-discord-text-muted" dateTime={row.created_at}>{new Date(row.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
+                    </div>
+                    <p className="mt-1 text-sm text-discord-text-normal">{row.target || "Servidor"} <span className="text-discord-text-muted">· {actor}</span></p>
+                    {(row.details?.role_name || row.details?.reason) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {row.details?.role_name && <span className="rounded-lg bg-white/[0.04] px-2.5 py-1 text-[11px] text-discord-text-muted">Cargo · {row.details.role_name}</span>}
+                        {row.details?.reason && <span className="rounded-lg bg-white/[0.04] px-2.5 py-1 text-[11px] text-discord-text-muted">Motivo · {row.details.reason}</span>}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
 }
 
 export function ServerTemplatePanel({ serverId, serverName }: { serverId: string; serverName: string }) {
@@ -353,7 +437,14 @@ export function ServerTemplatePanel({ serverId, serverName }: { serverId: string
     const blob = new Blob([JSON.stringify({ format: "sekai-server-template", version: 1, name: serverName, exportedAt: new Date().toISOString(), categories, channels, roles }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `${serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-template.json`; link.click(); URL.revokeObjectURL(url);
   }
-  return <div className="mx-auto max-w-3xl"><Header title="Modelo do servidor" description="Exporte a estrutura do servidor para reutilizá-la como referência."/><Card title="Exportar estrutura" description="O arquivo contém categorias, canais e cargos. Ele não inclui membros, mensagens, credenciais nem convites."><button disabled={busy} onClick={() => void exportTemplate()} className="rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Preparando arquivo…" : "Baixar modelo JSON"}</button></Card></div>;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Modelo do servidor" description="Exporte a estrutura do servidor para reutilizá-la como referência." />
+      <Card title="Exportar estrutura" description="O arquivo contém categorias, canais e cargos. Ele não inclui membros, mensagens, credenciais nem convites.">
+        <button disabled={busy} onClick={() => void exportTemplate()} className="rounded-xl bg-theme-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-md disabled:opacity-50">{busy ? "Preparando arquivo…" : "Baixar modelo JSON"}</button>
+      </Card>
+    </div>
+  );
 }
 
 export function ServerIntegrationPanel() {
@@ -362,16 +453,126 @@ export function ServerIntegrationPanel() {
     { name: "Pusher", detail: "Presença e eventos em tempo real", ready: !!process.env.NEXT_PUBLIC_PUSHER_KEY },
     { name: "Supabase", detail: "Contas, mensagens, membros e armazenamento", ready: !!process.env.NEXT_PUBLIC_SUPABASE_URL },
   ];
-  return <div className="mx-auto max-w-3xl"><Header title="Integrações" description="Serviços usados pelo Sekai. Credenciais secretas nunca são exibidas neste painel."/><div className="space-y-3">{rows.map((row) => <div key={row.name} className="flex items-center gap-4 rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4"><span className={`h-2.5 w-2.5 rounded-full ${row.ready ? "bg-emerald-400" : "bg-amber-400"}`}/><div className="min-w-0 flex-1"><p className="font-semibold text-discord-header-primary">{row.name}</p><p className="text-xs text-discord-text-muted">{row.detail}</p></div><span className={`text-xs font-semibold ${row.ready ? "text-emerald-300" : "text-amber-200"}`}>{row.ready ? "Configurado" : "Pendente"}</span></div>)}</div><p className="mt-4 rounded-xl border border-white/[0.08] p-4 text-sm leading-6 text-discord-text-muted">Integrações são configuradas por quem mantém o projeto no Vercel. Esta tela mostra apenas se a variável pública existe; ela nunca mostra chaves privadas.</p></div>;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Integrações" description="Serviços usados pelo Sekai. Credenciais secretas nunca aparecem neste painel." />
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <article key={row.name} className="flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-discord-text-muted"><Puzzle className="h-4 w-4" /></span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-discord-header-primary">{row.name}</p>
+              <p className="text-xs text-discord-text-muted">{row.detail}</p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${row.ready ? "bg-emerald-400/10 text-emerald-200" : "bg-amber-300/10 text-amber-100"}`}>{row.ready ? "Configurado" : "Pendente"}</span>
+          </article>
+        ))}
+      </div>
+      <p className="mt-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 text-sm leading-6 text-discord-text-muted">As integrações são configuradas por quem mantém o projeto. Esta tela mostra apenas se a variável pública existe.</p>
+    </div>
+  );
 }
 
 export function ServerDirectoryPanel() {
-  return <div className="mx-auto max-w-3xl"><Header title="Diretório de apps" description="Conecte automações e serviços ao servidor."/><Empty title="O catálogo de aplicativos ainda não está conectado" text="O Sekai não possui um diretório de bots de terceiros. As integrações disponíveis ficam na página Integrações e são configuradas pelo administrador do projeto."/></div>;
+  return (
+    <div className="mx-auto max-w-3xl">
+      <Header title="Diretório de apps" description="Conecte automações e serviços ao servidor." />
+      <Empty icon={Puzzle} title="O catálogo de aplicativos ainda não está conectado" text="O Sekai não possui um diretório de bots de terceiros. As integrações disponíveis ficam na página Integrações." />
+    </div>
+  );
 }
 
-function Header({ title, description }: { title: string; description: string }) { return <header className="mb-6 border-b border-white/[0.08] pb-5"><p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-brand">Configurações do servidor</p><h2 className="mt-1 text-2xl font-bold text-discord-header-primary">{title}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">{description}</p></header>; }
-function Empty({ title, text }: { title: string; text: string }) { return <div className="rounded-xl border border-dashed border-white/10 px-5 py-10 text-center"><p className="font-semibold text-discord-header-primary">{title}</p><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-discord-text-muted">{text}</p></div>; }
-function Card({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="rounded-xl border border-white/[0.08] bg-discord-bg-primary p-4 sm:p-5"><h3 className="font-semibold text-discord-header-primary">{title}</h3><p className="mb-4 mt-1 text-xs leading-5 text-discord-text-muted">{description}</p>{children}</section>; }
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) { return <label className="mb-4 block last:mb-0"><span className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">{label}{hint && <span className="font-normal normal-case">{hint}</span>}</span>{children}</label>; }
-function Toggle({ checked, disabled, onChange, title, text }: { checked: boolean; disabled: boolean; onChange: (value: boolean) => void; title: string; text: string }) { return <div className="flex items-center gap-4 border-t border-white/[0.06] py-4 first:border-0 first:pt-0"><div className="flex-1"><p className="text-sm font-medium text-discord-text-normal">{title}</p><p className="mt-1 text-xs leading-5 text-discord-text-muted">{text}</p></div><button type="button" role="switch" aria-checked={checked} aria-label={title} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-discord-brand" : "bg-white/15"}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${checked ? "left-6" : "left-1"}`}/></button></div>; }
-const inputClass = "mt-2 w-full rounded-lg border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-sm text-discord-text-normal outline-none transition placeholder:text-discord-text-muted/60 focus:border-discord-brand/70 disabled:opacity-55";
+const ACTION_LABELS: Record<string, string> = {
+  "member.kick": "Membro expulso",
+  "member.ban": "Membro banido",
+  "member.unban": "Banimento removido",
+  "member.role.add": "Cargo atribuído",
+  "member.role.remove": "Cargo removido",
+  "role.create": "Cargo criado",
+  "role.update": "Cargo atualizado",
+  "role.delete": "Cargo excluído",
+  "role.permissions.update": "Permissões de cargo alteradas",
+  "role.permissions.clear_group": "Grupo de permissões limpo",
+  "role.reorder": "Ordem dos cargos alterada",
+  "role.icon.update": "Ícone de cargo atualizado",
+  "role.icon.remove": "Ícone de cargo removido",
+  "role.insignia.update": "Insígnia de cargo atualizada",
+  "role.insignia.remove": "Insígnia de cargo removida",
+  "settings.tag": "Tag do servidor atualizada",
+  "settings.access": "Acesso atualizado",
+  "settings.security": "Segurança atualizada",
+  "settings.automod": "AutoMod atualizado",
+  "settings.community": "Comunidade atualizada",
+  "asset.emoji.create": "Emoji adicionado",
+  "asset.emoji.delete": "Emoji removido",
+  "asset.sticker.create": "Figurinha adicionada",
+  "asset.sticker.delete": "Figurinha removida",
+  "asset.sound.create": "Efeito sonoro adicionado",
+  "asset.sound.delete": "Efeito sonoro removido",
+  "soundboard.play": "Efeito sonoro reproduzido",
+};
+
+function actionTitle(action: string) {
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  return action.split(".").filter(Boolean).map((part) => part.replace(/_/g, " ")).join(" · ");
+}
+
+function auditTone(action: string): { icon: LucideIcon; className: string } {
+  if (action.includes("ban") || action.includes("kick") || action.includes("delete") || action.includes("remove")) {
+    return { icon: Ban, className: "bg-rose-500/15 text-rose-200" };
+  }
+  if (action.startsWith("role")) return { icon: Shield, className: "bg-white/10 text-white" };
+  if (action.startsWith("asset") || action.startsWith("sound")) return { icon: Sparkles, className: "bg-amber-300/10 text-amber-100" };
+  if (action.startsWith("settings")) return { icon: Settings2, className: "bg-white/10 text-white" };
+  return { icon: ScrollText, className: "bg-white/10 text-white/80" };
+}
+
+function Header({ title, description }: { title: string; description: string }) {
+  return (
+    <header className="mb-6">
+      <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Configurações do servidor</p>
+      <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">{title}</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">{description}</p>
+    </header>
+  );
+}
+function Empty({ title, text, icon: Icon = Inbox }: { title: string; text: string; icon?: LucideIcon }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-12 text-center">
+      <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white/[0.04] text-discord-text-muted"><Icon className="h-5 w-5" /></span>
+      <p className="mt-4 font-semibold text-discord-header-primary">{title}</p>
+      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-discord-text-muted">{text}</p>
+    </div>
+  );
+}
+function Card({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10 sm:p-5">
+      <h3 className="font-semibold text-discord-header-primary">{title}</h3>
+      <p className="mb-4 mt-1 text-xs leading-5 text-discord-text-muted">{description}</p>
+      {children}
+    </section>
+  );
+}
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <label className="mb-4 block last:mb-0">
+      <span className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">{label}{hint && <span className="font-normal normal-case tracking-normal">{hint}</span>}</span>
+      {children}
+    </label>
+  );
+}
+function Toggle({ checked, disabled, onChange, title, text }: { checked: boolean; disabled: boolean; onChange: (value: boolean) => void; title: string; text: string }) {
+  return (
+    <div className="flex items-center gap-4 border-t border-white/[0.06] py-4 first:border-0 first:pt-0">
+      <div className="flex-1">
+        <p className="text-sm font-medium text-discord-text-normal">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-discord-text-muted">{text}</p>
+      </div>
+      <button type="button" role="switch" aria-checked={checked} aria-label={title} disabled={disabled} onClick={() => onChange(!checked)} className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? "bg-white/85" : "bg-white/15"}`}>
+        <span className={`absolute top-1 h-4 w-4 rounded-full transition ${checked ? "left-6 bg-[#14161a]" : "left-1 bg-white"}`} />
+      </button>
+    </div>
+  );
+}
+const inputClass = "settings-field disabled:opacity-55";

@@ -59,35 +59,22 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-discord-bg-secondary p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-discord-header-primary">
-            {mode === "create" ? "Crie seu servidor" : "Entrar em um servidor"}
-          </h2>
-          <button onClick={onClose} className="text-discord-text-muted hover:text-discord-text-normal">
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 shadow-2xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-text-muted">Servidor</p>
+            <h2 className="mt-1 text-xl font-bold text-discord-header-primary">
+              {mode === "create" ? "Crie seu servidor" : "Entrar em um servidor"}
+            </h2>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" className="rounded-xl p-2 text-discord-text-muted transition hover:bg-white/5 hover:text-white">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="mb-5 flex gap-2 rounded-lg bg-discord-bg-primary p-1">
-          <button
-            onClick={() => setMode("create")}
-            className={cn(
-              "flex-1 rounded-md py-1.5 text-sm font-medium",
-              mode === "create" ? "bg-theme-gradient text-white" : "text-discord-text-muted"
-            )}
-          >
-            Criar
-          </button>
-          <button
-            onClick={() => setMode("join")}
-            className={cn(
-              "flex-1 rounded-md py-1.5 text-sm font-medium",
-              mode === "join" ? "bg-theme-gradient text-white" : "text-discord-text-muted"
-            )}
-          >
-            Já tenho um convite
-          </button>
+        <div className="settings-segment mb-5 w-full">
+          <button type="button" aria-pressed={mode === "create"} onClick={() => setMode("create")}>Criar</button>
+          <button type="button" aria-pressed={mode === "join"} onClick={() => setMode("join")}>Já tenho um convite</button>
         </div>
 
         {mode === "create" ? (
@@ -107,7 +94,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
                   </div>
                 )}
               </div>
-              <label className="cursor-pointer rounded bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">
+              <label className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-discord-text-normal transition hover:bg-white/[0.08]">
                 Enviar ícone
                 <input type="file" accept="image/gif,image/*" className="hidden" onChange={handleIconPick} />
               </label>
@@ -122,7 +109,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Servidor do(a) {seu nome}"
-              className="mb-2 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+              className="settings-field mb-2"
             />
             <p className="mb-2 mt-3 text-xs font-semibold uppercase tracking-wide text-discord-text-muted">Escolha um modelo</p>
             <div className="grid max-h-52 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
@@ -158,7 +145,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="ex: 8f3a1b2c"
-              className="mb-2 w-full rounded bg-discord-bg-primary px-3 py-2.5 text-discord-text-normal focus:outline-none"
+              className="settings-field mb-2"
             />
           </>
         )}
@@ -168,7 +155,7 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="mt-3 w-full rounded bg-theme-gradient py-2.5 font-medium text-white hover:brightness-110 disabled:opacity-60"
+          className="mt-3 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Aguarde..." : mode === "create" ? "Criar servidor" : "Entrar"}
         </button>
