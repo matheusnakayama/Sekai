@@ -1,9 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_THEME, THEMES, THEME_STORAGE_KEY } from "@/lib/themes";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { DEFAULT_THEME, THEMES, THEME_STORAGE_KEY, type ThemeOption } from "@/lib/themes";
 
 const THEME_EVENT = "sekai-theme-change";
+const UNLOCK_EVENT = "sekai-theme-unlocks";
+
+let cachedUnlocks: string[] = [];
+let unlocksKnown = false;
+let refreshPromise: Promise<string[]> | null = null;
+
+export function refreshUnlockedThemes() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = loadUnlockedThemes().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+async function loadUnlockedThemes() {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) {
+      cachedUnlocks = [];
+      unlocksKnown = true;
+    } else {
+      const { data, error } = await supabase.from("user_theme_unlocks").select("theme_id").eq("user_id", userId);
+      if (error) return cachedUnlocks;
+      cachedUnlocks = (data ?? []).map((row) => String(row.theme_id));
+      unlocksKnown = true;
+    }
+  } catch {
+    return cachedUnlocks;
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(UNLOCK_EVENT));
+  return cachedUnlocks;
+}
+
+export function visibleThemes(unlockedIds: readonly string[]): ThemeOption[] {
+  const unlocked = new Set(unlockedIds);
+  return THEMES.filter((item) => !item.secret || unlocked.has(item.id));
+}
 
 function isValidTheme(id: string | null): id is string {
   return !!id && THEMES.some((theme) => theme.id === id);
@@ -37,6 +77,8 @@ function applyTheme(id: string) {
   document.documentElement.setAttribute("data-theme", id);
   const selected = THEMES.find((item) => item.id === id);
   const root = document.documentElement;
+  if (selected?.overlay) root.setAttribute("data-theme-overlay", selected.overlay);
+  else root.removeAttribute("data-theme-overlay");
   ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900"].forEach((step) => root.style.removeProperty(`--brand-${step}`));
   [
     "--d-brand", "--d-brand-hover", "--surface", "--surface-soft", "--surface-card", "--surface-border",
@@ -76,8 +118,16 @@ function applyTheme(id: string) {
  * Tema visual do Sekai (só muda as cores). A escolha fica salva neste navegador
  * e é sincronizada entre abas e entre os seletores abertos na mesma página.
  */
+function themeIsSelectable(id: string) {
+  const option = THEMES.find((item) => item.id === id);
+  if (!option) return false;
+  return !option.secret || cachedUnlocks.includes(id);
+}
+
 export function useTheme() {
   const [theme, setThemeState] = useState<string>(DEFAULT_THEME);
+  const [unlockedIds, setUnlockedIds] = useState<string[]>(cachedUnlocks);
+  const themes = useMemo(() => visibleThemes(unlockedIds), [unlockedIds]);
 
   useEffect(() => {
     const current = readStoredTheme();
@@ -90,20 +140,40 @@ export function useTheme() {
       applyTheme(next);
     }
 
+    function syncUnlocks() {
+      setUnlockedIds([...cachedUnlocks]);
+      if (!unlocksKnown) return;
+      const stored = readStoredTheme();
+      const option = THEMES.find((item) => item.id === stored);
+      if (option?.secret && !cachedUnlocks.includes(stored)) {
+        try {
+          window.localStorage.setItem(THEME_STORAGE_KEY, DEFAULT_THEME);
+        } catch {
+          // O tema padrão vale só até recarregar a página.
+        }
+        applyTheme(DEFAULT_THEME);
+        setThemeState(DEFAULT_THEME);
+        window.dispatchEvent(new Event(THEME_EVENT));
+      }
+    }
+
     function onStorage(event: StorageEvent) {
       if (event.key === THEME_STORAGE_KEY) sync();
     }
 
+    void refreshUnlockedThemes();
     window.addEventListener("storage", onStorage);
     window.addEventListener(THEME_EVENT, sync);
+    window.addEventListener(UNLOCK_EVENT, syncUnlocks);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(THEME_EVENT, sync);
+      window.removeEventListener(UNLOCK_EVENT, syncUnlocks);
     };
   }, []);
 
   const setTheme = useCallback((id: string) => {
-    if (!isValidTheme(id)) return;
+    if (!themeIsSelectable(id)) return;
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, id);
     } catch {
@@ -114,5 +184,5 @@ export function useTheme() {
     window.dispatchEvent(new Event(THEME_EVENT));
   }, []);
 
-  return { theme, setTheme };
+  return { theme, setTheme, themes, unlockedIds };
 }

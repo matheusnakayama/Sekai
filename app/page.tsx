@@ -20,6 +20,7 @@ import { MemberList, MemberItem, ServerRoleOption } from "@/components/MemberLis
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
+import { refreshUnlockedThemes } from "@/lib/useTheme";
 import { FriendsHome } from "@/components/FriendsHome";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
@@ -1668,7 +1669,8 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null) {
-    if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content)) {
+    const isBankai = /^!bankai$/i.test(content.trim());
+    if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content) || isBankai) {
       const result = await executeSlashCommand(content, {
         serverId: activeServerId,
         channelId: activeChannelId,
@@ -1681,7 +1683,15 @@ export default function Home() {
           return found?.id ?? null;
         },
       });
-      if (!result.ok) console.warn(result.message);
+      if (isBankai && result.ok) {
+        await refreshUnlockedThemes();
+        await loadMyProfile();
+        await loadChannelsAndMembers();
+      }
+      if (!result.ok) {
+        console.warn(result.message);
+        if (isBankai) await dialogs.notify({ title: "Bankai", message: result.message });
+      }
       return;
     }
     // Dispare no próprio gesto de envio, antes de qualquer verificação assíncrona.

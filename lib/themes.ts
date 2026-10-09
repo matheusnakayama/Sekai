@@ -1,8 +1,14 @@
+import { BANKAI_THEMES } from "@/lib/bankai";
+
 export interface ThemeOption {
   id: string;
   name: string;
   stops: string[]; // 7 cores do gradiente, da mais clara para a mais escura
   backgroundStops?: [string, string]; // o fundo usa apenas duas cores
+  /** Tema secreto: só entra na lista depois de desbloqueado. */
+  secret?: boolean;
+  /** Detalhe visual sobre o fundo, usado pelos temas de Bankai. */
+  overlay?: "ash" | "stitch" | "slash" | "rings";
 }
 
 export const DEFAULT_THEME = "azul";
@@ -216,4 +222,5 @@ export const THEMES: ThemeOption[] = [
   { id: "champanhe", name: "Champanhe", stops: ["#fff7ed", "#fed7aa", "#fbbf24", "#d97706", "#a55b2a", "#693f36", "#2a2932"], backgroundStops: ["#42322b", "#1e1d20"] },
   { id: "tropical", name: "Tropical", stops: ["#d1fae5", "#6ee7b7", "#34d399", "#14b8a6", "#0e7490", "#1d4ed8", "#312e81"], backgroundStops: ["#164a52", "#171a35"] },
   { id: "neon-cereja", name: "Neon cereja", stops: ["#ffe4e6", "#fda4af", "#fb7185", "#e11d48", "#c026d3", "#7e22ce", "#32185a"], backgroundStops: ["#4b2039", "#1b1423"] },
+  ...BANKAI_THEMES,
 ];

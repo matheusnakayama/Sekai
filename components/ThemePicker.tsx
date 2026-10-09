@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Palette } from "lucide-react";
-import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/useTheme";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +18,7 @@ function gradientOf(stops: string[]) {
 }
 
 export default function ThemePicker({ placement = "down", align = "right", className }: ThemePickerProps) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, themes } = useTheme();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -96,7 +95,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
             Cor do tema
           </p>
           <div className="grid grid-cols-3 gap-2">
-            {THEMES.map((option) => {
+            {themes.map((option) => {
               const active = option.id === theme;
               return (
                 <button
@@ -123,6 +122,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
                   <span className="block h-1 w-full" style={{ backgroundImage: gradientOf(option.stops) }} />
                   <span className="block truncate px-2 py-1.5 text-[11px] font-semibold text-discord-text-normal">
                     {option.name}
+                    {option.secret && <span className="mt-0.5 block text-[9px] font-medium uppercase tracking-wide text-discord-text-muted">Secreto</span>}
                   </span>
                 </button>
               );

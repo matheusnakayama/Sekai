@@ -230,12 +230,16 @@ export function ChatArea({
     setSelectedProfile(member);
   }
 
-  const showAutocomplete = draft.startsWith("/") && draft.length > 0;
+  const commandPrefix = draft.startsWith("!") ? "!" : draft.startsWith("/") ? "/" : "";
+  const showAutocomplete = commandPrefix !== "" && !draft.includes(" ");
   const filteredCommands = useMemo(() => {
     if (!showAutocomplete) return [];
     const query = draft.slice(1).toLowerCase();
-    return slashCommands.filter((cmd) => cmd.name.toLowerCase().startsWith(query));
-  }, [draft, showAutocomplete, slashCommands]);
+    return slashCommands.filter((cmd) => {
+      const prefix = cmd.usage?.startsWith("!") ? "!" : "/";
+      return prefix === commandPrefix && cmd.name.toLowerCase().startsWith(query);
+    });
+  }, [commandPrefix, draft, showAutocomplete, slashCommands]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -245,8 +249,8 @@ export function ChatArea({
     setDraft("");
   }
 
-  function pickCommand(name: string) {
-    setDraft(`/${name} `);
+  function pickCommand(name: string, prefix = "/") {
+    setDraft(`${prefix}${name} `);
   }
 
   function appendEmoji(value: string) {
@@ -402,15 +406,15 @@ export function ChatArea({
         {showAutocomplete && filteredCommands.length > 0 && (
           <div className="absolute bottom-[calc(100%+8px)] w-full overflow-hidden rounded-lg bg-discord-bg-floating shadow-xl">
             <div className="border-b border-black/30 px-3 py-2 text-xs font-semibold uppercase text-discord-text-muted">
-              Comandos com barra
+              {commandPrefix === "!" ? "Comandos" : "Comandos com barra"}
             </div>
             {filteredCommands.map((cmd) => (
               <button
                 key={cmd.name}
-                onClick={() => pickCommand(cmd.name)}
+                onClick={() => pickCommand(cmd.name, cmd.usage?.startsWith("!") ? "!" : "/")}
                 className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-discord-bg-modifier-hover"
               >
-                <span className="font-medium text-discord-header-primary">/{cmd.name}</span>
+                <span className="font-medium text-discord-header-primary">{cmd.usage?.startsWith("!") ? "!" : "/"}{cmd.name}</span>
                 <span className="truncate pl-3 text-xs text-discord-text-muted">{cmd.description}</span>
               </button>
             ))}

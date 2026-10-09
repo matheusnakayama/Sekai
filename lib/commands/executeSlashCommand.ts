@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { refreshUnlockedThemes } from "@/lib/useTheme";
 import type { SlashCommand } from "@/components/ChatArea";
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -9,6 +10,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "help", description: "Lista todos os comandos disponíveis", usage: "/help" },
   { name: "roll", description: "Rola um dado de N lados (padrão 6)", usage: "/roll [N]" },
   { name: "troll", description: "Envia uma simulação visual inofensiva para um membro abrir se quiser", usage: ".troll @usuario" },
+  { name: "bankai", description: "Sorteia uma Bankai, com insígnia e tema secreto", usage: "!bankai" },
 ];
 
 interface CommandContext {
@@ -22,6 +24,8 @@ interface CommandContext {
 export interface CommandResult {
   ok: boolean;
   message: string; // feedback exibido só para quem executou (ex: mensagem de sistema local)
+  /** Tema secreto desbloqueado neste sorteio, para atualizar a aparência. */
+  unlockedThemeId?: string | null;
 }
 
 /**
@@ -35,12 +39,25 @@ export async function executeSlashCommand(
   ctx: CommandContext
 ): Promise<CommandResult> {
   const supabase = createClient();
-  const [cmdName, ...args] = raw.trim().replace(/^[/.]/, "").split(/\s+/);
+  const [cmdName, ...args] = raw.trim().replace(/^[/.!]/, "").split(/\s+/);
 
   switch (cmdName) {
     case "help": {
-      const list = SLASH_COMMANDS.map((c) => `**/${c.name}** — ${c.description}`).join("\n");
+      const list = SLASH_COMMANDS.map((c) => `**${c.usage ?? `/${c.name}`}** — ${c.description}`).join("\n");
       return { ok: true, message: list };
+    }
+
+    case "bankai": {
+      if (args.length > 0) return { ok: false, message: "Use apenas !bankai." };
+      const { data, error } = await supabase.rpc("sekai_roll_bankai", { p_channel_id: ctx.channelId });
+      if (error) return { ok: false, message: error.message };
+      const reward = (data ?? {}) as { message?: string; themeId?: string; unlockedTheme?: boolean };
+      if (reward.unlockedTheme) await refreshUnlockedThemes();
+      return {
+        ok: true,
+        message: reward.message || "Bankai liberada.",
+        unlockedThemeId: reward.unlockedTheme ? reward.themeId ?? null : null,
+      };
     }
 
     case "roll": {

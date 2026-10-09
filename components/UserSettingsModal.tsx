@@ -9,7 +9,6 @@ import { createClient } from "@/lib/supabase/client";
 import type { MemberItem } from "@/components/MemberList";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import type { CustomBadge } from "@/lib/badges";
-import { THEMES } from "@/lib/themes";
 import { useTheme } from "@/lib/useTheme";
 import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/ProfileImageModals";
 import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
@@ -86,7 +85,7 @@ function uploadExtension(file: File) {
 
 export function UserSettingsModal({ userId, serverId, initial, members = [], onClose, onSaved }: UserSettingsModalProps) {
   const supabase = createClient();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, themes } = useTheme();
   const [section, setSection] = useState<Section>("perfil");
   const [profileScope, setProfileScope] = useState<"user" | "server">("user");
   const [displayName, setDisplayName] = useState(initial.displayName);
@@ -573,8 +572,8 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], onC
               </section>}
 
               {section === "aparencia" && <section className="settings-section-enter">
-                <SectionIntro eyebrow="Seu espaço" title="Aparência" text="Escolha cores e uma densidade de interface que combine com você."/>
-                <div className="mb-7"><h4 className="mb-3 text-sm font-semibold text-discord-header-primary">Tema de cores <span className="ml-1 font-normal text-discord-text-muted">{THEMES.find((item) => item.id === theme)?.name}</span></h4><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{THEMES.map((option) => <button key={option.id} type="button" onClick={() => setTheme(option.id)} className={`overflow-hidden rounded-xl border text-left transition ${theme === option.id ? "border-discord-brand ring-2 ring-discord-brand/30" : "border-white/10 hover:border-white/30"}`}><span className="relative block h-16" style={{ background: `linear-gradient(135deg, ${option.stops.join(", ")})` }}>{theme === option.id && <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/40"><Check size={14} className="text-white"/></span>}<span className="absolute inset-x-2 bottom-2 flex gap-1">{option.stops.slice(1, 5).map((color) => <i key={color} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: color }}/>)}</span></span><span className="block bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal">{option.name}</span></button>)}</div><p className="mt-2 text-xs text-discord-text-muted">O tema é salvo neste navegador e aplicado em todas as áreas do Sekai.</p></div>
+                <SectionIntro eyebrow="Seu espaço" title="Aparência" text="Escolha cores e uma densidade de interface que combine com você. Temas secretos entram nesta lista quando são desbloqueados."/>
+                <div className="mb-7"><h4 className="mb-3 text-sm font-semibold text-discord-header-primary">Tema de cores <span className="ml-1 font-normal text-discord-text-muted">{themes.find((item) => item.id === theme)?.name}</span></h4><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{themes.map((option) => <button key={option.id} type="button" onClick={() => setTheme(option.id)} className={`overflow-hidden rounded-xl border text-left transition ${theme === option.id ? "border-discord-brand ring-2 ring-discord-brand/30" : "border-white/10 hover:border-white/30"}`}><span className="relative block h-16" style={{ background: `linear-gradient(135deg, ${option.stops.join(", ")})` }}>{theme === option.id && <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/40"><Check size={14} className="text-white"/></span>}<span className="absolute inset-x-2 bottom-2 flex gap-1">{option.stops.slice(1, 5).map((color) => <i key={color} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: color }}/>)}</span></span><span className="block bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal">{option.name}{option.secret ? <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-discord-text-muted">Secreto</span> : null}</span></button>)}</div><p className="mt-2 text-xs text-discord-text-muted">O tema é salvo neste navegador e aplicado em todas as áreas do Sekai. Temas secretos aparecem aqui quando você os desbloqueia.</p></div>
                 <PreferenceCard icon={Monitor} title="Densidade da interface" description="Escolha quanto espaço os elementos ocupam."><div className="grid grid-cols-2 gap-2">{([['comfortable', 'Confortável'], ['compact', 'Compacta']] as const).map(([value, label]) => <Choice key={value} active={preferences.density === value} onClick={() => setPreference("density", value)}>{label}</Choice>)}</div></PreferenceCard>
               </section>}
 
