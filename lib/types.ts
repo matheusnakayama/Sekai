@@ -3,7 +3,8 @@ export type SignalPayload =
   | { type: 'answer'; from: string; to: string; sdp: RTCSessionDescriptionInit }
   | { type: 'ice-candidate'; from: string; to: string; candidate: RTCIceCandidateInit }
   | { type: 'screen-share-state'; from: string; sharing: boolean }
-  | { type: 'media-state'; from: string; micOn: boolean; camOn: boolean };
+  | { type: 'media-state'; from: string; micOn: boolean; camOn: boolean }
+  | { type: 'peer-reset'; from: string; to: string };
 
 export interface PresenceMemberInfo {
   name: string;

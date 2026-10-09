@@ -30,11 +30,13 @@ interface PeerEntry {
   ignoreOffer: boolean;
   pendingCandidates: RTCIceCandidateInit[];
   iceRestartQueued: boolean;
-  restartAttempts: number;
-  restartTimer?: number;
+  recoveryAttempts: number;
+  recoveryTimer?: number;
   initialCallFallbackTimer?: number;
   offerRetryTimer?: number;
   offerRetryAttempts: number;
+  resetting: boolean;
+  videoArrivalTimer?: number;
   videoProfileReady?: Promise<void>;
   mediaTracksReady?: Promise<void>;
   audioTransceiver?: RTCRtpTransceiver;
@@ -43,10 +45,6 @@ interface PeerEntry {
   soundboardTransceiver?: RTCRtpTransceiver;
   soundboardTrackReady?: Promise<void>;
   videoProfile?: VideoSenderProfile | null;
-  targetVideoBitrate?: number;
-  currentVideoBitrate?: number;
-  videoBitrateTimer?: number;
-  readingVideoStats?: boolean;
   videoParametersChain: Promise<void>;
   retryNegotiation?: () => void;
 }
@@ -133,6 +131,7 @@ export class WebRTCManager {
     peer.initialOfferStarted = true;
     peer.makingOffer = true;
     try {
+      await this.videoReplaceChain;
       await peer.videoProfileReady;
       await peer.mediaTracksReady;
       await peer.soundboardTrackReady;
@@ -140,7 +139,7 @@ export class WebRTCManager {
       await pc.setLocalDescription(offer);
       this.send({ type: 'offer', from: this.localId, to: peerId, sdp: pc.localDescription ?? offer });
       this.scheduleOfferRetry(peerId, peer, 5_000);
-      this.scheduleIceRestart(peerId, peer, 15_000);
+      this.scheduleRecovery(peerId, peer, 12_000);
     } catch (error) {
       peer.initialOfferStarted = false;
       throw error;
@@ -153,10 +152,10 @@ export class WebRTCManager {
   hangupPeer(peerId: string) {
     const entry = this.peers.get(peerId);
     if (entry) {
-      if (entry.restartTimer !== undefined) window.clearTimeout(entry.restartTimer);
+      if (entry.recoveryTimer !== undefined) window.clearTimeout(entry.recoveryTimer);
       if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
       if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
-      if (entry.videoBitrateTimer !== undefined) window.clearInterval(entry.videoBitrateTimer);
+      if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
       if (entry.retryNegotiation) {
         entry.connection.removeEventListener('signalingstatechange', entry.retryNegotiation);
         entry.connection.removeEventListener('connectionstatechange', entry.retryNegotiation);
@@ -198,15 +197,22 @@ export class WebRTCManager {
       this.videoTrackOverride = track;
       this.videoProfileOverride = profile;
 
-      for (const peer of this.peers.values()) {
+      for (const [peerId, peer] of this.peers) {
         const { connection } = peer;
         if (connection.signalingState === 'closed') continue;
         await peer.mediaTracksReady;
         const transceiver = peer.videoTransceiver ?? connection.getTransceivers().find((candidate) => candidate.receiver.track.kind === 'video');
         if (!transceiver) continue;
         peer.videoTransceiver = transceiver;
+        if (track && (transceiver.direction === 'inactive' || transceiver.direction === 'recvonly')) {
+          transceiver.direction = 'sendrecv';
+        }
         await transceiver.sender.replaceTrack(track);
         await this.configureVideoSender(transceiver.sender, this.profileForCurrentPeerCount(profile), peer);
+        // Quem já estava na sala negociou a faixa de vídeo vazia. Sem uma nova
+        // oferta, o replaceTrack fica mudo para esse participante até ele sair
+        // e entrar de novo.
+        this.requestRenegotiation(peerId, peer);
       }
     });
     this.videoReplaceChain = update.catch(() => {});
@@ -258,7 +264,12 @@ export class WebRTCManager {
     const existing = this.peers.get(peerId);
     if (existing) return existing.connection;
 
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+    const pc = new RTCPeerConnection({
+      iceServers: this.iceServers,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require',
+      iceCandidatePoolSize: 4,
+    });
     const peer: PeerEntry = {
       connection: pc,
       makingOffer: false,
@@ -269,8 +280,9 @@ export class WebRTCManager {
       ignoreOffer: false,
       pendingCandidates: [],
       iceRestartQueued: false,
-      restartAttempts: 0,
+      recoveryAttempts: 0,
       offerRetryAttempts: 0,
+      resetting: false,
       videoParametersChain: Promise.resolve(),
     };
     this.peers.set(peerId, peer);
@@ -340,19 +352,19 @@ export class WebRTCManager {
       if (previousTrack) stream.removeTrack(previousTrack);
       if (!stream.getTracks().some((track) => track.id === event.track.id)) stream.addTrack(event.track);
       peer.remoteStream = stream;
-      this.onTrack(peerId, stream);
+      const publish = () => this.onTrack(peerId, new MediaStream(stream.getTracks()));
+      publish();
+      event.track.addEventListener('unmute', publish);
+      event.track.addEventListener('mute', publish);
+      event.track.addEventListener('ended', publish);
       this.watchSpeaking(peerId, stream);
     };
 
     pc.onconnectionstatechange = () => {
-      this.onConnectionStateChange(peerId, pc.connectionState);
       if (pc.connectionState === 'connected') {
-        peer.restartAttempts = 0;
+        peer.recoveryAttempts = 0;
         peer.offerRetryAttempts = 0;
-        if (peer.restartTimer !== undefined) {
-          window.clearTimeout(peer.restartTimer);
-          peer.restartTimer = undefined;
-        }
+        this.clearRecovery(peer);
         if (peer.initialCallFallbackTimer !== undefined) {
           window.clearTimeout(peer.initialCallFallbackTimer);
           peer.initialCallFallbackTimer = undefined;
@@ -361,16 +373,30 @@ export class WebRTCManager {
           window.clearTimeout(peer.offerRetryTimer);
           peer.offerRetryTimer = undefined;
         }
-      }
-      if (pc.connectionState === 'connected' && this.videoProfileOverride) {
-        const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
-        if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
+        this.onConnectionStateChange(peerId, 'connected');
+        if (this.videoProfileOverride) {
+          const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
+          if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
+        }
+        return;
       }
       if (pc.connectionState === 'failed') {
-        this.scheduleIceRestart(peerId, peer, 800, true);
-      } else if (pc.connectionState === 'disconnected') {
-        // A breve queda de rede costuma se resolver sozinha; aguarde um pouco.
-        this.scheduleIceRestart(peerId, peer, 4_000, true);
+        this.onConnectionStateChange(peerId, 'connecting');
+        this.scheduleRecovery(peerId, peer, 800, true);
+        return;
+      }
+      if (pc.connectionState === 'disconnected') {
+        this.onConnectionStateChange(peerId, 'disconnected');
+        this.scheduleRecovery(peerId, peer, 4_000, true);
+        return;
+      }
+      this.onConnectionStateChange(peerId, pc.connectionState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        this.onConnectionStateChange(peerId, 'connecting');
+        this.scheduleRecovery(peerId, peer, 800, true);
       }
     };
 
@@ -430,38 +456,116 @@ export class WebRTCManager {
     })();
   }
 
+  private clearRecovery(peer: PeerEntry) {
+    if (peer.recoveryTimer !== undefined) {
+      window.clearTimeout(peer.recoveryTimer);
+      peer.recoveryTimer = undefined;
+    }
+  }
+
   /**
-   * Em uma sala mesh, cada par tem sua própria rota de rede. O participante
-   * com o menor ID é o único que reinicia ICE, evitando ofertas simultâneas.
+   * Se a rota não fecha, recria o par em vez de desistir. O aviso antigo
+   * marcava a chamada como falha permanente depois de duas tentativas.
    */
-  private scheduleIceRestart(peerId: string, peer: PeerEntry, delayMs: number, replaceTimer = false) {
-    if (this.localId > peerId || peer.connection.signalingState === 'closed') return;
-    if (peer.restartTimer !== undefined) {
+  private scheduleRecovery(peerId: string, peer: PeerEntry, delayMs: number, replaceTimer = false) {
+    if (peer.connection.signalingState === 'closed') return;
+    if (peer.recoveryTimer !== undefined) {
       if (!replaceTimer) return;
-      window.clearTimeout(peer.restartTimer);
-      peer.restartTimer = undefined;
+      window.clearTimeout(peer.recoveryTimer);
+      peer.recoveryTimer = undefined;
     }
 
-    peer.restartTimer = window.setTimeout(() => {
-      peer.restartTimer = undefined;
+    peer.recoveryTimer = window.setTimeout(() => {
+      peer.recoveryTimer = undefined;
       if (this.peers.get(peerId) !== peer) return;
       const pc = peer.connection;
       if (pc.signalingState === 'closed' || pc.connectionState === 'connected') return;
-      if (peer.restartAttempts >= 2) {
-        this.onConnectionStateChange(peerId, 'failed');
+      // O id menor age primeiro. Se ele não resolver, o outro lado assume.
+      if (this.localId > peerId && peer.recoveryAttempts < 1) {
+        peer.recoveryAttempts += 1;
+        this.scheduleRecovery(peerId, peer, 6_000);
         return;
       }
-
-      peer.restartAttempts += 1;
-      try {
-        pc.restartIce();
-        peer.iceRestartQueued = true;
-        this.requestRenegotiation(peerId, peer);
-      } catch (error) {
-        console.warn('Não foi possível reiniciar a conexão com o participante:', error);
-      }
-      this.scheduleIceRestart(peerId, peer, 10_000);
+      peer.recoveryAttempts += 1;
+      const wait = Math.min(12_000, 1_500 * peer.recoveryAttempts);
+      void this.refreshIceServers().finally(() => {
+        if (this.peers.get(peerId) !== peer) return;
+        if (peer.connection.connectionState === 'connected') return;
+        this.resetPeer(peerId, true);
+        const current = this.peers.get(peerId);
+        if (current) this.scheduleRecovery(peerId, current, wait);
+      });
     }, delayMs);
+  }
+
+  /** Troca a conexão por uma nova, o mesmo efeito de sair e entrar na chamada. */
+  private resetPeer(peerId: string, notify: boolean) {
+    const existing = this.peers.get(peerId);
+    if (existing?.resetting) return;
+    const attempts = existing?.recoveryAttempts ?? 0;
+    if (notify) this.send({ type: 'peer-reset', from: this.localId, to: peerId });
+    this.discardConnection(peerId);
+    this.onConnectionStateChange(peerId, 'connecting');
+    this.ensurePeerConnection(peerId);
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+    peer.resetting = true;
+    peer.recoveryAttempts = attempts;
+    window.setTimeout(() => {
+      const current = this.peers.get(peerId);
+      if (current) current.resetting = false;
+    }, 4_000);
+    this.preparePeerConnection(peerId);
+    if (this.localId < peerId) {
+      void this.callPeer(peerId).catch((error) => {
+        console.warn('Não foi possível reabrir a conexão com o participante:', error);
+      });
+    }
+  }
+
+  private discardConnection(peerId: string) {
+    const entry = this.peers.get(peerId);
+    if (!entry) return;
+    this.clearRecovery(entry);
+    if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
+    if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
+    if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
+    if (entry.retryNegotiation) {
+      entry.connection.removeEventListener('signalingstatechange', entry.retryNegotiation);
+      entry.connection.removeEventListener('connectionstatechange', entry.retryNegotiation);
+    }
+    entry.connection.onicecandidate = null;
+    entry.connection.ontrack = null;
+    entry.connection.onconnectionstatechange = null;
+    entry.connection.oniceconnectionstatechange = null;
+    entry.connection.close();
+    this.peers.delete(peerId);
+  }
+
+  private async refreshIceServers() {
+    try {
+      const response = await fetch('/api/turn-credentials');
+      if (!response.ok) return;
+      const data = await response.json() as { iceServers?: IceServerConfig[] };
+      if (data.iceServers?.length) this.iceServers = data.iceServers;
+    } catch {
+      // Mantém os servidores já carregados e tenta a rota de novo mesmo assim.
+    }
+  }
+
+  private ensureRemoteVideoArrives(peerId: string) {
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+    if (peer.videoArrivalTimer !== undefined) window.clearTimeout(peer.videoArrivalTimer);
+    peer.videoArrivalTimer = window.setTimeout(() => {
+      const current = this.peers.get(peerId);
+      if (!current || current.videoArrivalTimer === undefined) return;
+      current.videoArrivalTimer = undefined;
+      if (current.connection.connectionState !== 'connected') return;
+      const liveVideo = current.remoteStream?.getVideoTracks().some((track) => track.readyState === 'live' && !track.muted);
+      if (liveVideo) return;
+      this.resetPeer(peerId, true);
+    }, 5_000);
   }
 
   private scheduleOfferRetry(peerId: string, peer: PeerEntry, delayMs: number) {
@@ -493,6 +597,11 @@ export class WebRTCManager {
   private async handleSignal(payload: SignalPayload) {
     if (payload.type === 'screen-share-state') {
       this.onScreenShareState(payload.from, payload.sharing);
+      if (payload.sharing) this.ensureRemoteVideoArrives(payload.from);
+      return;
+    }
+    if (payload.type === 'peer-reset') {
+      this.resetPeer(payload.from, false);
       return;
     }
     if (payload.type === 'media-state') {
@@ -581,13 +690,6 @@ export class WebRTCManager {
     if (peer) {
       peer.videoSender = sender;
       peer.videoProfile = profile;
-      peer.targetVideoBitrate = profile?.maxBitrate;
-      peer.currentVideoBitrate = profile?.maxBitrate;
-      if (profile) this.startVideoBitrateMonitor(peer);
-      else if (peer.videoBitrateTimer !== undefined) {
-        window.clearInterval(peer.videoBitrateTimer);
-        peer.videoBitrateTimer = undefined;
-      }
     }
 
     const apply = async () => {
@@ -597,30 +699,31 @@ export class WebRTCManager {
 
         const primary = { ...parameters.encodings[0] };
         if (profile) {
+          // A qualidade escolhida vale desde o primeiro quadro. O navegador
+          // ainda reduz sozinho se a rede apertar, sem a escada que deixava
+          // a imagem ruim e só melhorava minutos depois.
           primary.maxBitrate = bitrate;
           primary.maxFramerate = profile.maxFramerate;
+          primary.priority = 'high';
+          primary.networkPriority = 'high';
           const source = sender.track?.getSettings();
           if (source?.width && source.height && profile.width && profile.height) {
-            // Alguns navegadores capturam a tela na resolução nativa mesmo
-            // quando applyConstraints não consegue reduzi-la. Limite também
-            // a resolução codificada no sender para respeitar a opção escolhida.
             const scale = Math.max(source.width / profile.width, source.height / profile.height, 1);
             if (scale > 1.01) primary.scaleResolutionDownBy = scale;
             else delete primary.scaleResolutionDownBy;
           }
-          // Sob congestionamento, prioriza manter os quadros fluidos e reduz
-          // a resolução antes de deixar a apresentação engasgar.
-          parameters.degradationPreference = 'maintain-framerate';
+          parameters.degradationPreference = 'maintain-resolution';
         } else {
           delete primary.maxBitrate;
           delete primary.maxFramerate;
           delete primary.scaleResolutionDownBy;
+          delete primary.priority;
+          delete primary.networkPriority;
           parameters.degradationPreference = 'balanced';
         }
         parameters.encodings[0] = primary;
         await sender.setParameters(parameters);
       } catch (error) {
-        // A captura ainda é enviada se o navegador não permitir definir bitrate.
         console.warn('Não foi possível ajustar o bitrate da apresentação:', error);
       }
     };
@@ -630,64 +733,6 @@ export class WebRTCManager {
     const update = peer.videoParametersChain.then(apply);
     peer.videoParametersChain = update.catch(() => {});
     return update;
-  }
-
-  private startVideoBitrateMonitor(peer: PeerEntry) {
-    if (peer.videoBitrateTimer !== undefined) return;
-    peer.videoBitrateTimer = window.setInterval(() => {
-      void this.adaptVideoBitrate(peer);
-    }, 2_500);
-  }
-
-  private async adaptVideoBitrate(peer: PeerEntry) {
-    const { connection, videoSender, videoProfile, targetVideoBitrate } = peer;
-    if (
-      peer.readingVideoStats || !videoSender || !videoProfile || !targetVideoBitrate ||
-      connection.connectionState !== 'connected' || videoSender.track?.readyState !== 'live'
-    ) return;
-
-    peer.readingVideoStats = true;
-    try {
-      const report = await videoSender.getStats();
-      // A pessoa pode ter parado ou reiniciado a apresentação enquanto as
-      // estatísticas eram consultadas; não aplique um perfil antigo à câmera.
-      if (peer.videoProfile !== videoProfile || peer.videoSender !== videoSender) return;
-      type OutgoingNetworkStat = RTCStats & {
-        availableOutgoingBitrate?: number;
-        selectedCandidatePairId?: string;
-        selected?: boolean;
-        nominated?: boolean;
-        writable?: boolean;
-        state?: string;
-      };
-      const stats = Array.from(report.values()) as OutgoingNetworkStat[];
-      const transport = stats.find((stat) => stat.type === 'transport' && stat.selectedCandidatePairId);
-      const pair = (transport?.selectedCandidatePairId
-        ? report.get(transport.selectedCandidatePairId) as OutgoingNetworkStat | undefined
-        : undefined) ?? stats.find((stat) => stat.type === 'candidate-pair' && stat.selected)
-        ?? stats.find((stat) => stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated && stat.writable);
-      const availableBitrate = pair?.availableOutgoingBitrate;
-      if (!availableBitrate || !Number.isFinite(availableBitrate)) return;
-
-      // Reserve margem para áudio, sinalização e variações rápidas da rede.
-      const networkLimit = Math.max(150_000, Math.floor(availableBitrate * 0.78));
-      const desiredBitrate = Math.min(targetVideoBitrate, networkLimit);
-      const currentBitrate = peer.currentVideoBitrate ?? targetVideoBitrate;
-      // Diminui rápido quando há congestionamento e recupera aos poucos para
-      // evitar oscilações visíveis de qualidade.
-      const nextBitrate = desiredBitrate < currentBitrate
-        ? desiredBitrate
-        : Math.min(desiredBitrate, Math.ceil(currentBitrate * 1.3));
-      if (Math.abs(nextBitrate - currentBitrate) < Math.max(50_000, currentBitrate * 0.1)) return;
-
-      await this.configureVideoSender(videoSender, videoProfile, peer, nextBitrate);
-      peer.currentVideoBitrate = nextBitrate;
-    } catch {
-      // Alguns navegadores não expõem a estimativa de banda; o controle de
-      // congestionamento interno do WebRTC continua ativo nesses casos.
-    } finally {
-      peer.readingVideoStats = false;
-    }
   }
 
   private profileForCurrentPeerCount(profile: VideoSenderProfile | null): VideoSenderProfile | null {

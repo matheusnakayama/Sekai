@@ -6,6 +6,7 @@ export const runtime = 'nodejs';
 const GOOGLE_STUN: IceServerConfig[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
 export async function GET() {

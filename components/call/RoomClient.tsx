@@ -1378,7 +1378,7 @@ export default function RoomClient({
         />
         {sharingScreen && screenCaptureInfo && (
           <p className="mt-2 text-center text-xs text-white/55">
-            Captura: {screenCaptureInfo}. O envio ajusta a banda para acompanhar sua conexão e manter a apresentação estável.
+            Captura: {screenCaptureInfo}. A apresentação sai na qualidade escolhida desde o início.
           </p>
         )}
       </footer>

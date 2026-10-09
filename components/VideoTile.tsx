@@ -24,7 +24,26 @@ export default function VideoTile({
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
-  const showVideo = (participant.camOn || participant.isSharingScreen) && !!participant.stream;
+  const [videoLive, setVideoLive] = useState(false);
+  const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
+
+  useEffect(() => {
+    const tracks = participant.stream?.getVideoTracks() ?? [];
+    const update = () => setVideoLive(tracks.some((track) => track.readyState === 'live' && !track.muted));
+    update();
+    tracks.forEach((track) => {
+      track.addEventListener('unmute', update);
+      track.addEventListener('mute', update);
+      track.addEventListener('ended', update);
+    });
+    return () => {
+      tracks.forEach((track) => {
+        track.removeEventListener('unmute', update);
+        track.removeEventListener('mute', update);
+        track.removeEventListener('ended', update);
+      });
+    };
+  }, [participant.stream]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -168,7 +187,7 @@ export default function VideoTile({
       )}
       {participant.connectionState === 'failed' && (
         <div className="absolute top-2 left-2 text-[11px] font-medium text-warn bg-black/60 rounded-full px-2 py-0.5">
-          Falha · confira rede/TURN
+          Reconectando a chamada…
         </div>
       )}
     </div>
