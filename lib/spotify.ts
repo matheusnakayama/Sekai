@@ -11,8 +11,15 @@ export type SpotifySession = {
   refreshToken: string;
   expiresAt: number;
   displayName: string;
+  profileUrl: string;
   showOnProfile: boolean;
   showAsStatus: boolean;
+};
+
+export type PublicConnection = {
+  provider: "spotify";
+  displayName: string;
+  profileUrl: string;
 };
 
 export type NowPlaying = {
@@ -42,6 +49,7 @@ export function readSpotifySession(userId: string): SpotifySession | null {
       refreshToken: value.refreshToken,
       expiresAt: Number(value.expiresAt) || 0,
       displayName: String(value.displayName || "Spotify"),
+      profileUrl: safeSpotifyProfileUrl(value.profileUrl),
       showOnProfile: value.showOnProfile !== false,
       showAsStatus: value.showAsStatus !== false,
     };
@@ -100,16 +108,53 @@ export async function finishSpotifyConnect(code: string) {
   });
   if (!response.ok) throw new Error("O Spotify não confirmou a conexão.");
   const token = await response.json();
-  const profile = await fetch("https://api.spotify.com/v1/me", { headers: { authorization: `Bearer ${token.access_token}` } });
-  const me = profile.ok ? await profile.json() : {};
+  const account = await spotifyAccount(token.access_token as string);
   return {
     accessToken: token.access_token as string,
     refreshToken: token.refresh_token as string,
     expiresAt: Date.now() + Number(token.expires_in || 3600) * 1000,
-    displayName: String(me.display_name || me.id || "Spotify"),
+    displayName: account?.displayName || "Spotify",
+    profileUrl: account?.profileUrl || "",
     showOnProfile: true,
     showAsStatus: true,
   } satisfies SpotifySession;
+}
+
+export async function spotifyAccount(accessToken: string) {
+  const profile = await fetch("https://api.spotify.com/v1/me", { headers: { authorization: `Bearer ${accessToken}` } });
+  if (!profile.ok) return null;
+  const me = await profile.json();
+  return {
+    displayName: String(me.display_name || me.id || "Spotify").slice(0, 80),
+    profileUrl: spotifyProfileUrl(me),
+  };
+}
+
+function spotifyProfileUrl(me: { id?: string; external_urls?: { spotify?: string } }) {
+  return safeSpotifyProfileUrl(me.external_urls?.spotify)
+    || (me.id && /^[A-Za-z0-9]+$/.test(me.id) ? `https://open.spotify.com/user/${me.id}` : "");
+}
+
+export function safeSpotifyProfileUrl(value: unknown) {
+  if (typeof value !== "string" || !value) return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname !== "open.spotify.com" || !url.pathname.startsWith("/user/")) return "";
+    return url.toString().slice(0, 200);
+  } catch {
+    return "";
+  }
+}
+
+export function safeSpotifyArtUrl(value: unknown) {
+  if (typeof value !== "string" || !value) return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname !== "i.scdn.co") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 async function refreshAccessToken(session: SpotifySession) {
@@ -186,6 +231,22 @@ export async function publishNowPlaying(userId: string, playing: Omit<NowPlaying
 export async function clearNowPlaying(userId: string) {
   const supabase = createClient();
   await supabase.from("user_now_playing").delete().eq("user_id", userId);
+}
+
+export async function publishConnection(userId: string, connection: { displayName: string; profileUrl: string }) {
+  const supabase = createClient();
+  const { error } = await supabase.from("user_connections").upsert({
+    user_id: userId,
+    provider: "spotify",
+    display_name: connection.displayName.slice(0, 80) || "Spotify",
+    profile_url: safeSpotifyProfileUrl(connection.profileUrl) || null,
+  }, { onConflict: "user_id,provider" });
+  if (error) throw error;
+}
+
+export async function clearConnection(userId: string) {
+  const supabase = createClient();
+  await supabase.from("user_connections").delete().eq("user_id", userId).eq("provider", "spotify");
 }
 
 export function isFreshActivity(updatedAt: string) {

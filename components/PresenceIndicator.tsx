@@ -53,10 +53,9 @@ export function PresenceIndicator({
       className={cn("presence-indicator inline-grid shrink-0 place-items-center rounded-full", className)}
       style={{
         position: avatarBadge ? "absolute" : "relative",
-        right: avatarBadge ? 0 : undefined,
-        bottom: avatarBadge ? 0 : undefined,
+        right: avatarBadge ? 2 : undefined,
+        bottom: avatarBadge ? 2 : undefined,
         zIndex: avatarBadge ? 10 : undefined,
-        transform: avatarBadge ? "translate(50%, 50%)" : undefined,
         width: avatarBadge ? badgeSize : size,
         height: avatarBadge ? badgeSize : size,
         backgroundColor: presence === "idle" || (hollowDnd && presence === "dnd") ? "transparent" : PRESENCE_COLORS[presence],

@@ -11,7 +11,7 @@ import type { RoleBadge } from "@/components/RoleBadgeList";
 import type { CustomBadge } from "@/lib/badges";
 import { cn, getProfilePalette } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
-import { NowPlayingCard, useNowPlaying } from "@/components/NowPlayingCard";
+import { NowPlayingCard, ProfileConnections, useConnections, useNowPlaying } from "@/components/NowPlayingCard";
 
 export interface ProfileCardUser {
   id: string;
@@ -181,6 +181,7 @@ export function UserProfileCard({
   const [resolvedPosition, setResolvedPosition] = useState(position);
   const listening = useNowPlaying(profile.id, profile.status);
   const isOtherUser = profile.id !== currentUserId;
+  const connections = useConnections(profile.id, !isOtherUser);
   const username = profile.username || profile.id.slice(0, 8);
   const profilePalette = getProfilePalette(profile.profileCardColor);
   const cachedMutualServers = isOtherUser && currentUserId
@@ -445,6 +446,8 @@ export function UserProfileCard({
               <p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{profile.bio}</p>
             </div>
           )}
+
+          <ProfileConnections connections={connections} showAdd={!isOtherUser} />
 
           {profile.assignedRoles?.length ? (
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Cargos deste membro">

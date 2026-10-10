@@ -6,6 +6,7 @@ import { RoleInsignia } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { ListeningLine, useListeningByUser } from "@/components/NowPlayingCard";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
@@ -75,6 +76,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
   const [selected, setSelected] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; trigger: HTMLButtonElement } | null>(null);
+  const listening = useListeningByUser(members.map((member) => member.id));
 
   useEffect(() => {
     setSelected((current) => current ? members.find((member) => member.id === current.id) ?? null : null);
@@ -109,7 +111,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-0.5">
             {roleMembers.map((m) => (
-              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
@@ -123,7 +125,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-0.5">
             {offlineMembers.map((m) => (
-              <MemberRow key={m.id} member={m} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
@@ -196,7 +198,7 @@ function groupByRole(members: MemberItem[]): { id: string; roleName: string; rol
   return Array.from(map.values()).sort((a, b) => b.rolePosition - a.rolePosition);
 }
 
-function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: MemberItem; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
+function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -219,7 +221,7 @@ function MemberRow({ member, isSelf, onSelect, onContextMenu }: { member: Member
           <span className="min-w-0 truncate text-[15px] font-medium md:text-sm" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
           <CustomBadgeList badges={member.badges} limit={2} />
         </span>
-        {member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
+        {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
       </span>
       {!isSelf && <UserPlus className="ml-auto h-4 w-4 shrink-0 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
     </button>

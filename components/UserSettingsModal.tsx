@@ -25,6 +25,7 @@ interface UserSettingsModalProps {
   userId: string;
   serverId?: string | null;
   members?: MemberItem[];
+  initialSection?: Section;
   initial: {
     displayName: string;
     username?: string | null;
@@ -88,10 +89,10 @@ function uploadExtension(file: File) {
   return ext && /^[a-z0-9]{1,8}$/.test(ext) ? ext : "png";
 }
 
-export function UserSettingsModal({ userId, serverId, initial, members = [], onClose, onSaved }: UserSettingsModalProps) {
+export function UserSettingsModal({ userId, serverId, initial, members = [], initialSection = "perfil", onClose, onSaved }: UserSettingsModalProps) {
   const supabase = createClient();
   const { theme, setTheme, themes } = useTheme();
-  const [section, setSection] = useState<Section>("perfil");
+  const [section, setSection] = useState<Section>(initialSection);
   const [profileScope, setProfileScope] = useState<"user" | "server">("user");
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [username, setUsername] = useState(initial.username ?? "");

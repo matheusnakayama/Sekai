@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { finishSpotifyConnect, writeSpotifySession } from "@/lib/spotify";
+import { finishSpotifyConnect, publishConnection, writeSpotifySession } from "@/lib/spotify";
 
 function Callback() {
   const params = useSearchParams();
@@ -26,6 +26,7 @@ function Callback() {
       try {
         const session = await finishSpotifyConnect(code);
         writeSpotifySession(data.user.id, session);
+        await publishConnection(data.user.id, { displayName: session.displayName, profileUrl: session.profileUrl }).catch(() => undefined);
         window.location.replace("/");
       } catch (connectError) {
         if (!cancelled) setMessage(connectError instanceof Error ? connectError.message : "Não foi possível concluir a conexão.");

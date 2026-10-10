@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SpotifyMark } from "@/components/NowPlayingCard";
-import { beginSpotifyConnect, clearNowPlaying, readSpotifySession, SPOTIFY_CLIENT_ID, spotifyRedirectUri, writeSpotifySession, type SpotifySession } from "@/lib/spotify";
+import { beginSpotifyConnect, clearConnection, clearNowPlaying, readSpotifySession, SPOTIFY_CLIENT_ID, spotifyRedirectUri, writeSpotifySession, type SpotifySession } from "@/lib/spotify";
 
 export function SpotifyConnections({ userId }: { userId: string }) {
   const [session, setSession] = useState<SpotifySession | null>(null);
@@ -34,6 +34,7 @@ export function SpotifyConnections({ userId }: { userId: string }) {
     writeSpotifySession(userId, null);
     setSession(null);
     await clearNowPlaying(userId).catch(() => undefined);
+    await clearConnection(userId).catch(() => undefined);
   }
 
   return (
@@ -41,7 +42,7 @@ export function SpotifyConnections({ userId }: { userId: string }) {
       <div className="mb-7">
         <p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Contas</p>
         <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Conexões</h1>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">Conecte o Spotify para mostrar no seu perfil a faixa que você está ouvindo, enquanto você não estiver invisível.</p>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">Conecte o Spotify para a conta aparecer no seu perfil. Enquanto uma música toca, ela também aparece na lista de membros.</p>
       </div>
 
       {!schemaReady && <p className="mb-4 rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">Para as outras pessoas verem a faixa, cole o arquivo db/spotify_now_playing_migration.sql no SQL Editor do Supabase.</p>}

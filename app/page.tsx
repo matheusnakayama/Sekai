@@ -293,6 +293,7 @@ export default function Home() {
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
@@ -426,6 +427,16 @@ export default function Home() {
     if (result !== "ok") throw new Error("O Supabase não confirmou o envio do efeito sonoro.");
     return true;
   }, [currentUserId, ensureServerSoundboardChannel, playServerSoundLocally]);
+
+  useEffect(() => {
+    const openSettings = (event: Event) => {
+      const section = (event as CustomEvent<string>).detail;
+      setSettingsSection(section === "conexoes" ? "conexoes" : "perfil");
+      setShowUserSettings(true);
+    };
+    window.addEventListener("sekai:open-settings", openSettings);
+    return () => window.removeEventListener("sekai:open-settings", openSettings);
+  }, []);
 
   useEffect(() => {
     const handleCallSoundEffect = (event: Event) => {
@@ -1873,9 +1884,10 @@ export default function Home() {
         <UserSettingsModal
           userId={currentUserId}
           serverId={activeServerId}
+          initialSection={settingsSection}
           initial={myProfile ?? { displayName: currentMember?.displayName ?? "Você", username: currentMember?.username ?? "" }}
           members={members}
-          onClose={() => setShowUserSettings(false)}
+          onClose={() => { setShowUserSettings(false); setSettingsSection("perfil"); }}
           onSaved={() => {
             loadMyProfile();
             loadChannelsAndMembers();
