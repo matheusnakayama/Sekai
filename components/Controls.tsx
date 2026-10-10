@@ -22,8 +22,6 @@ export default function Controls({
   deafened,
   camOn,
   sharingScreen,
-  screenAudioAvailable,
-  screenAudioEnabled,
   participantCount,
   chatUnreadCount,
   isHost,
@@ -38,7 +36,6 @@ export default function Controls({
   onToggleDeafen,
   onToggleCam,
   onToggleScreenShare,
-  onToggleScreenAudio,
   onLeave,
   onCopyLink,
   onToggleParticipants,
@@ -49,8 +46,6 @@ export default function Controls({
   deafened: boolean;
   camOn: boolean;
   sharingScreen: boolean;
-  screenAudioAvailable: boolean;
-  screenAudioEnabled: boolean;
   participantCount: number;
   chatUnreadCount: number;
   isHost: boolean;
@@ -65,7 +60,6 @@ export default function Controls({
   onToggleDeafen: () => void;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
-  onToggleScreenAudio: () => void;
   onLeave: () => void;
   onCopyLink: () => void;
   onToggleParticipants: () => void;
@@ -213,30 +207,6 @@ export default function Controls({
           </div>
         )}
       </div>
-
-      {sharingScreen && (
-        <button
-          type="button"
-          onClick={onToggleScreenAudio}
-          disabled={!screenAudioAvailable || micLockedByHost}
-          aria-pressed={screenAudioEnabled}
-          aria-label={screenAudioEnabled ? 'Silenciar áudio compartilhado da tela' : 'Transmitir áudio compartilhado da tela'}
-          title={!screenAudioAvailable
-            ? 'Para compartilhar áudio, marque “Compartilhar áudio” no seletor do navegador ao iniciar a apresentação.'
-            : micLockedByHost
-              ? 'O anfitrião bloqueou o envio de áudio.'
-              : screenAudioEnabled
-                ? 'Silenciar o áudio da tela. Seu microfone continua ativo.'
-                : 'Transmitir áudio da tela. Ele pode incluir sons e vozes de outros aplicativos.'}
-          className={`rounded-2xl border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-            screenAudioEnabled
-              ? 'border-brand-400/50 bg-brand-500/20 text-white'
-              : 'border-surface-border bg-surface-card text-white/75 hover:bg-surface-border'
-          }`}
-        >
-          {!screenAudioAvailable ? 'Áudio indisponível' : screenAudioEnabled ? 'Áudio da tela: ligado' : 'Áudio da tela: desligado'}
-        </button>
-      )}
 
       <button
         onClick={onToggleParticipants}

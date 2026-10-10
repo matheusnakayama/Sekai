@@ -21,6 +21,7 @@ export default function VideoTile({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const soundboardAudioRef = useRef<HTMLAudioElement>(null);
+  const screenAudioRef = useRef<HTMLAudioElement>(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
@@ -89,10 +90,31 @@ export default function VideoTile({
     };
   }, [muteRemoteAudio, participant.isLocal, participant.soundboardTrack, soundEffectsMuted, volume]);
 
+  useEffect(() => {
+    const audio = screenAudioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    audio.muted = participant.isLocal || volume === 0 || muteRemoteAudio;
+    if (!participant.screenAudioTrack) {
+      audio.srcObject = null;
+      return;
+    }
+
+    audio.srcObject = new MediaStream([participant.screenAudioTrack]);
+    void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+      if (!participant.isLocal && !muteRemoteAudio) setPlaybackBlocked(true);
+    });
+    return () => {
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, volume]);
+
   async function enablePlayback() {
     try {
       await videoRef.current?.play();
       if (participant.soundboardTrack) await soundboardAudioRef.current?.play();
+      if (participant.screenAudioTrack) await screenAudioRef.current?.play();
       setPlaybackBlocked(false);
     } catch {
       setPlaybackBlocked(true);
@@ -118,6 +140,7 @@ export default function VideoTile({
           />
         )}
         <audio ref={soundboardAudioRef} autoPlay playsInline className="hidden" />
+        <audio ref={screenAudioRef} autoPlay playsInline className="hidden" />
         {!showVideo && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />

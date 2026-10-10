@@ -23,6 +23,7 @@ export interface Participant {
   avatarUrl?: string | null;
   stream?: MediaStream;
   soundboardTrack?: MediaStreamTrack;
+  screenAudioTrack?: MediaStreamTrack;
   micOn: boolean;
   camOn: boolean;
   isSpeaking: boolean;

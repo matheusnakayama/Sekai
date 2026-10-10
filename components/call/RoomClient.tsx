@@ -16,6 +16,7 @@ import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusher
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
+import { buildDisplayMediaRequest, prepareScreenAudioTrack } from '@/lib/screenShare';
 import type {
   CallError,
   IceServerConfig,
@@ -76,8 +77,6 @@ export default function RoomClient({
   const [micLockedByHost, setMicLockedByHost] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [sharingScreen, setSharingScreen] = useState(false);
-  const [screenAudioAvailable, setScreenAudioAvailable] = useState(false);
-  const [screenAudioEnabled, setScreenAudioEnabled] = useState(false);
   const [screenShareSettings, setScreenShareSettings] = useState<ScreenShareSettings>({ height: 1080, frameRate: 60 });
   const [goLiveOpen, setGoLiveOpen] = useState(false);
   const [goLiveBusy, setGoLiveBusy] = useState(false);
@@ -106,7 +105,6 @@ export default function RoomClient({
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenAudioTrackRef = useRef<MediaStreamTrack | null>(null);
-  const screenAudioContextRef = useRef<AudioContext | null>(null);
   const presentationSectionRef = useRef<HTMLElement | null>(null);
   const chatOpenRef = useRef(false);
   const hostIdRef = useRef('');
@@ -116,8 +114,6 @@ export default function RoomClient({
   const channelRef = useRef<Channel | null>(null);
   const camBeforeShareRef = useRef(true);
   const screenShareOperationRef = useRef(false);
-  const screenAudioEnabledRef = useRef(false);
-  const muteRemoteAudioFallbackRef = useRef(false);
   const callMusicRef = useRef<CallMusicPlayback | null>(null);
   const musicGenerationRef = useRef(0);
   const soundboardSendRef = useRef(Promise.resolve());
@@ -140,14 +136,10 @@ export default function RoomClient({
     channelRef.current = null;
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-    screenAudioContextRef.current?.close().catch(() => {});
-    screenAudioContextRef.current = null;
     releaseCallMusicRef.current();
     cameraStreamRef.current = null;
     screenStreamRef.current = null;
     screenAudioTrackRef.current = null;
-    screenAudioEnabledRef.current = false;
-    muteRemoteAudioFallbackRef.current = false;
     participantNamesRef.current.clear();
     participantAvatarsRef.current.clear();
     memberJoinTimesRef.current.clear();
@@ -392,6 +384,21 @@ export default function RoomClient({
         });
       };
 
+      manager.onScreenAudioTrack = (peerId, track) => {
+        setParticipants((prev) => {
+          const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
+          if (!track && !prev[peerId]) return prev;
+          return { ...prev, [peerId]: { ...participant, screenAudioTrack: track ?? undefined } };
+        });
+        track?.addEventListener('ended', () => {
+          setParticipants((prev) => {
+            const participant = prev[peerId];
+            if (!participant || participant.screenAudioTrack !== track) return prev;
+            return { ...prev, [peerId]: { ...participant, screenAudioTrack: undefined } };
+          });
+        }, { once: true });
+      };
+
       manager.onConnectionStateChange = (peerId, state) => {
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
@@ -600,19 +607,8 @@ export default function RoomClient({
 
     const manager = managerRef.current;
     try {
-      if (muted) {
-        // Silencia toda a faixa enviada, incluindo áudio de tela que estivesse
-        // misturado ao microfone, e não só o microfone físico.
-        await manager?.replaceAudioTrack(null);
-      } else if (
-        currentSharingRef.current &&
-        screenAudioEnabledRef.current &&
-        screenAudioTrackRef.current?.readyState === 'live'
-      ) {
-        await setOutgoingScreenAudio(screenAudioTrackRef.current);
-      } else {
-        await setOutgoingScreenAudio(null);
-      }
+      const micTrack = nextMicOn ? (microphoneTracks[0] ?? null) : null;
+      await manager?.replaceAudioTrack(micTrack);
     } catch (error) {
       console.error('Não foi possível aplicar o controle do microfone pelo anfitrião:', error);
       showProblem('O estado do microfone mudou, mas não foi possível atualizar o áudio enviado.');
@@ -624,50 +620,6 @@ export default function RoomClient({
       showProblem('O anfitrião liberou seu microfone, mas não há microfone disponível neste dispositivo.');
     }
   }
-
-  const setOutgoingScreenAudio = useCallback(async (screenAudioTrack: MediaStreamTrack | null) => {
-    const manager = managerRef.current;
-    if (!manager) return false;
-
-    const micTrack = cameraStreamRef.current?.getAudioTracks()[0] ?? null;
-    if (micLockedByHostRef.current) {
-      await manager.replaceAudioTrack(null);
-      const previousContext = screenAudioContextRef.current;
-      screenAudioContextRef.current = null;
-      await previousContext?.close().catch(() => {});
-      return false;
-    }
-    if (!screenAudioTrack) {
-      await manager.replaceAudioTrack(micTrack);
-      const previousContext = screenAudioContextRef.current;
-      screenAudioContextRef.current = null;
-      await previousContext?.close().catch(() => {});
-      return false;
-    }
-
-    const audioContext = new AudioContext();
-    let mixedTrack: MediaStreamTrack | null = null;
-    try {
-      const destination = audioContext.createMediaStreamDestination();
-      for (const track of [micTrack, screenAudioTrack]) {
-        if (!track) continue;
-        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
-        source.connect(destination);
-      }
-
-      await audioContext.resume();
-      mixedTrack = destination.stream.getAudioTracks()[0] ?? null;
-      await manager.replaceAudioTrack(mixedTrack);
-    } catch (err) {
-      await audioContext.close().catch(() => {});
-      throw err;
-    }
-
-    const previousContext = screenAudioContextRef.current;
-    screenAudioContextRef.current = audioContext;
-    await previousContext?.close().catch(() => {});
-    return !!mixedTrack;
-  }, []);
 
   const sendSoundboardTrack = useCallback((track: MediaStreamTrack | null) => {
     const next = soundboardSendRef.current
@@ -749,22 +701,6 @@ export default function RoomClient({
     }
   }, [serverId]);
 
-  async function toggleSharedScreenAudio() {
-    const screenAudioTrack = screenAudioTrackRef.current;
-    if (!screenAudioTrack || screenAudioTrack.readyState !== 'live' || micLockedByHostRef.current) return;
-
-    const nextEnabled = !screenAudioEnabledRef.current;
-    try {
-      await setOutgoingScreenAudio(nextEnabled ? screenAudioTrack : null);
-      screenAudioEnabledRef.current = nextEnabled;
-      setScreenAudioEnabled(nextEnabled);
-      setMuteRemoteAudioDuringShare(nextEnabled && muteRemoteAudioFallbackRef.current);
-    } catch (error) {
-      console.error('Não foi possível alterar o áudio compartilhado da tela:', error);
-      showProblem('Não foi possível alterar o áudio da tela.');
-    }
-  }
-
   const toggleMic = useCallback(() => {
     if (micLockedByHostRef.current) {
       showProblem('O anfitrião bloqueou seu microfone. Aguarde ele liberar o áudio.');
@@ -817,10 +753,6 @@ export default function RoomClient({
     const display = screenStreamRef.current;
     screenStreamRef.current = null;
     screenAudioTrackRef.current = null;
-    screenAudioEnabledRef.current = false;
-    muteRemoteAudioFallbackRef.current = false;
-    setScreenAudioAvailable(false);
-    setScreenAudioEnabled(false);
 
     const camTrack = cameraStreamRef.current?.getVideoTracks()[0] ?? null;
     const restoreCam = camBeforeShareRef.current;
@@ -834,12 +766,6 @@ export default function RoomClient({
       showProblem('A tela parou de ser compartilhada, mas não foi possível restaurar a câmera.');
     }
 
-    try {
-      await setOutgoingScreenAudio(null);
-    } catch (err) {
-      console.error('Não foi possível restaurar o microfone após compartilhar a tela:', err);
-      showProblem('A apresentação parou, mas não foi possível restaurar o áudio do microfone.');
-    }
     display?.getTracks().forEach((track) => track.stop());
 
     setSharingScreen(false);
@@ -881,18 +807,7 @@ export default function RoomClient({
           video: getScreenVideoConstraints(screenShareSettings),
           audio: selection.shareAudio,
         }
-        : {
-          video: {
-            ...getScreenVideoConstraints(screenShareSettings),
-            displaySurface: selection.surface,
-          },
-          audio: selection.shareAudio ? { restrictOwnAudio: true } : false,
-          systemAudio: selection.shareAudio ? 'include' : 'exclude',
-          windowAudio: selection.surface === 'window' ? 'window' : undefined,
-          selfBrowserSurface: selection.surface === 'browser' ? 'include' : 'exclude',
-          monitorTypeSurfaces: selection.surface === 'monitor' ? 'include' : 'exclude',
-          surfaceSwitching: 'include',
-        };
+        : buildDisplayMediaRequest(selection.surface, selection.shareAudio, getScreenVideoConstraints(screenShareSettings));
       const display = await navigator.mediaDevices.getDisplayMedia(displayOptions as unknown as DisplayMediaStreamOptions);
       const screenTrack = display.getVideoTracks()[0];
       if (!screenTrack) {
@@ -915,29 +830,21 @@ export default function RoomClient({
       }
       const settings = screenTrack.getSettings();
       const actualCaptureInfo = formatScreenCaptureSettings(settings, screenShareSettings);
-      const displaySurface = (settings as MediaTrackSettings & { displaySurface?: string }).displaySurface;
-      const displayAudioTrack = display.getAudioTracks()[0] ?? null;
+      const displaySurface = (settings as MediaTrackSettings & { displaySurface?: string }).displaySurface || selection.surface;
+      let displayAudioTrack = selection.shareAudio ? (display.getAudioTracks()[0] ?? null) : null;
+      if (displayAudioTrack) await prepareScreenAudioTrack(displayAudioTrack, displaySurface);
+      if (displayAudioTrack && displayAudioTrack.readyState !== 'live') displayAudioTrack = null;
       screenAudioTrackRef.current = displayAudioTrack;
-      screenAudioEnabledRef.current = false;
-      setScreenAudioEnabled(false);
-      setScreenAudioAvailable(Boolean(displayAudioTrack));
-      const mayContainCallAudio = Boolean(displayAudioTrack && displaySurface !== 'browser');
-      const audioSettings = displayAudioTrack?.getSettings() as (MediaTrackSettings & { restrictOwnAudio?: boolean }) | undefined;
-      const audioConstraints = navigator.mediaDevices.getSupportedConstraints() as MediaTrackSupportedConstraints & { restrictOwnAudio?: boolean };
-      const ownCallAudioIsFiltered = audioConstraints.restrictOwnAudio === true && audioSettings?.restrictOwnAudio !== false;
-      const useLocalMuteFallback = Boolean(displayAudioTrack && mayContainCallAudio && !ownCallAudioIsFiltered);
-      muteRemoteAudioFallbackRef.current = useLocalMuteFallback;
-      setMuteRemoteAudioDuringShare(false);
+      setMuteRemoteAudioDuringShare(Boolean(displayAudioTrack && displaySurface === 'monitor'));
+      if (selection.shareAudio && !displayAudioTrack) {
+        showProblem('A tela vai sem som. No aviso do navegador, marque compartilhar o áudio do sistema.');
+      }
 
       try {
-        await manager.replaceVideoTrack(screenTrack, display, profile);
+        await manager.replaceVideoTrack(screenTrack, display, profile, displayAudioTrack);
       } catch (err) {
         console.error('Não foi possível enviar o compartilhamento de tela:', err);
         screenAudioTrackRef.current = null;
-        screenAudioEnabledRef.current = false;
-        muteRemoteAudioFallbackRef.current = false;
-        setScreenAudioAvailable(false);
-        setScreenAudioEnabled(false);
         display.getTracks().forEach((track) => track.stop());
         screenStreamRef.current = null;
         setMuteRemoteAudioDuringShare(false);
@@ -950,16 +857,6 @@ export default function RoomClient({
           .catch(() => {});
         showProblem('A tela foi capturada, mas não foi possível enviá-la aos participantes.');
         return;
-      }
-
-      try {
-        const sendAudio = selection.shareAudio && displayAudioTrack;
-        await setOutgoingScreenAudio(sendAudio ? displayAudioTrack : null);
-        screenAudioEnabledRef.current = Boolean(sendAudio);
-        setScreenAudioEnabled(Boolean(sendAudio));
-      } catch (err) {
-        console.error('Não foi possível preparar o áudio da apresentação:', err);
-        showProblem('A tela será compartilhada, mas não foi possível preparar o áudio.');
       }
 
       setGoLiveOpen(false);
@@ -980,22 +877,18 @@ export default function RoomClient({
       displayAudioTrack?.addEventListener('ended', () => {
         if (screenAudioTrackRef.current?.id !== displayAudioTrack.id) return;
         screenAudioTrackRef.current = null;
-        screenAudioEnabledRef.current = false;
-        setScreenAudioAvailable(false);
-        setScreenAudioEnabled(false);
         setMuteRemoteAudioDuringShare(false);
-        void setOutgoingScreenAudio(null).catch(() => {});
-        appendSystemChatMessage('O navegador encerrou o áudio compartilhado. Seu microfone continua ativo.');
+        const video = screenStreamRef.current?.getVideoTracks()[0];
+        if (video && currentSharingRef.current) {
+          void manager.replaceVideoTrack(video, screenStreamRef.current, profile, null).catch(() => {});
+        }
+        appendSystemChatMessage('O navegador encerrou o áudio compartilhado. A imagem continua.');
       }, { once: true });
     } catch (err) {
       const cancelled = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError');
       if (cancelled) return;
       console.error('Não foi possível iniciar a apresentação de tela:', err);
       screenAudioTrackRef.current = null;
-      screenAudioEnabledRef.current = false;
-      muteRemoteAudioFallbackRef.current = false;
-      setScreenAudioAvailable(false);
-      setScreenAudioEnabled(false);
       setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
       setGoLiveOpen(false);
@@ -1468,8 +1361,6 @@ export default function RoomClient({
           deafened={deafened}
           camOn={camOn}
           sharingScreen={sharingScreen}
-          screenAudioAvailable={screenAudioAvailable}
-          screenAudioEnabled={screenAudioEnabled}
           soundEffects={soundEffects}
           soundEffectsLoading={soundEffectsLoading}
           playingSoundId={playingSoundId}
@@ -1482,7 +1373,6 @@ export default function RoomClient({
           onToggleDeafen={toggleDeafen}
           onToggleCam={toggleCam}
           onToggleScreenShare={toggleScreenShare}
-          onToggleScreenAudio={toggleSharedScreenAudio}
           onLeave={handleLeave}
           onCopyLink={handleCopyLink}
           onToggleParticipants={toggleParticipantsPanel}

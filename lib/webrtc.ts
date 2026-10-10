@@ -96,6 +96,7 @@ export class WebRTCManager {
   private watchedRemoteTracks = new WeakSet<MediaStreamTrack>();
   private screenActive = false;
   private screenTrack: MediaStreamTrack | null = null;
+  private screenAudioTrack: MediaStreamTrack | null = null;
   private screenProfile: VideoSenderProfile | null = null;
   private iceServers: IceServerConfig[] = [{ urls: 'stun:stun.l.google.com:19302' }];
   private channel: Channel;
@@ -103,6 +104,7 @@ export class WebRTCManager {
 
   onTrack: TrackHandler = () => {};
   onSoundboardTrack: SoundboardTrackHandler = () => {};
+  onScreenAudioTrack: (peerId: string, track: MediaStreamTrack | null) => void = () => {};
   onConnectionStateChange: ConnectionStateHandler = () => {};
   onSpeakingChange: SpeakingHandler = () => {};
   onScreenShareState: ScreenShareHandler = () => {};
@@ -215,6 +217,7 @@ export class WebRTCManager {
     this.videoProfileOverride = null;
     this.screenActive = false;
     this.screenTrack = null;
+    this.screenAudioTrack = null;
     this.screenProfile = null;
     if (wasSharing) this.send({ type: 'screen-stop', from: this.localId });
     this.stopOutgoingScreens();
@@ -236,12 +239,14 @@ export class WebRTCManager {
   replaceVideoTrack(
     track: MediaStreamTrack | null,
     _stream?: MediaStream | null,
-    profile: VideoSenderProfile | null = null
+    profile: VideoSenderProfile | null = null,
+    screenAudio: MediaStreamTrack | null = null,
   ) {
     const update = this.videoReplaceChain.then(async () => {
       if (profile && track) {
         this.screenActive = true;
         this.screenTrack = track;
+        this.screenAudioTrack = screenAudio?.readyState === 'live' ? screenAudio : null;
         this.screenProfile = profile;
         for (const peer of this.peers.values()) {
           if (peer.connection.signalingState === 'closed') continue;
@@ -259,6 +264,7 @@ export class WebRTCManager {
       if (this.screenActive) {
         this.screenActive = false;
         this.screenTrack = null;
+        this.screenAudioTrack = null;
         this.screenProfile = null;
         this.stopOutgoingScreens();
         this.send({ type: 'screen-stop', from: this.localId });
@@ -651,11 +657,13 @@ export class WebRTCManager {
     const track = this.screenTrack;
     if (!this.screenActive || !track || track.readyState !== 'live') return;
 
+    const audioTrack = this.screenAudioTrack?.readyState === 'live' ? this.screenAudioTrack : null;
     const existing = this.outgoingScreen.get(peerId);
     if (!force && existing) {
       const state = existing.connection.connectionState;
       const senderTrack = existing.connection.getSenders().find((sender) => sender.track?.kind === 'video')?.track;
-      if (senderTrack === track && (state === 'new' || state === 'connecting' || state === 'connected')) return;
+      const senderAudio = existing.connection.getSenders().find((sender) => sender.track?.kind === 'audio')?.track ?? null;
+      if (senderTrack === track && senderAudio === audioTrack && (state === 'new' || state === 'connecting' || state === 'connected')) return;
     }
 
     const generation = (existing?.generation ?? 0) + 1;
@@ -664,6 +672,15 @@ export class WebRTCManager {
     const pc = new RTCPeerConnection(this.rtcConfig());
     const link: ScreenLink = { connection: pc, pendingCandidates: [], generation };
     this.outgoingScreen.set(peerId, link);
+    // O áudio da tela vai cru, numa conexão só de envio. Misturar essa faixa
+    // no microfone passa pelo cancelador de eco da voz e o Chrome some com o
+    // som do sistema — principalmente ao apresentar a tela inteira.
+    if (audioTrack) {
+      pc.addTransceiver(audioTrack, {
+        direction: 'sendonly',
+        streams: [new MediaStream([audioTrack])],
+      });
+    }
     const transceiver = pc.addTransceiver(track, {
       direction: 'sendonly',
       streams: [new MediaStream([track])],
@@ -744,6 +761,10 @@ export class WebRTCManager {
 
     pc.ontrack = (event) => {
       if (this.incomingScreen.get(from) !== link) return;
+      if (event.track.kind === 'audio') {
+        this.onScreenAudioTrack(from, event.track);
+        return;
+      }
       this.addRemoteTrack(from, event.track, 'screen');
       if (!event.track.muted) this.clearScreenReplay(from);
     };
@@ -846,6 +867,7 @@ export class WebRTCManager {
     link.connection.onconnectionstatechange = null;
     link.connection.close();
     this.incomingScreen.delete(peerId);
+    this.onScreenAudioTrack(peerId, null);
   }
 
   private handleScreenStop(from: string) {
