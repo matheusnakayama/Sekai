@@ -1,6 +1,20 @@
 'use client';
 
 import type { Channel } from 'pusher-js';
+import {
+  SCREEN_CONNECT_GRACE_MS,
+  VOICE_CHECKING_GRACE_MS,
+  candidateKey,
+  chunkCandidates,
+  hasTurnUrl,
+  nextScreenReplay,
+  relayIceServers,
+  screenLinkReusable,
+  screenReplayResponse,
+  shrinkSessionDescription,
+  signalGenerationAction,
+  voiceRecoveryDecision,
+} from '@/lib/callRecovery';
 import { advanceVoiceGate, createVoiceGate, voiceDescription } from '@/lib/voiceCapture';
 import type { IceServerConfig, SignalPayload } from './types';
 
@@ -33,6 +47,15 @@ interface PeerEntry {
   iceRestartQueued: boolean;
   recoveryAttempts: number;
   recoveryTimer?: number;
+  generation: number;
+  useRelay: boolean;
+  attemptStartedAt: number;
+  disconnectedAt?: number;
+  disconnectTimer?: number;
+  localCandidates: RTCIceCandidateInit[];
+  flushedCandidateCount: number;
+  appliedCandidates: Set<string>;
+  candidateFlushTimer?: number;
   initialCallFallbackTimer?: number;
   offerRetryTimer?: number;
   offerRetryAttempts: number;
@@ -54,6 +77,12 @@ interface ScreenLink {
   connection: RTCPeerConnection;
   pendingCandidates: RTCIceCandidateInit[];
   generation: number;
+  openedAt: number;
+  localCandidates: RTCIceCandidateInit[];
+  flushedCandidateCount: number;
+  appliedCandidates: Set<string>;
+  candidateFlushTimer?: number;
+  watchTimer?: number;
 }
 
 interface EarlyScreenIce {
@@ -95,6 +124,9 @@ export class WebRTCManager {
   private earlyScreenIce = new Map<string, EarlyScreenIce[]>();
   private screenReplayTimers = new Map<string, number>();
   private screenSendRetries = new Map<string, number>();
+  private screenRelayPeers = new Set<string>();
+  private screenFrameAsks = new Map<string, number>();
+  private earlyVoiceIce = new Map<string, RTCIceCandidateInit[]>();
   private watchedRemoteTracks = new WeakSet<MediaStreamTrack>();
   private screenActive = false;
   private screenTrack: MediaStreamTrack | null = null;
@@ -165,9 +197,18 @@ export class WebRTCManager {
       await peer.soundboardTrackReady;
       const offer = voiceDescription(await pc.createOffer());
       await pc.setLocalDescription(offer);
-      this.send({ type: 'offer', from: this.localId, to: peerId, sdp: pc.localDescription ?? offer });
+      peer.attemptStartedAt = Date.now();
+      this.send({
+        type: 'offer',
+        from: this.localId,
+        to: peerId,
+        sdp: pc.localDescription ?? offer,
+        generation: peer.generation,
+        relay: peer.useRelay,
+      });
+      this.resendVoiceCandidates(peerId, peer);
       this.scheduleOfferRetry(peerId, peer, 5_000);
-      this.scheduleRecovery(peerId, peer, 12_000);
+      this.scheduleRecovery(peerId, peer, 8_000);
     } catch (error) {
       peer.initialOfferStarted = false;
       throw error;
@@ -184,6 +225,8 @@ export class WebRTCManager {
       if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
       if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
       if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
+      if (entry.disconnectTimer !== undefined) window.clearTimeout(entry.disconnectTimer);
+      if (entry.candidateFlushTimer !== undefined) window.clearTimeout(entry.candidateFlushTimer);
       if (entry.retryNegotiation) {
         entry.connection.removeEventListener('signalingstatechange', entry.retryNegotiation);
         entry.connection.removeEventListener('connectionstatechange', entry.retryNegotiation);
@@ -196,6 +239,8 @@ export class WebRTCManager {
     this.closeOutgoingScreen(peerId);
     this.closeIncomingScreen(peerId);
     this.clearScreenReplay(peerId);
+    this.screenRelayPeers.delete(peerId);
+    this.screenFrameAsks.delete(peerId);
     this.remoteStreams.delete(peerId);
     this.voiceVideoByPeer.delete(peerId);
     const screenIds = this.remoteScreenByPeer.get(peerId);
@@ -331,16 +376,12 @@ export class WebRTCManager {
     this.send({ type: 'media-state', from: this.localId, ...state });
   }
 
-  private ensurePeerConnection(peerId: string): RTCPeerConnection {
+  private ensurePeerConnection(peerId: string, options?: { generation?: number; useRelay?: boolean }): RTCPeerConnection {
     const existing = this.peers.get(peerId);
     if (existing) return existing.connection;
 
-    const pc = new RTCPeerConnection({
-      iceServers: this.iceServers,
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require',
-      iceCandidatePoolSize: 4,
-    });
+    const useRelay = options?.useRelay ?? false;
+    const pc = new RTCPeerConnection(this.rtcConfig(useRelay));
     const peer: PeerEntry = {
       connection: pc,
       makingOffer: false,
@@ -354,9 +395,16 @@ export class WebRTCManager {
       recoveryAttempts: 0,
       offerRetryAttempts: 0,
       resetting: false,
+      generation: options?.generation ?? 1,
+      useRelay,
+      attemptStartedAt: Date.now(),
+      localCandidates: [],
+      flushedCandidateCount: 0,
+      appliedCandidates: new Set(),
       videoParametersChain: Promise.resolve(),
     };
     this.peers.set(peerId, peer);
+    peer.pendingCandidates.push(...this.takeEarlyVoiceIce(peerId, peer.generation));
 
     const localTracks = this.localStream?.getTracks() ?? [];
     const localAudioTrack = localTracks.find((track) => track.kind === 'audio') ?? null;
@@ -403,14 +451,8 @@ export class WebRTCManager {
     }
 
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.send({
-          type: 'ice-candidate',
-          from: this.localId,
-          to: peerId,
-          candidate: event.candidate.toJSON(),
-        });
-      }
+      if (!event.candidate || this.peers.get(peerId) !== peer) return;
+      this.queueVoiceCandidate(peerId, peer, event.candidate.toJSON());
     };
 
     pc.ontrack = (event) => {
@@ -424,38 +466,9 @@ export class WebRTCManager {
       this.addRemoteTrack(peerId, event.track, 'voice');
     };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') {
-        peer.recoveryAttempts = 0;
-        peer.offerRetryAttempts = 0;
-        this.clearRecovery(peer);
-        if (peer.initialCallFallbackTimer !== undefined) {
-          window.clearTimeout(peer.initialCallFallbackTimer);
-          peer.initialCallFallbackTimer = undefined;
-        }
-        if (peer.offerRetryTimer !== undefined) {
-          window.clearTimeout(peer.offerRetryTimer);
-          peer.offerRetryTimer = undefined;
-        }
-        this.onConnectionStateChange(peerId, 'connected');
-        if (this.videoProfileOverride) {
-          const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
-          if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
-        }
-        const voiceSender = peer.audioTransceiver?.sender;
-        if (voiceSender) void this.configureVoiceSender(voiceSender);
-        return;
-      }
-      if (pc.connectionState === 'failed') {
-        this.onConnectionStateChange(peerId, 'connecting');
-        this.scheduleRecovery(peerId, peer, 3_000, true);
-        return;
-      }
-      // `disconnected` é um piscar comum do Chrome durante o ICE. Recriar a
-      // voz nesse momento derrubava uma chamada que ainda estava de pé.
-      if (pc.connectionState === 'disconnected') return;
-      this.onConnectionStateChange(peerId, pc.connectionState);
-    };
+    const onPeerState = () => this.handlePeerState(peerId, peer);
+    pc.onconnectionstatechange = onPeerState;
+    pc.oniceconnectionstatechange = onPeerState;
 
     if (this.screenActive && this.screenTrack?.readyState === 'live') {
       this.rebalanceVideoSenders();
@@ -507,6 +520,8 @@ export class WebRTCManager {
           from: this.localId,
           to: peerId,
           sdp: pc.localDescription ?? offer,
+          generation: peer.generation,
+          relay: peer.useRelay,
         });
       } catch (err) {
         peer.negotiationQueued = false;
@@ -526,8 +541,10 @@ export class WebRTCManager {
   }
 
   /**
-   * Se a rota não fecha, recria o par em vez de desistir. O aviso antigo
-   * marcava a chamada como falha permanente depois de duas tentativas.
+   * Uma rede lenta ficava em "Conectando" porque os dois lados derrubavam a
+   * tentativa um do outro, ou porque a checagem ainda nem tinha terminado.
+   * Só quem faz a oferta recria o par. O outro pede. Se houver TURN, a nova
+   * tentativa sai só pelo relay.
    */
   private scheduleRecovery(peerId: string, peer: PeerEntry, delayMs: number, replaceTimer = false) {
     if (peer.connection.signalingState === 'closed') return;
@@ -541,38 +558,130 @@ export class WebRTCManager {
       peer.recoveryTimer = undefined;
       if (this.peers.get(peerId) !== peer) return;
       const pc = peer.connection;
-      if (pc.signalingState === 'closed' || pc.connectionState === 'connected') return;
-      // O id menor age primeiro. Se ele não resolver, o outro lado assume.
-      if (this.localId > peerId && peer.recoveryAttempts < 1) {
-        peer.recoveryAttempts += 1;
-        this.scheduleRecovery(peerId, peer, 6_000);
+      if (pc.signalingState === 'closed' || pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') return;
+      const look = () => voiceRecoveryDecision({
+        localIsOfferer: this.localId < peerId,
+        connectionState: pc.connectionState,
+        iceConnectionState: pc.iceConnectionState,
+        ageMs: Date.now() - peer.attemptStartedAt,
+        attempt: peer.recoveryAttempts,
+        hasTurn: hasTurnUrl(this.iceServers),
+        disconnectedForMs: peer.disconnectedAt === undefined ? null : Date.now() - peer.disconnectedAt,
+      });
+      const preliminary = look();
+      if (preliminary.action === 'keep') {
+        if (preliminary.delayMs > 0) this.scheduleRecovery(peerId, peer, preliminary.delayMs);
         return;
       }
-      peer.recoveryAttempts += 1;
-      const wait = Math.min(12_000, 1_500 * peer.recoveryAttempts);
       void this.refreshIceServers().finally(() => {
         if (this.peers.get(peerId) !== peer) return;
-        if (peer.connection.connectionState === 'connected') return;
-        this.resetPeer(peerId, true);
+        if (peer.connection.connectionState === 'connected' || peer.connection.iceConnectionState === 'connected') return;
+        const decision = look();
+        if (decision.action === 'keep') {
+          if (decision.delayMs > 0) this.scheduleRecovery(peerId, peer, decision.delayMs);
+          return;
+        }
+        peer.recoveryAttempts += 1;
+        if (decision.action === 'request') {
+          this.send({
+            type: 'peer-reset',
+            from: this.localId,
+            to: peerId,
+            generation: peer.generation,
+            relay: decision.relay,
+            request: true,
+          });
+          this.onConnectionStateChange(peerId, 'disconnected');
+          this.scheduleRecovery(peerId, peer, decision.delayMs);
+          return;
+        }
+        this.resetPeer(peerId, true, decision.relay);
         const current = this.peers.get(peerId);
-        if (current) this.scheduleRecovery(peerId, current, wait);
+        if (current) this.scheduleRecovery(peerId, current, decision.delayMs);
       });
     }, delayMs);
   }
 
+  private handlePeerState(peerId: string, peer: PeerEntry) {
+    const pc = peer.connection;
+    if (this.peers.get(peerId) !== peer || pc.signalingState === 'closed') return;
+    const failed = pc.connectionState === 'failed' || pc.iceConnectionState === 'failed';
+    const disconnected = pc.connectionState === 'disconnected' || pc.iceConnectionState === 'disconnected';
+    if (pc.connectionState === 'connected') {
+      peer.recoveryAttempts = 0;
+      peer.offerRetryAttempts = 0;
+      peer.disconnectedAt = undefined;
+      if (peer.disconnectTimer !== undefined) {
+        window.clearTimeout(peer.disconnectTimer);
+        peer.disconnectTimer = undefined;
+      }
+      this.clearRecovery(peer);
+      if (peer.initialCallFallbackTimer !== undefined) {
+        window.clearTimeout(peer.initialCallFallbackTimer);
+        peer.initialCallFallbackTimer = undefined;
+      }
+      if (peer.offerRetryTimer !== undefined) {
+        window.clearTimeout(peer.offerRetryTimer);
+        peer.offerRetryTimer = undefined;
+      }
+      this.onConnectionStateChange(peerId, 'connected');
+      if (this.videoProfileOverride) {
+        const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
+        if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
+      }
+      const voiceSender = peer.audioTransceiver?.sender;
+      if (voiceSender) void this.configureVoiceSender(voiceSender);
+      return;
+    }
+    if (failed) {
+      if (peer.disconnectTimer !== undefined) {
+        window.clearTimeout(peer.disconnectTimer);
+        peer.disconnectTimer = undefined;
+      }
+      this.onConnectionStateChange(peerId, 'disconnected');
+      this.scheduleRecovery(peerId, peer, 400, true);
+      return;
+    }
+    // Um piscar de `disconnected` é comum no Chrome. Só recria se continuar assim.
+    if (disconnected) {
+      peer.disconnectedAt ??= Date.now();
+      if (peer.disconnectTimer !== undefined) return;
+      peer.disconnectTimer = window.setTimeout(() => {
+        peer.disconnectTimer = undefined;
+        if (this.peers.get(peerId) !== peer) return;
+        const state = pc.connectionState;
+        const ice = pc.iceConnectionState;
+        if (state === 'connected' || ice === 'connected' || ice === 'completed') return;
+        if (state !== 'disconnected' && ice !== 'disconnected' && state !== 'failed' && ice !== 'failed') return;
+        this.onConnectionStateChange(peerId, 'disconnected');
+        this.scheduleRecovery(peerId, peer, 0, true);
+      }, 6_000);
+      return;
+    }
+    peer.disconnectedAt = undefined;
+    if (peer.disconnectTimer !== undefined) {
+      window.clearTimeout(peer.disconnectTimer);
+      peer.disconnectTimer = undefined;
+    }
+    if (pc.connectionState === 'connecting') this.onConnectionStateChange(peerId, 'connecting');
+  }
+
   /** Troca a conexão por uma nova, o mesmo efeito de sair e entrar na chamada. */
-  private resetPeer(peerId: string, notify: boolean) {
+  private resetPeer(peerId: string, notify: boolean, relay = false) {
     const existing = this.peers.get(peerId);
     if (existing?.resetting) return;
     const attempts = existing?.recoveryAttempts ?? 0;
-    if (notify) this.send({ type: 'peer-reset', from: this.localId, to: peerId });
+    const generation = (existing?.generation ?? 0) + 1;
+    const useRelay = relay || existing?.useRelay || false;
+    if (notify) this.send({ type: 'peer-reset', from: this.localId, to: peerId, generation, relay: useRelay });
     this.discardConnection(peerId);
-    this.onConnectionStateChange(peerId, 'connecting');
-    this.ensurePeerConnection(peerId);
+    this.onConnectionStateChange(peerId, 'disconnected');
+    this.ensurePeerConnection(peerId, { generation, useRelay });
     const peer = this.peers.get(peerId);
     if (!peer) return;
     peer.resetting = true;
     peer.recoveryAttempts = attempts;
+    if (useRelay) this.screenRelayPeers.add(peerId);
     window.setTimeout(() => {
       const current = this.peers.get(peerId);
       if (current) current.resetting = false;
@@ -585,6 +694,26 @@ export class WebRTCManager {
     }
   }
 
+  /** Adota a geração pedida pelo outro lado, sem incrementar de novo. */
+  private adoptPeer(peerId: string, generation: number, relay: boolean) {
+    const existing = this.peers.get(peerId);
+    if (existing?.generation === generation && existing.connection.signalingState !== 'closed') return;
+    const attempts = existing?.recoveryAttempts ?? 0;
+    this.discardConnection(peerId);
+    this.onConnectionStateChange(peerId, 'disconnected');
+    this.ensurePeerConnection(peerId, { generation, useRelay: relay });
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+    peer.recoveryAttempts = attempts;
+    peer.resetting = true;
+    if (relay) this.screenRelayPeers.add(peerId);
+    window.setTimeout(() => {
+      const current = this.peers.get(peerId);
+      if (current) current.resetting = false;
+    }, 4_000);
+    this.preparePeerConnection(peerId);
+  }
+
   private discardConnection(peerId: string) {
     const entry = this.peers.get(peerId);
     if (!entry) return;
@@ -592,6 +721,8 @@ export class WebRTCManager {
     if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
     if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
     if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
+    if (entry.disconnectTimer !== undefined) window.clearTimeout(entry.disconnectTimer);
+    if (entry.candidateFlushTimer !== undefined) window.clearTimeout(entry.candidateFlushTimer);
     if (entry.retryNegotiation) {
       entry.connection.removeEventListener('signalingstatechange', entry.retryNegotiation);
       entry.connection.removeEventListener('connectionstatechange', entry.retryNegotiation);
@@ -617,28 +748,38 @@ export class WebRTCManager {
 
   private scheduleScreenReplay(peerId: string) {
     this.clearScreenReplay(peerId);
-    const arm = (delay: number, onlyIfMissing: boolean) => {
+    const started = Date.now();
+    const arm = (delay: number) => {
       const timer = window.setTimeout(() => {
         if (this.screenReplayTimers.get(peerId) !== timer) return;
         this.screenReplayTimers.delete(peerId);
-        if (this.hasLiveScreen(peerId)) return;
-        const hasTrack = (this.remoteScreenByPeer.get(peerId)?.size ?? 0) > 0;
-        if (onlyIfMissing && hasTrack) {
-          arm(5_000, false);
+        const link = this.incomingScreen.get(peerId);
+        const age = link ? Date.now() - link.openedAt : Date.now() - started;
+        const decision = nextScreenReplay(
+          link?.connection.connectionState ?? null,
+          age,
+          this.hasLiveScreen(peerId),
+          this.screenFrameAsks.get(peerId) ?? 0,
+        );
+        if (decision.kind === 'stop') return;
+        if (decision.kind === 'wait') {
+          arm(decision.ms);
           return;
         }
-        this.send({ type: 'screen-replay', from: this.localId, to: peerId });
-        if (onlyIfMissing) arm(5_000, false);
+        if (!decision.relay) this.screenFrameAsks.set(peerId, (this.screenFrameAsks.get(peerId) ?? 0) + 1);
+        this.send({ type: 'screen-replay', from: this.localId, to: peerId, relay: decision.relay });
+        arm(decision.relay ? 20_000 : SCREEN_CONNECT_GRACE_MS);
       }, delay);
       this.screenReplayTimers.set(peerId, timer);
     };
-    arm(3_000, true);
+    arm(1_000);
   }
 
   private clearScreenReplay(peerId: string) {
     const timer = this.screenReplayTimers.get(peerId);
     if (timer !== undefined) window.clearTimeout(timer);
     this.screenReplayTimers.delete(peerId);
+    this.screenFrameAsks.delete(peerId);
   }
 
   private hasLiveScreen(peerId: string) {
@@ -651,13 +792,32 @@ export class WebRTCManager {
     });
   }
 
-  private rtcConfig(): RTCConfiguration {
+  private rtcConfig(relay = false): RTCConfiguration {
+    const turn = relayIceServers(this.iceServers);
+    const iceServers = relay && turn.length ? turn : this.iceServers;
     return {
-      iceServers: this.iceServers,
+      iceServers,
       bundlePolicy: 'max-bundle',
       rtcpMuxPolicy: 'require',
-      iceCandidatePoolSize: 4,
+      iceCandidatePoolSize: relay && turn.length ? 0 : 4,
+      ...(relay && turn.length ? { iceTransportPolicy: 'relay' as const } : {}),
     };
+  }
+
+  private armScreenWatch(peerId: string, link: ScreenLink) {
+    if (link.watchTimer !== undefined) window.clearTimeout(link.watchTimer);
+    link.watchTimer = window.setTimeout(() => {
+      link.watchTimer = undefined;
+      if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
+      const connection = link.connection;
+      if (connection.connectionState === 'connected' || connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') return;
+      this.screenRelayPeers.add(peerId);
+      void this.offerScreen(peerId, true).finally(() => {
+        if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
+        if (link.connection.connectionState === 'connected' || link.connection.iceConnectionState === 'failed') return;
+        this.armScreenWatch(peerId, link);
+      });
+    }, SCREEN_CONNECT_GRACE_MS + 500);
   }
 
   private async offerScreen(peerId: string, force = false) {
@@ -666,18 +826,32 @@ export class WebRTCManager {
 
     const audioTrack = this.screenAudioTrack?.readyState === 'live' ? this.screenAudioTrack : null;
     const existing = this.outgoingScreen.get(peerId);
-    if (!force && existing) {
+    if (existing) {
       const state = existing.connection.connectionState;
       const senderTrack = existing.connection.getSenders().find((sender) => sender.track?.kind === 'video')?.track;
       const senderAudio = existing.connection.getSenders().find((sender) => sender.track?.kind === 'audio')?.track ?? null;
-      if (senderTrack === track && senderAudio === audioTrack && (state === 'new' || state === 'connecting' || state === 'connected')) return;
+      const sameTracks = senderTrack === track && senderAudio === audioTrack;
+      const age = Date.now() - existing.openedAt;
+      if (sameTracks && screenLinkReusable(state, age, true)) {
+        if (state === 'connected' && force) void this.nudgeScreenKeyframe(existing);
+        return;
+      }
     }
 
     const generation = (existing?.generation ?? 0) + 1;
+    const useRelay = this.screenRelayPeers.has(peerId) || this.peers.get(peerId)?.useRelay === true;
     this.closeOutgoingScreen(peerId);
 
-    const pc = new RTCPeerConnection(this.rtcConfig());
-    const link: ScreenLink = { connection: pc, pendingCandidates: [], generation };
+    const pc = new RTCPeerConnection(this.rtcConfig(useRelay));
+    const link: ScreenLink = {
+      connection: pc,
+      pendingCandidates: [],
+      generation,
+      openedAt: Date.now(),
+      localCandidates: [],
+      flushedCandidateCount: 0,
+      appliedCandidates: new Set(),
+    };
     this.outgoingScreen.set(peerId, link);
     // O áudio da tela vai cru, numa conexão só de envio. Misturar essa faixa
     // no microfone passa pelo cancelador de eco da voz e o Chrome some com o
@@ -695,31 +869,27 @@ export class WebRTCManager {
 
     pc.onicecandidate = (event) => {
       if (!event.candidate || this.outgoingScreen.get(peerId) !== link) return;
-      this.send({
-        type: 'screen-ice',
-        from: this.localId,
-        to: peerId,
-        as: 'sharer',
-        generation,
-        candidate: event.candidate.toJSON(),
-      });
+      this.queueScreenCandidate(peerId, link, 'sharer', event.candidate.toJSON());
     };
-    pc.onconnectionstatechange = () => {
-      if (this.outgoingScreen.get(peerId) !== link) return;
+    const onScreenState = () => {
+      if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
       if (pc.connectionState === 'connected') {
         this.screenSendRetries.delete(peerId);
         void this.configureVideoSender(transceiver.sender, this.profileForScreen());
         return;
       }
-      if (pc.connectionState !== 'failed' || !this.screenActive) return;
+      if (pc.connectionState !== 'failed' && pc.iceConnectionState !== 'failed') return;
       const tries = this.screenSendRetries.get(peerId) ?? 0;
-      if (tries >= 2) return;
       this.screenSendRetries.set(peerId, tries + 1);
+      this.screenRelayPeers.add(peerId);
       window.setTimeout(() => {
         if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
         void this.offerScreen(peerId, true);
-      }, 1_500);
+      }, Math.min(30_000, 1_000 * 2 ** Math.min(tries, 5)));
     };
+    pc.onconnectionstatechange = onScreenState;
+    pc.oniceconnectionstatechange = onScreenState;
+    this.armScreenWatch(peerId, link);
 
     try {
       const offer = await pc.createOffer();
@@ -758,11 +928,15 @@ export class WebRTCManager {
     }
 
     this.closeIncomingScreen(from);
-    const pc = new RTCPeerConnection(this.rtcConfig());
+    const pc = new RTCPeerConnection(this.rtcConfig(this.peers.get(from)?.useRelay === true));
     const link: ScreenLink = {
       connection: pc,
       pendingCandidates: [],
       generation,
+      openedAt: Date.now(),
+      localCandidates: [],
+      flushedCandidateCount: 0,
+      appliedCandidates: new Set(),
     };
     this.incomingScreen.set(from, link);
 
@@ -777,15 +951,15 @@ export class WebRTCManager {
     };
     pc.onicecandidate = (event) => {
       if (!event.candidate || this.incomingScreen.get(from) !== link) return;
-      this.send({
-        type: 'screen-ice',
-        from: this.localId,
-        to: from,
-        as: 'viewer',
-        generation,
-        candidate: event.candidate.toJSON(),
-      });
+      this.queueScreenCandidate(from, link, 'viewer', event.candidate.toJSON());
     };
+    const onIncomingScreenState = () => {
+      if (this.incomingScreen.get(from) !== link) return;
+      if (pc.connectionState !== 'failed' && pc.iceConnectionState !== 'failed') return;
+      this.send({ type: 'screen-replay', from: this.localId, to: from, relay: true });
+    };
+    pc.onconnectionstatechange = onIncomingScreenState;
+    pc.oniceconnectionstatechange = onIncomingScreenState;
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
     if (this.incomingScreen.get(from) !== link) return;
@@ -814,9 +988,12 @@ export class WebRTCManager {
   private async addScreenIce(from: string, as: 'sharer' | 'viewer', generation: number, candidate: RTCIceCandidateInit) {
     const link = as === 'sharer' ? this.incomingScreen.get(from) : this.outgoingScreen.get(from);
     if (!link || link.generation !== generation) {
-      if (!link) this.queueEarlyIce(from, as, generation, candidate);
+      if (!link || link.generation < generation) this.queueEarlyIce(from, as, generation, candidate);
       return;
     }
+    const key = candidateKey(candidate);
+    if (link.appliedCandidates.has(key)) return;
+    link.appliedCandidates.add(key);
     if (!link.connection.remoteDescription) {
       link.pendingCandidates.push(candidate);
       return;
@@ -824,6 +1001,7 @@ export class WebRTCManager {
     try {
       await link.connection.addIceCandidate(new RTCIceCandidate(candidate));
     } catch (error) {
+      link.appliedCandidates.delete(key);
       console.warn('Candidato ICE da apresentação ignorado:', error);
     }
   }
@@ -848,6 +1026,7 @@ export class WebRTCManager {
       try {
         await link.connection.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (error) {
+        link.appliedCandidates.delete(candidateKey(candidate));
         console.warn('Candidato ICE da apresentação ignorado:', error);
       }
     }
@@ -860,8 +1039,11 @@ export class WebRTCManager {
   private closeOutgoingScreen(peerId: string) {
     const link = this.outgoingScreen.get(peerId);
     if (!link) return;
+    if (link.candidateFlushTimer !== undefined) window.clearTimeout(link.candidateFlushTimer);
+    if (link.watchTimer !== undefined) window.clearTimeout(link.watchTimer);
     link.connection.onicecandidate = null;
     link.connection.onconnectionstatechange = null;
+    link.connection.oniceconnectionstatechange = null;
     link.connection.close();
     this.outgoingScreen.delete(peerId);
   }
@@ -869,9 +1051,12 @@ export class WebRTCManager {
   private closeIncomingScreen(peerId: string) {
     const link = this.incomingScreen.get(peerId);
     if (!link) return;
+    if (link.candidateFlushTimer !== undefined) window.clearTimeout(link.candidateFlushTimer);
+    if (link.watchTimer !== undefined) window.clearTimeout(link.watchTimer);
     link.connection.onicecandidate = null;
     link.connection.ontrack = null;
     link.connection.onconnectionstatechange = null;
+    link.connection.oniceconnectionstatechange = null;
     link.connection.close();
     this.incomingScreen.delete(peerId);
     this.onScreenAudioTrack(peerId, null);
@@ -999,7 +1184,15 @@ export class WebRTCManager {
       if (pc.connectionState === 'connected' || pc.signalingState === 'closed' || pc.remoteDescription) return;
       if (pc.signalingState === 'have-local-offer' && pc.localDescription?.type === 'offer') {
         peer.offerRetryAttempts += 1;
-        this.send({ type: 'offer', from: this.localId, to: peerId, sdp: pc.localDescription });
+        this.send({
+          type: 'offer',
+          from: this.localId,
+          to: peerId,
+          sdp: pc.localDescription,
+          generation: peer.generation,
+          relay: peer.useRelay,
+        });
+        this.resendVoiceCandidates(peerId, peer);
         this.scheduleOfferRetry(peerId, peer, 5_000);
       }
     }, delayMs);
@@ -1008,9 +1201,13 @@ export class WebRTCManager {
   private async flushPendingCandidates(peer: PeerEntry) {
     const pending = peer.pendingCandidates.splice(0);
     for (const candidate of pending) {
+      const key = candidateKey(candidate);
+      if (peer.appliedCandidates.has(key)) continue;
+      peer.appliedCandidates.add(key);
       try {
         await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
+        peer.appliedCandidates.delete(key);
         console.warn('Candidato ICE ignorado:', err);
       }
     }
@@ -1036,6 +1233,12 @@ export class WebRTCManager {
         await this.addScreenIce(payload.from, payload.as, payload.generation, payload.candidate);
         return;
       }
+      if (payload.type === 'screen-ice-bundle') {
+        for (const candidate of payload.candidates) {
+          await this.addScreenIce(payload.from, payload.as, payload.generation, candidate);
+        }
+        return;
+      }
     } catch (error) {
       console.warn('Erro ao processar a apresentação de tela:', error);
       return;
@@ -1045,11 +1248,21 @@ export class WebRTCManager {
       return;
     }
     if (payload.type === 'screen-replay') {
-      if (this.screenActive) void this.offerScreen(payload.from, true);
+      if (!this.screenActive) return;
+      const existing = this.outgoingScreen.get(payload.from);
+      const age = existing ? Date.now() - existing.openedAt : SCREEN_CONNECT_GRACE_MS;
+      const response = screenReplayResponse(existing?.connection.connectionState ?? null, age, payload.relay === true);
+      if (response === 'ignore') return;
+      if (response === 'keyframe' && existing) {
+        void this.nudgeScreenKeyframe(existing);
+        return;
+      }
+      if (payload.relay) this.screenRelayPeers.add(payload.from);
+      void this.offerScreen(payload.from, true);
       return;
     }
     if (payload.type === 'peer-reset') {
-      this.resetPeer(payload.from, false);
+      this.handlePeerReset(payload.from, payload.generation, payload.relay === true, payload.request === true);
       return;
     }
     if (payload.type === 'media-state') {
@@ -1058,9 +1271,31 @@ export class WebRTCManager {
     }
 
     const { from } = payload;
-    const pc = this.ensurePeerConnection(from);
+    if (payload.type === 'offer') {
+      const existing = this.peers.get(from);
+      const action = signalGenerationAction(existing?.generation ?? 0, payload.generation);
+      if (action === 'ignore') return;
+      if (action === 'replace') this.adoptPeer(from, payload.generation ?? 1, payload.relay === true);
+      else if (!existing) this.ensurePeerConnection(from, { generation: payload.generation, useRelay: payload.relay === true });
+    } else if (payload.type === 'answer') {
+      const existing = this.peers.get(from);
+      if (!existing || signalGenerationAction(existing.generation, payload.generation) !== 'apply') return;
+    } else if (payload.type === 'ice-candidate' || payload.type === 'ice-candidates') {
+      const existing = this.peers.get(from);
+      const generation = payload.generation;
+      const action = signalGenerationAction(existing?.generation ?? 0, generation);
+      const list = payload.type === 'ice-candidates' ? payload.candidates : [payload.candidate];
+      if (action === 'ignore') return;
+      if (action === 'replace' && generation !== undefined) {
+        this.queueEarlyVoiceIce(from, generation, list);
+        return;
+      }
+      if (!existing) this.ensurePeerConnection(from);
+    }
+
     const peer = this.peers.get(from);
-    if (!peer) return;
+    const pc = peer?.connection;
+    if (!peer || !pc) return;
 
     if (peer.initialCallFallbackTimer !== undefined) {
       window.clearTimeout(peer.initialCallFallbackTimer);
@@ -1076,7 +1311,7 @@ export class WebRTCManager {
           pc.remoteDescription.sdp === payload.sdp.sdp &&
           pc.localDescription?.type === 'answer'
         ) {
-          this.send({ type: 'answer', from: this.localId, to: from, sdp: pc.localDescription });
+          this.send({ type: 'answer', from: this.localId, to: from, sdp: pc.localDescription, generation: peer.generation });
           return;
         }
         if (peer.offerRetryTimer !== undefined) {
@@ -1097,7 +1332,9 @@ export class WebRTCManager {
         const answer = voiceDescription(await pc.createAnswer());
         await pc.setLocalDescription(answer);
         peer.negotiationQueued = false;
-        this.send({ type: 'answer', from: this.localId, to: from, sdp: pc.localDescription ?? answer });
+        peer.attemptStartedAt = Date.now();
+        this.send({ type: 'answer', from: this.localId, to: from, sdp: pc.localDescription ?? answer, generation: peer.generation });
+        this.scheduleRecovery(from, peer, 8_000);
       } else if (payload.type === 'answer') {
         if (peer.offerRetryTimer !== undefined) {
           window.clearTimeout(peer.offerRetryTimer);
@@ -1107,15 +1344,12 @@ export class WebRTCManager {
         peer.settingRemoteAnswerPending = true;
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
         peer.settingRemoteAnswerPending = false;
+        peer.attemptStartedAt = Date.now();
         await this.flushPendingCandidates(peer);
       } else if (payload.type === 'ice-candidate') {
-        if (!peer.ignoreOffer) {
-          if (pc.remoteDescription) {
-            await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
-          } else {
-            peer.pendingCandidates.push(payload.candidate);
-          }
-        }
+        await this.addVoiceCandidate(peer, payload.candidate);
+      } else if (payload.type === 'ice-candidates') {
+        for (const candidate of payload.candidates) await this.addVoiceCandidate(peer, candidate);
       }
     } catch (err) {
       peer.settingRemoteAnswerPending = false;
@@ -1125,8 +1359,147 @@ export class WebRTCManager {
     }
   }
 
+  private handlePeerReset(peerId: string, generation: number | undefined, relay: boolean, request: boolean) {
+    if (request) {
+      if (this.localId > peerId) return;
+      const peer = this.peers.get(peerId);
+      if (peer?.resetting) return;
+      const failed = peer?.connection.connectionState === 'failed' || peer?.connection.iceConnectionState === 'failed';
+      if (peer?.useRelay && !failed && Date.now() - peer.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
+      void this.refreshIceServers().finally(() => {
+        const current = this.peers.get(peerId);
+        if (!current || current.resetting) return;
+        const stillFailed = current.connection.connectionState === 'failed' || current.connection.iceConnectionState === 'failed';
+        if (current.useRelay && !stillFailed && Date.now() - current.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
+        this.resetPeer(peerId, true, relay || hasTurnUrl(this.iceServers));
+      });
+      return;
+    }
+    const current = this.peers.get(peerId);
+    if (generation === undefined) {
+      this.resetPeer(peerId, false, relay);
+      return;
+    }
+    const action = signalGenerationAction(current?.generation ?? 0, generation);
+    if (action === 'ignore') return;
+    if (action === 'apply' && current && current.connection.signalingState !== 'closed') return;
+    this.adoptPeer(peerId, generation, relay || current?.useRelay === true);
+  }
+
+  private queueEarlyVoiceIce(peerId: string, generation: number, candidates: RTCIceCandidateInit[]) {
+    const key = `${peerId}:${generation}`;
+    const list = this.earlyVoiceIce.get(key) ?? [];
+    list.push(...candidates);
+    this.earlyVoiceIce.set(key, list);
+  }
+
+  private takeEarlyVoiceIce(peerId: string, generation: number) {
+    const key = `${peerId}:${generation}`;
+    const list = this.earlyVoiceIce.get(key) ?? [];
+    this.earlyVoiceIce.delete(key);
+    return list;
+  }
+
+  private queueVoiceCandidate(peerId: string, peer: PeerEntry, candidate: RTCIceCandidateInit) {
+    peer.localCandidates.push(candidate);
+    if (peer.candidateFlushTimer !== undefined) return;
+    peer.candidateFlushTimer = window.setTimeout(() => {
+      peer.candidateFlushTimer = undefined;
+      this.flushVoiceCandidates(peerId, peer, false);
+    }, 200);
+  }
+
+  private resendVoiceCandidates(peerId: string, peer: PeerEntry) {
+    if (peer.candidateFlushTimer !== undefined) {
+      window.clearTimeout(peer.candidateFlushTimer);
+      peer.candidateFlushTimer = undefined;
+    }
+    this.flushVoiceCandidates(peerId, peer, true);
+  }
+
+  private flushVoiceCandidates(peerId: string, peer: PeerEntry, all: boolean) {
+    if (this.peers.get(peerId) !== peer) return;
+    const fresh = peer.localCandidates.slice(all ? 0 : peer.flushedCandidateCount);
+    if (!fresh.length) return;
+    peer.flushedCandidateCount = peer.localCandidates.length;
+    for (const candidates of chunkCandidates(fresh)) {
+      this.send({ type: 'ice-candidates', from: this.localId, to: peerId, generation: peer.generation, candidates });
+    }
+  }
+
+  private async addVoiceCandidate(peer: PeerEntry, candidate: RTCIceCandidateInit) {
+    if (peer.ignoreOffer) return;
+    const key = candidateKey(candidate);
+    if (peer.appliedCandidates.has(key)) return;
+    if (!peer.connection.remoteDescription) {
+      if (peer.pendingCandidates.some((item) => candidateKey(item) === key)) return;
+      peer.pendingCandidates.push(candidate);
+      return;
+    }
+    peer.appliedCandidates.add(key);
+    try {
+      await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      peer.appliedCandidates.delete(key);
+      console.warn('Candidato ICE ignorado:', err);
+    }
+  }
+
+  private queueScreenCandidate(peerId: string, link: ScreenLink, as: 'sharer' | 'viewer', candidate: RTCIceCandidateInit) {
+    link.localCandidates.push(candidate);
+    if (link.candidateFlushTimer !== undefined) return;
+    link.candidateFlushTimer = window.setTimeout(() => {
+      link.candidateFlushTimer = undefined;
+      this.flushScreenCandidateQueue(peerId, link, as);
+    }, 200);
+  }
+
+  private flushScreenCandidateQueue(peerId: string, link: ScreenLink, as: 'sharer' | 'viewer') {
+    const current = as === 'sharer' ? this.outgoingScreen.get(peerId) : this.incomingScreen.get(peerId);
+    if (current !== link) return;
+    const fresh = link.localCandidates.slice(link.flushedCandidateCount);
+    if (!fresh.length) return;
+    link.flushedCandidateCount = link.localCandidates.length;
+    for (const candidates of chunkCandidates(fresh)) {
+      this.send({
+        type: 'screen-ice-bundle',
+        from: this.localId,
+        to: peerId,
+        as,
+        generation: link.generation,
+        candidates,
+      });
+    }
+  }
+
+  private async nudgeScreenKeyframe(link: ScreenLink) {
+    const sender = link.connection.getSenders().find((item) => item.track?.kind === 'video');
+    if (!sender) return;
+    try {
+      const parameters = sender.getParameters();
+      if (!parameters.encodings.length) return;
+      const primary = { ...parameters.encodings[0] };
+      parameters.encodings[0] = { ...primary, active: false };
+      await sender.setParameters(parameters);
+      parameters.encodings[0] = { ...primary, active: true };
+      await sender.setParameters(parameters);
+    } catch (error) {
+      console.warn('Não foi possível renovar o quadro da apresentação:', error);
+    }
+  }
+
   private send(payload: SignalPayload) {
-    this.channel.trigger('client-signal', payload);
+    let message: SignalPayload = payload;
+    if ('sdp' in payload && payload.sdp) {
+      const { sdp, ...envelope } = payload;
+      message = { ...payload, sdp: shrinkSessionDescription(sdp, envelope) };
+    }
+    try {
+      const delivered = this.channel.trigger('client-signal', message);
+      if (!delivered) console.warn('Não foi possível enviar o sinal da chamada.', message.type);
+    } catch (error) {
+      console.warn('Não foi possível enviar o sinal da chamada.', error);
+    }
   }
 
   private async configureVoiceSender(sender: RTCRtpSender) {

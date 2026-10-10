@@ -1,15 +1,17 @@
 export type SignalPayload =
-  | { type: 'offer'; from: string; to: string; sdp: RTCSessionDescriptionInit }
-  | { type: 'answer'; from: string; to: string; sdp: RTCSessionDescriptionInit }
-  | { type: 'ice-candidate'; from: string; to: string; candidate: RTCIceCandidateInit }
+  | { type: 'offer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation?: number; relay?: boolean }
+  | { type: 'answer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation?: number }
+  | { type: 'ice-candidate'; from: string; to: string; candidate: RTCIceCandidateInit; generation?: number }
+  | { type: 'ice-candidates'; from: string; to: string; candidates: RTCIceCandidateInit[]; generation?: number }
   | { type: 'screen-share-state'; from: string; sharing: boolean }
   | { type: 'media-state'; from: string; micOn: boolean; camOn: boolean }
-  | { type: 'peer-reset'; from: string; to: string }
+  | { type: 'peer-reset'; from: string; to: string; generation?: number; relay?: boolean; request?: boolean }
   | { type: 'screen-offer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation: number }
   | { type: 'screen-answer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation: number }
   | { type: 'screen-ice'; from: string; to: string; candidate: RTCIceCandidateInit; as: 'sharer' | 'viewer'; generation: number }
+  | { type: 'screen-ice-bundle'; from: string; to: string; candidates: RTCIceCandidateInit[]; as: 'sharer' | 'viewer'; generation: number }
   | { type: 'screen-stop'; from: string }
-  | { type: 'screen-replay'; from: string; to: string };
+  | { type: 'screen-replay'; from: string; to: string; relay?: boolean };
 
 export interface PresenceMemberInfo {
   name: string;
