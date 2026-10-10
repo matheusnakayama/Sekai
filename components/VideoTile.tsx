@@ -61,10 +61,16 @@ export default function VideoTile({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !participant.stream) return;
-
-    if (video.srcObject !== participant.stream) video.srcObject = participant.stream;
+    if (!video) return;
+    // A faixa de voz não pode ir para este vídeo: ele fica mudo para não
+    // reproduzir o próprio microfone, e o Chrome entrega o alto-falante ao
+    // primeiro elemento que toca a faixa. Se for o vídeo mudo, o amigo some.
+    const videoTracks = (participant.stream?.getVideoTracks() ?? []).filter((track) => track.readyState !== 'ended');
+    const current = video.srcObject instanceof MediaStream ? video.srcObject.getVideoTracks() : [];
+    const sameTracks = current.length === videoTracks.length && current.every((track, index) => track === videoTracks[index]);
+    if (!sameTracks) video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
     video.muted = true;
+    if (!videoTracks.length) return;
     void video.play().catch(() => {
       if (!participant.isLocal && (participant.camOn || participant.isSharingScreen)) setPlaybackBlocked(true);
     });
@@ -175,8 +181,8 @@ export default function VideoTile({
           />
         )}
         <audio ref={voiceAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
-        <audio ref={soundboardAudioRef} autoPlay playsInline className="hidden" />
-        <audio ref={screenAudioRef} autoPlay playsInline className="hidden" />
+        <audio ref={soundboardAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
+        <audio ref={screenAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         {!showVideo && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />

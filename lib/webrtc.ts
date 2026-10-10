@@ -65,6 +65,7 @@ interface SpeakingWatcher {
   ctx: AudioContext;
   analyser: AnalyserNode;
   raf: number;
+  cloned: MediaStreamTrack | null;
 }
 
 /**
@@ -413,7 +414,10 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
-      if (event.transceiver === peer.soundboardTransceiver) {
+      // A voz é só a primeira seção de áudio. Qualquer outra (soundboard, ou
+      // uma seção que o navegador reordenou) não pode substituir o microfone
+      // remoto — senão o tile fica com uma faixa muda e o amigo não é ouvido.
+      if (event.track.kind === 'audio' && event.transceiver !== peer.audioTransceiver) {
         this.onSoundboardTrack(peerId, event.track);
         return;
       }
@@ -937,6 +941,8 @@ export class WebRTCManager {
       return;
     }
 
+    const currentVoice = stream.getAudioTracks().find((existing) => existing.readyState === 'live' && !existing.muted);
+    if (currentVoice && currentVoice.id !== track.id && track.muted) return;
     stream.getAudioTracks().forEach((existing) => {
       if (existing.id !== track.id) stream.removeTrack(existing);
     });
@@ -1224,19 +1230,23 @@ export class WebRTCManager {
     const previousWatcher = this.speakingWatchers.get(id);
     if (previousWatcher) {
       cancelAnimationFrame(previousWatcher.raf);
+      previousWatcher.cloned?.stop();
       previousWatcher.ctx.close().catch(() => {});
       this.speakingWatchers.delete(id);
     }
     try {
       const ctx = new AudioContext();
-      const source = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
+      // A faixa original fica só para o alto-falante. O indicador de fala
+      // observa uma cópia, para o navegador não entregar o som ao analisador.
+      const cloned = audioTrack.clone();
+      const source = ctx.createMediaStreamSource(new MediaStream([cloned]));
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.65;
       source.connect(analyser);
       void ctx.resume().catch(() => {});
       const data = new Uint8Array(analyser.fftSize);
-      const watcher: SpeakingWatcher = { ctx, analyser, raf: 0 };
+      const watcher: SpeakingWatcher = { ctx, analyser, raf: 0, cloned };
 
       let gate = createVoiceGate();
       const tick = () => {
@@ -1261,6 +1271,7 @@ export class WebRTCManager {
     this.hangupAll();
     this.speakingWatchers.forEach((w) => {
       cancelAnimationFrame(w.raf);
+      w.cloned?.stop();
       w.ctx.close().catch(() => {});
     });
     this.speakingWatchers.clear();
