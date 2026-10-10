@@ -913,7 +913,9 @@ export default function Home() {
       if (inviteCode) {
         const { data: joinedServerId, error } = await supabase.rpc("redeem_invite", { p_code: inviteCode });
         if (!error && joinedServerId) {
-          const requestedChannelId = params.get("channel") || params.get("voiceChannel");
+          const explicitChannelId = params.get("channel") || params.get("voiceChannel");
+          const { data: inviteRow } = explicitChannelId ? { data: null } : await supabase.from("invites").select("channel_id").eq("code", inviteCode.trim().toUpperCase()).maybeSingle();
+          const requestedChannelId = explicitChannelId || inviteRow?.channel_id || null;
           const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
           if (joinedServer) {
             const optimisticList = [...serversRef.current.filter((server) => server.id !== joinedServer.id), {
@@ -1610,7 +1612,7 @@ export default function Home() {
       const url = new URL(code, window.location.origin);
       code = url.searchParams.get("invite") || url.searchParams.get("code") || code;
       requestedChannelId = url.searchParams.get("channel") || url.searchParams.get("voiceChannel");
-      if (code === rawCode.trim() && url.pathname !== "/") {
+      if ((!code || code === rawCode.trim()) && url.pathname !== "/") {
         code = url.pathname.replace(/\/+$/, "").split("/").pop() || code;
       }
     } catch {
@@ -1636,7 +1638,12 @@ export default function Home() {
     }
     await loadServers();
     if (serverId) {
-      if (requestedChannelId) setInviteChannelId(requestedChannelId);
+      let channelId = requestedChannelId;
+      if (!channelId) {
+        const { data: inviteRow } = await supabase.from("invites").select("channel_id").eq("code", code.trim().toUpperCase()).maybeSingle();
+        channelId = inviteRow?.channel_id ?? null;
+      }
+      if (channelId) setInviteChannelId(channelId);
       setActiveServerId(serverId as string);
     }
   }

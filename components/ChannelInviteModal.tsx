@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, LoaderCircle, Search, UserPlus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { inviteUrl } from "@/lib/invites";
 import { useDialogs } from "@/components/DialogProvider";
 import type { Channel } from "@/components/ChannelSidebar";
 
@@ -73,13 +74,6 @@ export function ChannelInviteModal({ channel, serverId, serverName, currentUserI
     if (createError || !data?.code) throw new Error(createError?.message || "Não foi possível gerar o convite.");
     setInviteCode(data.code);
     return data.code as string;
-  }
-
-  function inviteUrl(code: string) {
-    const url = new URL(window.location.origin);
-    url.searchParams.set("invite", code);
-    url.searchParams.set("channel", channel.id);
-    return url.toString();
   }
 
   async function copyInvite() {

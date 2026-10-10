@@ -5,7 +5,9 @@ import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
 import { medalClipId, medalSocialVideoUrl } from "@/lib/medal";
 import { extractUrls, isDirectMediaUrl, isVideoUrl, splitSpoilers, visibleText } from "@/lib/messageParts";
+import { inviteCodeFromUrl } from "@/lib/invites";
 import { linkifyMentions, type MentionName } from "@/lib/mentions";
+import { ServerInviteEmbed } from "@/components/ServerInviteCard";
 
 type Preview = { url: string; title: string; description: string; image: string; site: string };
 const previewCache = new Map<string, Preview | null>();
@@ -87,7 +89,8 @@ export function ChatMessageBody({
   const inline = parts.some((part) => part.type === "spoiler");
   const urls = extractUrls(parts.filter((part) => part.type === "text").map((part) => part.value).join(" "));
   const media = preferences.embedLinkMedia ? urls.filter(isDirectMediaUrl) : [];
-  const previewUrl = previewLinks && preferences.showLinkPreviews ? urls.find((url) => !isDirectMediaUrl(url)) : undefined;
+  const inviteCode = urls.map((url) => inviteCodeFromUrl(url)).find((code): code is string => Boolean(code)) ?? null;
+  const previewUrl = previewLinks && preferences.showLinkPreviews && !inviteCode ? urls.find((url) => !isDirectMediaUrl(url)) : undefined;
   const [preview, setPreview] = useState<Preview | null>(previewUrl ? previewCache.get(previewUrl) ?? null : null);
 
   useEffect(() => {
@@ -112,6 +115,7 @@ export function ChatMessageBody({
         ? <SpoilerText key={index} value={linkifyMentions(part.value, mentionNames)} always={preferences.spoilerDisplay === "always"} emojis={emojiImages} />
         : <MarkdownText key={index} content={linkifyMentions(visibleText(part.value, preferences.embedLinkMedia), mentionNames)} emojis={emojiImages} inline={inline} />)}
       {media.map((url) => <MediaEmbed key={url} url={url} />)}
+      {inviteCode && <ServerInviteEmbed code={inviteCode} />}
       {preview && (
         <a href={preview.url} target="_blank" rel="noreferrer" className="mt-2 flex max-w-md overflow-hidden rounded-xl border border-white/10 bg-black/20 no-underline">
           {preview.image && <img src={preview.image} alt="" className="h-20 w-20 shrink-0 object-cover" />}

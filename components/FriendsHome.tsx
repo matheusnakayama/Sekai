@@ -15,6 +15,7 @@ import { PresenceIndicator, type Presence } from "@/components/PresenceIndicator
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 import { DIRECT_CALL_INVITE } from "@/lib/directCalls";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
+import { inviteUrl } from "@/lib/invites";
 import { NowPlayingCard, useNowPlaying } from "@/components/NowPlayingCard";
 import { useChatDisplay } from "@/lib/chatPreferences";
 import { buildMentionNames } from "@/lib/mentions";
@@ -335,11 +336,9 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     const { data: invite, error } = await supabase.from("invites").insert({ server_id: serverId, channel_id: channel?.id ?? null, inviter_id: currentUserId, max_uses: 0, max_age: 0 }).select("code").single();
     if (error || !invite) { setMessage("Não foi possível gerar o convite. Confira se a tabela de convites está configurada no Supabase."); return; }
     const { error: directInviteError } = await supabase.from("friend_server_invites").insert({ sender_id: currentUserId, receiver_id: friend.id, server_id: serverId, server_name: servers.find((server) => server.id === serverId)?.name || "Servidor", channel_id: channel?.id ?? null, invite_code: invite.code });
-    const url = new URL(window.location.origin);
-    url.searchParams.set("invite", invite.code);
-    if (channel?.id) url.searchParams.set("voiceChannel", channel.id);
-    try { await navigator.clipboard.writeText(url.toString()); }
-    catch { await dialogs.notify({ title: "Convite criado", message: url.toString() }); return; }
+    const url = inviteUrl(invite.code);
+    try { await navigator.clipboard.writeText(url); }
+    catch { await dialogs.notify({ title: "Convite criado", message: url }); return; }
     setMessage(directInviteError ? `Link de convite copiado para ${friend.display_name || friend.username}.` : `Convite enviado para ${friend.display_name || friend.username}; o link também foi copiado.`);
   }
 

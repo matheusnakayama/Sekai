@@ -18,6 +18,7 @@ import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPrefere
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
 import { buildDisplayMediaRequest, prepareScreenAudioTrack } from '@/lib/screenShare';
 import { advanceVoiceGate, createVoiceGate, openCallInput } from '@/lib/voiceCapture';
+import { inviteUrl } from '@/lib/invites';
 import type {
   CallError,
   IceServerConfig,
@@ -1105,14 +1106,12 @@ export default function RoomClient({
       return;
     }
 
-    const url = new URL(window.location.origin);
-    url.searchParams.set('invite', invite.code);
-    url.searchParams.set('voiceChannel', roomId);
+    const url = inviteUrl(invite.code);
     try {
-      await navigator.clipboard.writeText(url.toString());
+      await navigator.clipboard.writeText(url);
       appendSystemChatMessage('Convite copiado.');
     } catch {
-      appendSystemChatMessage(`Convite criado: ${url.toString()}`);
+      appendSystemChatMessage(`Convite criado: ${url}`);
     }
   }
 

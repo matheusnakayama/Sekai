@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
 import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
+import { ServerInviteCard } from "@/components/ServerInviteCard";
 import {
   ServerAssetsPanel,
   ServerAuditPanel,
@@ -153,6 +154,7 @@ export function ServerSettingsModal({
             <GeralTab
               serverId={serverId}
               serverName={serverName}
+              currentUserId={currentUserId}
               canEdit={isOwner || perms.manageGuild}
               onChanged={onChanged}
               isOwner={isOwner}
@@ -206,6 +208,7 @@ export function ServerSettingsModal({
 function GeralTab({
   serverId,
   serverName,
+  currentUserId,
   canEdit,
   onChanged,
   isOwner,
@@ -213,6 +216,7 @@ function GeralTab({
 }: {
   serverId: string;
   serverName: string;
+  currentUserId: string;
   canEdit: boolean;
   onChanged: () => void;
   isOwner: boolean;
@@ -222,14 +226,42 @@ function GeralTab({
   const dialogs = useDialogs();
   const [name, setName] = useState(serverName);
   const [iconUrl, setIconUrl] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [bannerReady, setBannerReady] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [bannerSaving, setBannerSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void supabase.from("servers").select("icon_url").eq("id", serverId).maybeSingle().then(({ data }) => {
-      if (!cancelled) setIconUrl((data?.icon_url as string | null) ?? null);
-    });
+    void (async () => {
+      const { data, error } = await supabase.from("servers").select("icon_url, banner_url, created_at").eq("id", serverId).maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setBannerReady(false);
+        const fallback = await supabase.from("servers").select("icon_url, created_at").eq("id", serverId).maybeSingle();
+        if (!cancelled && fallback.data) {
+          setIconUrl((fallback.data.icon_url as string | null) ?? null);
+          setCreatedAt((fallback.data.created_at as string | null) ?? null);
+        }
+        return;
+      }
+      setBannerReady(true);
+      setIconUrl((data?.icon_url as string | null) ?? null);
+      setBannerUrl((data?.banner_url as string | null) ?? null);
+      setCreatedAt((data?.created_at as string | null) ?? null);
+      const { data: memberRows, error: memberError } = await supabase.from("members").select("user_id, profiles(status)").eq("server_id", serverId);
+      if (cancelled || memberError || !memberRows) return;
+      const rows = memberRows as { profiles?: { status?: string | null } | { status?: string | null }[] | null }[];
+      setMemberCount(rows.length);
+      setOnlineCount(rows.filter((row) => {
+        const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+        return profile?.status === "online" || profile?.status === "idle" || profile?.status === "dnd";
+      }).length);
+    })();
     return () => { cancelled = true; };
   }, [serverId, supabase]);
 
@@ -251,6 +283,54 @@ function GeralTab({
     const { error: updateError } = await supabase.from("servers").update({ icon_url: nextIconUrl }).eq("id", serverId);
     if (updateError) { await dialogs.notify({ title: "Falha ao salvar ícone", message: updateError.message }); return; }
     setIconUrl(nextIconUrl);
+    onChanged();
+  }
+
+  async function persistBanner(nextBannerUrl: string | null) {
+    const { error } = await supabase.rpc("set_server_banner", { p_server_id: serverId, p_banner_url: nextBannerUrl });
+    if (!error) return null;
+    const fallback = await supabase.from("servers").update({ banner_url: nextBannerUrl }).eq("id", serverId);
+    return fallback.error?.message || error.message;
+  }
+
+  async function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.currentTarget.value = "";
+    if (!file.type.startsWith("image/")) { await dialogs.notify({ title: "Arquivo inválido", message: "Escolha um arquivo de imagem." }); return; }
+    if (file.size > 8 * 1024 * 1024) { await dialogs.notify({ title: "Imagem muito grande", message: "O banner deve ter no máximo 8 MB." }); return; }
+    const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+    const path = `${serverId}/${currentUserId}/banner/${crypto.randomUUID()}.${extension}`;
+    setBannerSaving(true);
+    const { error } = await supabase.storage.from("server-assets").upload(path, file, { upsert: false, contentType: file.type });
+    if (error) {
+      setBannerSaving(false);
+      await dialogs.notify({ title: "Falha no upload", message: error.message });
+      return;
+    }
+    const nextBannerUrl = supabase.storage.from("server-assets").getPublicUrl(path).data.publicUrl;
+    const saveError = await persistBanner(nextBannerUrl);
+    setBannerSaving(false);
+    if (saveError) {
+      await supabase.storage.from("server-assets").remove([path]);
+      setBannerReady(false);
+      await dialogs.notify({ title: "Falha ao salvar o banner", message: `${saveError} Se a coluna ainda não existe, execute db/server_banner_invite.sql no SQL Editor do Supabase.` });
+      return;
+    }
+    setBannerUrl(nextBannerUrl);
+    setBannerReady(true);
+    onChanged();
+  }
+
+  async function handleRemoveBanner() {
+    setBannerSaving(true);
+    const saveError = await persistBanner(null);
+    setBannerSaving(false);
+    if (saveError) {
+      await dialogs.notify({ title: "Falha ao remover o banner", message: saveError });
+      return;
+    }
+    setBannerUrl(null);
     onChanged();
   }
 
@@ -295,11 +375,35 @@ function GeralTab({
       <header className="mb-6">
         <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Servidor</p>
         <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Perfil do servidor</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">O nome e o ícone aparecem na barra lateral e nos convites.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-discord-text-muted">O nome, o ícone e o banner aparecem na barra lateral e no cartão do convite.</p>
       </header>
 
       <section className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 shadow-lg shadow-black/10 sm:p-5">
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+          <div className="relative h-32 bg-[#4f3d86]">
+            {bannerUrl ? <img src={bannerUrl} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-gradient-to-r from-[#6a4cc4] via-[#7a5af8] to-[#9b6dff]" />}
+            {canEdit && (
+              <div className="absolute bottom-3 right-3 flex gap-2">
+                <label className={cn("inline-flex cursor-pointer items-center gap-2 rounded-lg bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/85", bannerSaving && "pointer-events-none opacity-60")}>
+                  <input type="file" accept="image/gif,image/*" className="hidden" disabled={bannerSaving} onChange={(event) => void handleBannerUpload(event)} />
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  {bannerSaving ? "Enviando..." : bannerUrl ? "Trocar banner" : "Enviar banner"}
+                </label>
+                {bannerUrl && (
+                  <button type="button" disabled={bannerSaving} onClick={() => void handleRemoveBanner()} className="rounded-lg bg-black/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/85 disabled:opacity-60">
+                    Remover
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <p className="px-3 py-2 text-xs text-discord-text-muted">Banner do convite · PNG, JPG ou GIF · até 8 MB. Uma imagem larga fica melhor.</p>
+        </div>
+        {!bannerReady && (
+          <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100">O banner ainda não está no banco. Execute <span className="font-mono">db/server_banner_invite.sql</span> no SQL Editor do Supabase.</p>
+        )}
+
+        <div className="mt-5 flex flex-wrap items-center gap-4">
           <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/10 bg-black/20 text-2xl font-bold text-white">
             {iconUrl ? <img src={iconUrl} alt="" className="h-full w-full object-cover" /> : serverName.slice(0, 1).toUpperCase()}
           </div>
@@ -338,6 +442,15 @@ function GeralTab({
         {!canEdit && (
           <p className="mt-4 text-xs text-discord-text-muted">Você não tem permissão para editar as informações do servidor.</p>
         )}
+
+        <div className="mt-6 border-t border-white/[0.06] pt-5">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-discord-text-muted">Prévia do convite</p>
+          <ServerInviteCard
+            code="preview"
+            previewOnly
+            preview={{ name: name.trim() || serverName, iconUrl, bannerUrl, createdAt, online: onlineCount, members: memberCount }}
+          />
+        </div>
       </section>
 
       {isOwner && (
@@ -996,7 +1109,8 @@ function ConvitesTab({
   }
 
   function handleCopy(code: string) {
-    navigator.clipboard.writeText(code);
+    const url = `${window.location.origin.replace(/\/$/, "")}/${code}`;
+    void navigator.clipboard.writeText(url);
   }
 
   return (
@@ -1005,7 +1119,7 @@ function ConvitesTab({
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Pessoas</p>
           <h2 className="mt-1 text-2xl font-bold text-discord-header-primary">Convites</h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">Gere um código e compartilhe com quem deve entrar no servidor.</p>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">O link fica no formato do site, com o código no final. No chat ele abre o cartão do servidor.</p>
         </div>
         {canCreate && (
           <button onClick={handleCreateInvite} className="inline-flex items-center gap-2 rounded-xl bg-theme-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:brightness-110">
@@ -1025,7 +1139,7 @@ function ConvitesTab({
             <article key={inv.code} className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.08] bg-discord-bg-primary px-4 py-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[0.04] text-discord-text-muted"><Link2 className="h-4 w-4" /></span>
               <div className="min-w-0 flex-1">
-                <p className="font-mono text-sm font-semibold tracking-wide text-discord-header-primary">{inv.code}</p>
+                <p className="truncate font-mono text-sm font-semibold tracking-wide text-discord-header-primary">/{inv.code}</p>
                 <p className="mt-0.5 text-xs text-discord-text-muted">{inv.uses} usos{inv.max_uses > 0 ? ` de ${inv.max_uses}` : " · sem limite"}</p>
               </div>
               <div className="flex items-center gap-1">
