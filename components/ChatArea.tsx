@@ -23,6 +23,21 @@ import { readSaved, rememberReport, toggleSaved, type SavedChatMessage } from "@
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
 
+type MentionSearch = { start: number; end: number; query: string };
+
+function findMentionSearch(value: string, caret: number): MentionSearch | null {
+  const beforeCaret = value.slice(0, caret);
+  const start = beforeCaret.lastIndexOf("@");
+  if (start < 0) return null;
+  const previous = beforeCaret[start - 1] ?? "";
+  if (previous && !/[\s([{\"'`]/.test(previous)) return null;
+
+  const typed = beforeCaret.slice(start + 1);
+  if (!typed || /\s$/.test(typed) || !/^[\p{L}\p{N}_ .-]*$/u.test(typed)) return null;
+  const query = typed.trim();
+  return query ? { start, end: caret, query } : null;
+}
+
 export interface ChatMessage {
   id: string;
   authorId: string;
@@ -130,6 +145,8 @@ export function ChatArea({
   const supabase = createClient();
   const dialogs = useDialogs();
   const [draft, setDraft] = useState("");
+  const [mentionSearch, setMentionSearch] = useState<MentionSearch | null>(null);
+  const [mentionSelection, setMentionSelection] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -252,6 +269,7 @@ export function ChatArea({
   function beginQuote(message: ChatMessage, topic: boolean) {
     const next = quoteDraft(message, topic);
     quotePrefix.current = next;
+    setMentionSearch(null);
     setDraft(next);
     setComposerNote(topic ? `Tópico a partir de ${message.authorName}` : `Respondendo ${message.authorName}`);
     window.requestAnimationFrame(() => {
@@ -332,6 +350,7 @@ export function ChatArea({
     if (!mentionRequest || mentionRequest.nonce === lastMentionNonce.current) return;
     lastMentionNonce.current = mentionRequest.nonce;
     const token = `@${mentionRequest.displayName}`;
+    setMentionSearch(null);
     setDraft((current) => `${current}${current && !/\s$/.test(current) ? " " : ""}${token} `);
     window.requestAnimationFrame(() => composerRef.current?.focus());
     onMentionHandled?.(mentionRequest.nonce);
@@ -379,11 +398,50 @@ export function ChatArea({
     });
   }, [commandPrefix, draft, showAutocomplete, slashCommands]);
 
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionSearch) return [];
+    const query = mentionSearch.query.toLocaleLowerCase();
+    return [...new Map(members
+      .filter((member) => Boolean(member.displayName))
+      .map((member) => [member.id, member] as const))]
+      .map(([, member]) => ({
+        member,
+        rank: [member.displayName, member.username].some((value) => value?.toLocaleLowerCase().startsWith(query)) ? 0 : 1,
+      }))
+      .filter(({ member }) => [member.displayName, member.username].some((value) => value?.toLocaleLowerCase().includes(query)))
+      .sort((a, b) => a.rank - b.rank || a.member.displayName.localeCompare(b.member.displayName))
+      .slice(0, 8)
+      .map(({ member }) => member);
+  }, [members, mentionSearch]);
+
+  function refreshMentionSearch(value: string, caret: number) {
+    setMentionSearch(findMentionSearch(value, caret));
+    setMentionSelection(0);
+  }
+
+  function pickMention(member: MemberItem) {
+    const node = composerRef.current;
+    const search = mentionSearch;
+    if (!node || !search) return;
+    const mention = `@${member.displayName}`;
+    const after = draft.slice(search.end);
+    const separator = after && !/^\s/.test(after) ? " " : "";
+    const nextDraft = `${draft.slice(0, search.start)}${mention}${separator}${after}`;
+    const nextCaret = search.start + mention.length + separator.length;
+    setDraft(nextDraft);
+    setMentionSearch(null);
+    window.requestAnimationFrame(() => {
+      node.focus();
+      node.setSelectionRange(nextCaret, nextCaret);
+    });
+  }
+
   function submitComposer() {
     const trimmed = draft.trim();
     if (!trimmed) return;
     onSendMessage(trimmed);
     setDraft("");
+    setMentionSearch(null);
     setComposerNote(null);
     quotePrefix.current = "";
   }
@@ -394,6 +452,27 @@ export function ChatArea({
   }
 
   function onComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionSearch && mentionSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setMentionSelection((index) => (index + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionSelection((index) => (index - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+        event.preventDefault();
+        pickMention(mentionSuggestions[mentionSelection] ?? mentionSuggestions[0]);
+        return;
+      }
+    }
+    if (event.key === "Escape" && mentionSearch) {
+      setMentionSearch(null);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       submitComposer();
@@ -401,10 +480,12 @@ export function ChatArea({
   }
 
   function pickCommand(name: string, prefix = "/") {
+    setMentionSearch(null);
     setDraft(`${prefix}${name} `);
   }
 
   function appendEmoji(value: string) {
+    setMentionSearch(null);
     setDraft((current) => `${current}${current && !/\s$/.test(current) ? " " : ""}${value} `);
     setEmojiPickerOpen(false);
     window.requestAnimationFrame(() => composerRef.current?.focus());
@@ -644,6 +725,25 @@ export function ChatArea({
 
       {/* Campo de mensagem */}
       <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">
+        {mentionSearch && mentionSuggestions.length > 0 && (
+          <div className="absolute bottom-[calc(100%+10px)] z-30 w-full overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl">
+            <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[.12em] text-discord-text-muted">Membros correspondentes</p>
+            {mentionSuggestions.map((member, index) => (
+              <button
+                key={member.id}
+                type="button"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => pickMention(member)}
+                className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition", index === mentionSelection ? "bg-white/[0.09]" : "hover:bg-white/[0.05]")}
+              >
+                {member.avatarUrl ? <img src={member.avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-discord-brand/20 text-xs font-bold text-discord-brand">{member.displayName.slice(0, 1).toLocaleUpperCase()}</span>}
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-discord-header-primary">{member.displayName}</span>
+                {member.username && <span className="max-w-[40%] truncate text-xs text-discord-text-muted">{member.username}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
         {showAutocomplete && filteredCommands.length > 0 && (
           <div className="absolute bottom-[calc(100%+10px)] w-full overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-floating shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
@@ -672,13 +772,6 @@ export function ChatArea({
 
         {composerNote && <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-discord-text-muted"><span className="min-w-0 flex-1 truncate">{composerNote}</span><button type="button" aria-label="Cancelar resposta" onClick={cancelQuote} className="rounded p-1 hover:bg-white/10 hover:text-white"><X size={14}/></button></div>}
 
-        {chatDisplay.composerPreview && draft.trim() && !draft.startsWith("/") && !draft.startsWith("!") && (
-          <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
-            <ChatMessageBody content={draft} preferences={chatDisplay} emojiImages={emojiImages} previewLinks={false} mentionNames={mentionNames} />
-          </div>
-        )}
-
         <form
           onSubmit={handleSubmit}
           className="flex min-h-12 items-end gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
@@ -692,8 +785,11 @@ export function ChatArea({
             ref={composerRef}
             rows={1}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => { setDraft(e.target.value); refreshMentionSearch(e.target.value, e.target.selectionStart); }}
             onKeyDown={onComposerKeyDown}
+            onKeyUp={(e) => { if (!["Escape", "ArrowDown", "ArrowUp", "Enter"].includes(e.key)) refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart); }}
+            onClick={(e) => refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onBlur={() => setMentionSearch(null)}
             placeholder={`Conversar em #${channelName}`}
             className="max-h-40 min-h-6 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
           />
