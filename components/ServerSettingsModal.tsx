@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon, ImagePlus, Activity, AppWindow, Ban, FolderTree, Hash, Link2, Lock, Music2, Puzzle, ScrollText, Server, Shield, Smile, Sparkles, Sticker, Tag, Volume2, type LucideIcon } from "lucide-react";
+import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon, ImagePlus, Activity, AppWindow, Ban, FolderTree, Hash, Link2, Lock, MessageSquare, Music2, Puzzle, ScrollText, Server, Shield, Smile, Sparkles, Sticker, Tag, Volume2, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useDialogs } from "@/components/DialogProvider";
@@ -25,7 +25,7 @@ import {
   toBigInt,
 } from "@/lib/permissions";
 
-type Tab = "geral" | "tag" | "engajamento" | "impulso" | "emoji" | "stickers" | "soundboard" | "cargos" | "canais" | "membros" | "convites" | "acesso" | "integracoes" | "apps" | "seguranca" | "auditoria" | "banimentos" | "automod" | "comunidade" | "modelo";
+type Tab = "geral" | "tag" | "engajamento" | "impulso" | "emoji" | "stickers" | "soundboard" | "cargos" | "canais" | "membros" | "convites" | "acesso" | "integracoes" | "apps" | "seguranca" | "auditoria" | "banimentos" | "automod" | "comunidade" | "mensagens" | "modelo";
 
 const SETTINGS_GROUPS: { title: string; items: { id: Tab; label: string; icon: LucideIcon }[] }[] = [
   { title: "Servidor", items: [
@@ -56,6 +56,7 @@ const SETTINGS_GROUPS: { title: string; items: { id: Tab; label: string; icon: L
     { id: "automod", label: "AutoMod", icon: Sparkles },
   ] },
   { title: "Comunidade", items: [
+    { id: "mensagens", label: "Mensagens do sistema", icon: MessageSquare },
     { id: "comunidade", label: "Habilitar comunidade", icon: Users },
     { id: "modelo", label: "Modelo do servidor", icon: FolderTree },
   ] },
@@ -170,6 +171,7 @@ export function ServerSettingsModal({
           {tab === "seguranca" && <ServerPreferencesPanel serverId={serverId} section="security" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "automod" && <ServerPreferencesPanel serverId={serverId} section="automod" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "comunidade" && <ServerPreferencesPanel serverId={serverId} section="community" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
+          {tab === "mensagens" && <ServerPreferencesPanel serverId={serverId} section="system" canManage={isOwner || perms.manageGuild} onAudit={onAudit}/>}
           {tab === "banimentos" && <ServerBansPanel serverId={serverId} canManage={isOwner || perms.ban} onAudit={onAudit}/>}
           {tab === "auditoria" && <ServerAuditPanel serverId={serverId} canView={isOwner || !!perms.viewAudit}/>}
           {tab === "modelo" && <ServerTemplatePanel serverId={serverId} serverName={serverName}/>}

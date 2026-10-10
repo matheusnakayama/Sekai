@@ -5,7 +5,7 @@ import { Ban, Hash, Inbox, Link2, Lock, MessageSquare, Play, Puzzle, ScrollText,
 import { createClient } from "@/lib/supabase/client";
 import { useDialogs } from "@/components/DialogProvider";
 
-type Section = "tag" | "access" | "security" | "automod" | "community";
+type Section = "tag" | "access" | "security" | "automod" | "community" | "system";
 type Preferences = {
   tag: string;
   description: string;
@@ -17,6 +17,8 @@ type Preferences = {
   mentionLimit: number;
   blockInviteLinks: boolean;
   slowmodeSeconds: number;
+  welcomeMessagesEnabled: boolean;
+  welcomeChannelId: string | null;
 };
 
 const DEFAULTS: Preferences = {
@@ -30,6 +32,8 @@ const DEFAULTS: Preferences = {
   mentionLimit: 5,
   blockInviteLinks: true,
   slowmodeSeconds: 0,
+  welcomeMessagesEnabled: false,
+  welcomeChannelId: null,
 };
 
 const SECTION_INFO: Record<Section, { title: string; description: string }> = {
@@ -37,7 +41,8 @@ const SECTION_INFO: Record<Section, { title: string; description: string }> = {
   access: { title: "Acesso", description: "Controle o nível mínimo de verificação e o filtro aplicado a novos membros." },
   security: { title: "Configurações de segurança", description: "Ajuste as proteções padrão para a comunidade." },
   automod: { title: "AutoMod", description: "Reduza spam, menções excessivas e convites externos nos canais de texto." },
-  community: { title: "Comunidade", description: "Organize o servidor como uma comunidade e escolha o canal de entrada." },
+  community: { title: "Comunidade", description: "Ative os recursos de comunidade e apresente seu servidor aos membros." },
+  system: { title: "Mensagens do sistema", description: "Escolha se o Sekai deve anunciar a entrada de novos membros e em qual canal." },
 };
 
 export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }: {
@@ -84,6 +89,10 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
   }
 
   async function save() {
+    if (section === "system" && prefs.welcomeMessagesEnabled && !prefs.welcomeChannelId) {
+      setError("Escolha o canal onde as mensagens do sistema serão publicadas.");
+      return;
+    }
     setSaving(true);
     setError("");
     const { data: { user } } = await supabase.auth.getUser();
@@ -138,12 +147,23 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
           </>}
 
           {section === "community" && <>
-            <Card title="Configuração de comunidade" description="Ative recursos de comunidade e escolha o canal padrão de boas-vindas.">
+            <Card title="Configuração de comunidade" description="Ative recursos de comunidade e apresente seu servidor aos membros.">
               <Toggle checked={prefs.communityEnabled} disabled={!canManage} onChange={(value) => update("communityEnabled", value)} title="Habilitar comunidade" text="Exibe o servidor como uma comunidade com regras de segurança e boas-vindas."/>
-              <Field label="Canal de boas-vindas"><select value={(prefs as any).welcomeChannelId ?? ""} disabled={!canManage || !prefs.communityEnabled} onChange={(event) => setPrefs((current) => ({ ...current, welcomeChannelId: event.target.value || null } as Preferences))} className={inputClass}><option value="">Sem canal selecionado</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>#{channel.name}</option>)}</select></Field>
               <Field label="Descrição da comunidade"><textarea value={prefs.description} maxLength={180} rows={3} disabled={!canManage || !prefs.communityEnabled} onChange={(event) => update("description", event.target.value)} placeholder="Apresente sua comunidade" className={inputClass}/></Field>
             </Card>
           </>}
+
+          {section === "system" && <Card title="Mensagens do Sistema" description="Avise no canal escolhido sempre que uma pessoa entrar no servidor.">
+            <Toggle checked={prefs.welcomeMessagesEnabled} disabled={!canManage} onChange={(value) => update("welcomeMessagesEnabled", value)} title="Enviar mensagem quando alguém entrar" text="Publica uma mensagem de boas-vindas para todos os membros do servidor."/>
+            <Field label="Canal de mensagens do sistema" hint="Escolha um canal de texto deste servidor.">
+              <select value={prefs.welcomeChannelId ?? ""} disabled={!canManage} onChange={(event) => update("welcomeChannelId", event.target.value || null)} className={inputClass}>
+                <option value="">Selecione um canal</option>
+                {channels.map((channel) => <option key={channel.id} value={channel.id}># {channel.name}</option>)}
+              </select>
+              {!channels.length && <p className="mt-2 text-xs text-discord-text-muted">Este servidor ainda não tem canais de texto disponíveis.</p>}
+            </Field>
+            <p className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-xs leading-5 text-discord-text-muted">A mensagem será enviada somente para novas entradas após salvar e instalar a migração SQL do Supabase.</p>
+          </Card>}
 
           {error && <p role="alert" className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
           {canManage && <div className="sticky bottom-0 flex justify-end border-t border-white/[0.08] bg-discord-bg-secondary/95 py-4 backdrop-blur"><button onClick={() => { setPrefs(initial); setError(""); }} disabled={!changed || saving} className="mr-2 rounded-lg px-4 py-2 text-sm text-discord-text-muted hover:bg-white/5 disabled:opacity-40">Descartar</button><button onClick={() => void save()} disabled={!changed || saving} className="rounded-lg bg-discord-brand px-5 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-45">{saving ? "Salvando…" : "Salvar alterações"}</button></div>}
