@@ -59,6 +59,8 @@ export function useServerAttention({
   });
   const onMentionRef = useRef(onMention);
   const seenRef = useRef(new Set<string>());
+  const heldRef = useRef(new Set<string>());
+  const reloadRef = useRef<() => void>(() => {});
   stateRef.current.userId = userId ?? "";
   stateRef.current.selfNames = selfNames;
   stateRef.current.activeChannelId = activeTextChannelId;
@@ -80,12 +82,17 @@ export function useServerAttention({
       userId: state.userId,
       selfNames: state.selfNames,
       activeChannelId: visibleChannel,
+      heldChannelIds: [...heldRef.current],
     }));
   }, []);
 
   const markRead = useCallback((channelId: string, at?: string) => {
     const state = stateRef.current;
     if (!state.userId || !channelId) return;
+    if (heldRef.current.has(channelId)) {
+      publish();
+      return;
+    }
     const stamp = laterTimestamp(new Date().toISOString(), at);
     const current = state.cursors[channelId];
     if (!current || Date.parse(stamp) > Date.parse(current)) {
@@ -95,10 +102,32 @@ export function useServerAttention({
     publish();
   }, [publish]);
 
+  const previousChannelRef = useRef("");
   useEffect(() => {
-    if (activeTextChannelId && document.visibilityState === "visible") markRead(activeTextChannelId);
+    const previous = previousChannelRef.current;
+    previousChannelRef.current = activeTextChannelId;
+    const returnedToHeld = Boolean(activeTextChannelId) && heldRef.current.has(activeTextChannelId) && previous !== activeTextChannelId;
+    if (returnedToHeld) {
+      heldRef.current.delete(activeTextChannelId);
+      markRead(activeTextChannelId);
+      return;
+    }
+    if (activeTextChannelId && document.visibilityState === "visible" && !heldRef.current.has(activeTextChannelId)) markRead(activeTextChannelId);
     else publish();
   }, [activeTextChannelId, markRead, publish]);
+
+  const markUnread = useCallback((channelId: string, message: AttentionMessage) => {
+    const state = stateRef.current;
+    if (!state.userId || !channelId) return;
+    const parsed = Date.parse(message.createdAt);
+    const stamp = Number.isNaN(parsed) ? new Date(Date.now() - 1).toISOString() : new Date(parsed - 1).toISOString();
+    state.cursors = { ...state.cursors, [channelId]: stamp };
+    saveReadCursors(state.userId, state.cursors);
+    heldRef.current.add(channelId);
+    state.live = [...state.live.filter((item) => item.id !== message.id), { ...message, channelId }];
+    publish();
+    reloadRef.current();
+  }, [publish]);
 
   useEffect(() => {
     publish();
@@ -170,7 +199,7 @@ export function useServerAttention({
           const state = stateRef.current;
           state.live = [...state.live.filter((item) => item.id !== message.id), message].slice(-200);
           const viewing = document.visibilityState === "visible" && state.activeChannelId === textChannel.id;
-          if (viewing) {
+          if (viewing && !heldRef.current.has(textChannel.id)) {
             markRead(textChannel.id, message.createdAt);
             return;
           }
@@ -241,7 +270,7 @@ export function useServerAttention({
       const fetched = await loadMessages(channels, cursors);
       if (cancelled || current !== generation) return;
       const activeId = document.visibilityState === "visible" ? stateRef.current.activeChannelId : "";
-      if (activeId) {
+      if (activeId && !heldRef.current.has(activeId)) {
         const newest = fetched
           .filter((message) => message.channelId === activeId)
           .reduce((stamp, message) => laterTimestamp(stamp, message.createdAt), new Date().toISOString());
@@ -259,6 +288,7 @@ export function useServerAttention({
       subscribe(channels);
     }
 
+    reloadRef.current = () => { void reload(); };
     void reload();
 
     function onVisible() {
@@ -266,17 +296,19 @@ export function useServerAttention({
         publish();
         return;
       }
-      if (stateRef.current.activeChannelId) markRead(stateRef.current.activeChannelId);
+      const active = stateRef.current.activeChannelId;
+      if (active && !heldRef.current.has(active)) markRead(active);
       void reload();
     }
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       cancelled = true;
+      reloadRef.current = () => {};
       document.removeEventListener("visibilitychange", onVisible);
       if (realtime) void supabase.removeChannel(realtime);
     };
   }, [markRead, publish, refreshKey, userId]);
 
-  return byChannel;
+  return { byChannel, markUnread };
 }

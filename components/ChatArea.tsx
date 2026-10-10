@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
+import { Hash, MoreHorizontal, Pin, Plus, Smile, SendHorizontal, Star, X, Check, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
@@ -18,8 +17,9 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 import { buildMentionNames, contentMentionsUser } from "@/lib/mentions";
 import { useDialogs } from "@/components/DialogProvider";
-
-const STANDARD_EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🙂", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "🙃", "😴", "😭", "😡", "🥳", "🤯", "😱", "🤗", "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "✨", "🔥", "🎉", "🎊", "🎂", "🌟", "💀", "👀", "🐱", "🐶", "🌈", "☕", "🍕", "🍿", "🎮", "🚀"];
+import { MessageContextMenu } from "@/components/MessageContextMenu";
+import { forwardedContent, messageLink, QUICK_REACTIONS, quoteDraft, reminderLabel, STANDARD_EMOJIS } from "@/lib/messageMenu";
+import { readSaved, rememberReport, toggleSaved, type SavedChatMessage } from "@/lib/savedMessages";
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
 
@@ -42,6 +42,7 @@ export interface SlashCommand {
 
 interface ChatAreaProps {
   serverId: string;
+  channelId: string;
   channelName: string;
   messages: ChatMessage[];
   loading?: boolean;
@@ -66,6 +67,12 @@ interface ChatAreaProps {
   canManageSelfRoles?: boolean;
   onToggleMemberRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
   viewerNames?: string[];
+  textChannels?: { id: string; name: string }[];
+  onForwardMessage?: (channelId: string, content: string, attachmentUrl?: string | null) => Promise<void>;
+  onMarkUnread?: (message: ChatMessage) => void;
+  onRemindMessage?: (message: ChatMessage, at: number) => void;
+  focusMessageId?: string | null;
+  onFocusMessageHandled?: () => void;
 }
 
 function formatTime(iso: string) {
@@ -87,6 +94,7 @@ function formatMessageDate(date: Date) {
 
 export function ChatArea({
   serverId,
+  channelId,
   channelName,
   messages,
   loading = false,
@@ -111,6 +119,12 @@ export function ChatArea({
   canManageSelfRoles = false,
   onToggleMemberRole,
   viewerNames = [],
+  textChannels = [],
+  onForwardMessage,
+  onMarkUnread,
+  onRemindMessage,
+  focusMessageId = null,
+  onFocusMessageHandled,
 }: ChatAreaProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
@@ -134,7 +148,7 @@ export function ChatArea({
     ...members,
   ], currentUserId), [members, currentUserId, viewerNames]);
   const selfMentionNames = useMemo(() => mentionNames.filter((name) => name.mine).map((name) => name.label), [mentionNames]);
-  const composerRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const previousLastMessageId = useRef<string | null>(null);
   const wasAtBottom = useRef(true);
@@ -148,6 +162,112 @@ export function ChatArea({
     [imageEmojisByName],
   );
   const chatDisplay = useChatDisplay(currentUserId);
+  const [pins, setPins] = useState<SavedChatMessage[]>([]);
+  const [favorites, setFavorites] = useState<SavedChatMessage[]>([]);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [pinCursor, setPinCursor] = useState(0);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [composerNote, setComposerNote] = useState<string | null>(null);
+  const handledFocus = useRef<string | null>(null);
+  const quotePrefix = useRef("");
+  const pinnedIds = useMemo(() => new Set(pins.map((item) => item.id)), [pins]);
+  const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.id)), [favorites]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setPins([]);
+      setFavorites([]);
+      return;
+    }
+    setPins(readSaved(currentUserId, "pins").filter((item) => item.channelId === channelId));
+    setFavorites(readSaved(currentUserId, "favorites").filter((item) => item.channelId === channelId));
+    setPinCursor(0);
+  }, [channelId, currentUserId]);
+
+  useEffect(() => {
+    if (!highlightedId) return;
+    const timer = window.setTimeout(() => setHighlightedId((current) => current === highlightedId ? null : current), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightedId]);
+
+  useEffect(() => {
+    if (!focusMessageId || loading || handledFocus.current === focusMessageId) return;
+    const node = document.getElementById(`message-${focusMessageId}`);
+    if (!node) return;
+    handledFocus.current = focusMessageId;
+    node.scrollIntoView({ block: "center" });
+    setHighlightedId(focusMessageId);
+    onFocusMessageHandled?.();
+  }, [focusMessageId, loading, messages, onFocusMessageHandled]);
+
+  function savedFrom(message: ChatMessage): SavedChatMessage {
+    return {
+      id: message.id,
+      channelId,
+      authorName: message.authorName,
+      content: message.content,
+      createdAt: message.createdAt,
+    };
+  }
+
+  function refreshSaved(kind: "pins" | "favorites") {
+    if (!currentUserId) return;
+    const next = readSaved(currentUserId, kind).filter((item) => item.channelId === channelId);
+    if (kind === "pins") setPins(next);
+    else setFavorites(next);
+  }
+
+  function scrollToMessage(messageId: string) {
+    document.getElementById(`message-${messageId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setHighlightedId(messageId);
+    setFavoritesOpen(false);
+  }
+
+  async function copyText(value: string, emptyMessage: string) {
+    const text = value.trim();
+    if (!text) {
+      await dialogs.notify({ title: "Nada para copiar", message: emptyMessage });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      await dialogs.notify({ title: "Não foi possível copiar", message: "O navegador bloqueou a área de transferência." });
+    }
+  }
+
+  function speakMessage(message: ChatMessage) {
+    const text = message.content.trim() || (message.attachmentUrl ? "Imagem enviada" : "");
+    if (!text || typeof window.speechSynthesis === "undefined") {
+      void dialogs.notify({ title: "Não foi possível falar", message: "Este navegador não leu a mensagem." });
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "pt-BR";
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function beginQuote(message: ChatMessage, topic: boolean) {
+    const next = quoteDraft(message, topic);
+    quotePrefix.current = next;
+    setDraft(next);
+    setComposerNote(topic ? `Tópico a partir de ${message.authorName}` : `Respondendo ${message.authorName}`);
+    window.requestAnimationFrame(() => {
+      const node = composerRef.current;
+      if (!node) return;
+      node.focus();
+      const end = node.value.length;
+      node.setSelectionRange(end, end);
+    });
+  }
+
+  function cancelQuote() {
+    const prefix = quotePrefix.current;
+    quotePrefix.current = "";
+    setComposerNote(null);
+    setDraft((current) => prefix && current.startsWith(prefix) ? current.slice(prefix.length) : current);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -201,6 +321,13 @@ export function ChatArea({
   }, [memberById]);
 
   useEffect(() => {
+    const node = composerRef.current;
+    if (!node) return;
+    node.style.height = "0px";
+    node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
+  }, [draft]);
+
+  useEffect(() => {
     if (!mentionRequest || mentionRequest.nonce === lastMentionNonce.current) return;
     lastMentionNonce.current = mentionRequest.nonce;
     const token = `@${mentionRequest.displayName}`;
@@ -251,12 +378,25 @@ export function ChatArea({
     });
   }, [commandPrefix, draft, showAutocomplete, slashCommands]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function submitComposer() {
     const trimmed = draft.trim();
     if (!trimmed) return;
     onSendMessage(trimmed);
     setDraft("");
+    setComposerNote(null);
+    quotePrefix.current = "";
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    submitComposer();
+  }
+
+  function onComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submitComposer();
+    }
   }
 
   function pickCommand(name: string, prefix = "/") {
@@ -290,7 +430,22 @@ export function ChatArea({
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-discord-bg-dark/35 px-3 shadow-sm sm:h-12 sm:px-4">
         <Hash className="h-5 w-5 text-discord-text-muted" />
         <span className="font-semibold text-discord-header-primary">{channelName}</span>
+        {favorites.length > 0 && <button type="button" onClick={() => setFavoritesOpen((open) => !open)} aria-expanded={favoritesOpen} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-discord-text-muted hover:bg-white/5 hover:text-white"><Star size={14} className="fill-current text-amber-300" />{favorites.length}</button>}
       </div>
+      {favoritesOpen && favorites.length > 0 && <div className="border-b border-white/[0.07] bg-discord-bg-secondary/80 px-3 py-2">
+        <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-discord-text-muted">Favoritos deste canal</p>
+        <div className="max-h-40 space-y-1 overflow-y-auto">
+          {favorites.map((item) => <button key={item.id} type="button" onClick={() => scrollToMessage(item.id)} className="flex w-full items-baseline gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-white/5"><span className="shrink-0 text-xs font-semibold text-discord-header-primary">{item.authorName}</span><span className="truncate text-xs text-discord-text-muted">{item.content.trim() || "Imagem"}</span></button>)}
+        </div>
+      </div>}
+      {pins.length > 0 && <div data-pinned-banner className="flex items-center gap-2 border-b border-white/[0.07] bg-discord-bg-secondary/70 px-3 py-2">
+        <Pin size={14} className="shrink-0 text-discord-text-muted" />
+        <button type="button" onClick={() => { const pin = pins[pinCursor % pins.length]; if (!pin) return; scrollToMessage(pin.id); setPinCursor((current) => current + 1); }} className="min-w-0 flex-1 truncate text-left text-sm text-discord-text-normal">
+          <span className="font-semibold">{pins[pinCursor % pins.length]?.authorName}</span>
+          <span className="text-discord-text-muted"> {pins[pinCursor % pins.length]?.content.trim() || "Imagem"}</span>
+        </button>
+        {pins.length > 1 && <span className="shrink-0 text-[11px] text-discord-text-muted">{(pinCursor % pins.length) + 1}/{pins.length}</span>}
+      </div>}
 
       {/* Feed de mensagens */}
       <div
@@ -314,14 +469,16 @@ export function ChatArea({
           const showDate = !previousTimestamp || timestamp.toDateString() !== previousTimestamp.toDateString();
           const authorStatus = memberById.get(message.authorId)?.status;
           return (
-          <div key={message.id}>
+          <div key={message.id} id={`message-${message.id}`}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
           <div onContextMenu={(event) => {
             event.preventDefault();
-            const mine = message.authorId === currentUserId;
-            if (!mine && !canManageMessages) return;
             setMenu({ x: event.clientX, y: event.clientY, message });
-          }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+          }} className={`group relative flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+            {editing?.id !== message.id && <div className="pointer-events-none absolute right-2 top-1 z-10 hidden items-center gap-0.5 rounded-lg border border-white/10 bg-[#111214] p-0.5 shadow-lg group-hover:pointer-events-auto group-hover:flex">
+              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="grid h-7 w-7 place-items-center rounded-md text-base hover:bg-white/10">{emoji}</button>)}
+              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="grid h-7 w-7 place-items-center rounded-md text-discord-text-muted hover:bg-white/10 hover:text-white"><MoreHorizontal size={16} /></button>
+            </div>}
             {chatDisplay.showAvatars && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -348,6 +505,8 @@ export function ChatArea({
                 <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
                 <CustomBadgeList badges={memberById.get(message.authorId)?.badges} limit={2} />
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
+                {pinnedIds.has(message.id) && <Pin size={12} className="text-discord-text-muted" aria-label="Mensagem fixada" />}
+                {favoriteIds.has(message.id) && <Star size={12} className="fill-current text-amber-300" aria-label="Mensagem favorita" />}
               </div>
 
               {editing?.id === message.id ? <div className="mt-1 flex gap-2"><input autoFocus value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="min-w-0 flex-1 rounded-lg bg-discord-bg-dark px-3 py-2 text-sm text-discord-text-normal outline-none ring-1 ring-brand-500"/><button title="Salvar" onClick={async () => { await onEditMessage?.(message.id, editing.content); setEditing(null); }} className="rounded-lg bg-discord-brand p-2 text-white"><Check size={16}/></button><button title="Cancelar" onClick={() => setEditing(null)} className="rounded-lg bg-discord-bg-secondary p-2"><X size={16}/></button></div> : (() => {
@@ -412,32 +571,60 @@ export function ChatArea({
 
       {prankOpen && <PrankSimulation onClose={() => setPrankOpen(false)} />}
 
-      {menu && createPortal(
-        <>
-          <button aria-label="Fechar menu" className="fixed inset-0 z-[400] cursor-default" onClick={() => setMenu(null)} onContextMenu={(event) => { event.preventDefault(); setMenu(null); }} />
-          <div
-            role="menu"
-            style={{
-              left: Math.max(8, Math.min(menu.x, window.innerWidth - 220)),
-              top: Math.max(8, Math.min(menu.y, window.innerHeight - 120)),
-            }}
-            className="fixed z-[410] w-52 rounded-xl border border-white/10 bg-[#111214] p-1.5 shadow-2xl"
-          >
-            {menu.message.authorId === currentUserId && <button type="button" role="menuitem" onClick={() => { setEditing({ id: menu.message.id, content: menu.message.content }); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-white/10"><Pencil size={15}/>Editar mensagem</button>}
-            <button type="button" role="menuitem" onClick={() => {
-              const message = menu.message;
-              setMenu(null);
-              void (async () => {
-                const confirmed = await dialogs.confirm({ title: "Excluir mensagem", message: "Essa mensagem sai do canal para todo mundo.", confirmLabel: "Excluir mensagem", danger: true });
-                if (!confirmed) return;
-                try { await onDeleteMessage?.(message.id); }
-                catch (error) { await dialogs.notify({ title: "Não foi possível excluir", message: error instanceof Error ? error.message : "Tente de novo." }); }
-              })();
-            }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"><Trash2 size={15}/>Excluir mensagem</button>
-          </div>
-        </>,
-        document.body,
-      )}
+      {menu && <MessageContextMenu
+        x={menu.x}
+        y={menu.y}
+        canEdit={menu.message.authorId === currentUserId && !menu.message.id.startsWith("pending:")}
+        canDelete={(menu.message.authorId === currentUserId || canManageMessages) && !menu.message.id.startsWith("pending:")}
+        pinned={pinnedIds.has(menu.message.id)}
+        favorited={favoriteIds.has(menu.message.id)}
+        channels={textChannels}
+        onClose={() => setMenu(null)}
+        onReact={(emoji) => onToggleReaction?.(menu.message.id, emoji)}
+        onReply={() => beginQuote(menu.message, false)}
+        onTopic={() => beginQuote(menu.message, true)}
+        onForward={(targetChannelId) => {
+          const message = menu.message;
+          const channel = textChannels.find((item) => item.id === targetChannelId);
+          void (async () => {
+            try {
+              await onForwardMessage?.(targetChannelId, forwardedContent(message), message.attachmentUrl);
+              if (targetChannelId !== channelId) await dialogs.notify({ title: "Mensagem encaminhada", message: `Ela foi enviada para #${channel?.name ?? "canal"}.` });
+            } catch (error) {
+              await dialogs.notify({ title: "Não foi possível encaminhar", message: error instanceof Error ? error.message : "Tente de novo." });
+            }
+          })();
+        }}
+        onCopyText={() => { void copyText(menu.message.content || menu.message.attachmentUrl || "", "Essa mensagem não tem texto."); }}
+        onTogglePin={() => { if (!currentUserId) return; toggleSaved(currentUserId, "pins", savedFrom(menu.message)); refreshSaved("pins"); }}
+        onToggleFavorite={() => { if (!currentUserId) return; toggleSaved(currentUserId, "favorites", savedFrom(menu.message)); refreshSaved("favorites"); }}
+        onRemind={(at) => {
+          onRemindMessage?.(menu.message, at);
+          void dialogs.notify({ title: "Lembrete criado", message: `${reminderLabel(at)} você vê de novo: ${menu.message.content.trim() || "esta mensagem"}.` });
+        }}
+        onMarkUnread={() => onMarkUnread?.(menu.message)}
+        onCopyLink={() => { void copyText(messageLink(window.location.origin, channelId, menu.message.id), "Não foi possível montar o link."); }}
+        onSpeak={() => speakMessage(menu.message)}
+        onEdit={() => setEditing({ id: menu.message.id, content: menu.message.content })}
+        onDelete={() => {
+          const message = menu.message;
+          void (async () => {
+            const confirmed = await dialogs.confirm({ title: "Excluir mensagem", message: "Essa mensagem sai do canal para todo mundo.", confirmLabel: "Excluir mensagem", danger: true });
+            if (!confirmed) return;
+            try { await onDeleteMessage?.(message.id); }
+            catch (error) { await dialogs.notify({ title: "Não foi possível excluir", message: error instanceof Error ? error.message : "Tente de novo." }); }
+          })();
+        }}
+        onReport={() => {
+          const message = menu.message;
+          void (async () => {
+            const confirmed = await dialogs.confirm({ title: "Denunciar mensagem", message: "A denúncia fica salva neste navegador. O autor não é avisado.", confirmLabel: "Denunciar mensagem", danger: true });
+            if (!confirmed || !currentUserId) return;
+            const fresh = rememberReport(currentUserId, savedFrom(message));
+            await dialogs.notify({ title: fresh ? "Denúncia registrada" : "Denúncia já registrada", message: "Ela ficou salva só neste aparelho." });
+          })();
+        }}
+      />}
 
       {/* Campo de mensagem */}
       <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">
@@ -467,6 +654,8 @@ export function ChatArea({
           </div>
         )}
 
+        {composerNote && <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-discord-text-muted"><span className="min-w-0 flex-1 truncate">{composerNote}</span><button type="button" aria-label="Cancelar resposta" onClick={cancelQuote} className="rounded p-1 hover:bg-white/10 hover:text-white"><X size={14}/></button></div>}
+
         {chatDisplay.composerPreview && draft.trim() && !draft.startsWith("/") && !draft.startsWith("!") && (
           <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
@@ -476,19 +665,21 @@ export function ChatArea({
 
         <form
           onSubmit={handleSubmit}
-          className="flex min-h-12 items-center gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
+          className="flex min-h-12 items-end gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
         >
           <button type="button" onClick={() => imageInput.current?.click()} aria-label="Adicionar anexo" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
             <Plus className="h-5 w-5" />
           </button>
           <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
-          <input
+          <textarea
             ref={composerRef}
+            rows={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onComposerKeyDown}
             placeholder={`Conversar em #${channelName}`}
-            className="min-w-0 flex-1 bg-transparent px-1 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
+            className="max-h-40 min-h-6 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
           />
 
           <div ref={emojiPickerRef} className="relative">

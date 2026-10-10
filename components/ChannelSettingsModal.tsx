@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Hash, Save, Volume2, X } from "lucide-react";
+import { Hash, Save, Trash2, Volume2, X } from "lucide-react";
 import type { Channel } from "@/components/ChannelSidebar";
 
 interface ChannelSettingsModalProps {
@@ -9,9 +9,10 @@ interface ChannelSettingsModalProps {
   categories: { id: string; name: string }[];
   onClose: () => void;
   onSave: (channel: Channel, name: string, categoryId: string | null) => Promise<void>;
+  onDelete?: (channel: Channel) => Promise<boolean>;
 }
 
-export function ChannelSettingsModal({ channel, categories, onClose, onSave }: ChannelSettingsModalProps) {
+export function ChannelSettingsModal({ channel, categories, onClose, onSave, onDelete }: ChannelSettingsModalProps) {
   const [name, setName] = useState(channel.name);
   const [categoryId, setCategoryId] = useState(channel.categoryId ?? "");
   const [loading, setLoading] = useState(false);
@@ -30,6 +31,20 @@ export function ChannelSettingsModal({ channel, categories, onClose, onSave }: C
     } finally { setLoading(false); }
   }
 
+  async function remove() {
+    if (!onDelete || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const removed = await onDelete(channel);
+      if (removed) onClose();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Não foi possível excluir o canal.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/65 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}>
     <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="channel-settings-title" className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-secondary shadow-2xl">
       <header className="flex items-start justify-between border-b border-white/[0.07] px-6 py-5">
@@ -42,7 +57,7 @@ export function ChannelSettingsModal({ channel, categories, onClose, onSave }: C
         <div className="flex items-center gap-3 rounded-xl bg-discord-bg-primary/70 p-3"><span className="grid h-9 w-9 place-items-center rounded-lg bg-discord-bg-modifier-hover text-discord-text-muted">{channel.type === "text" ? <Hash size={18}/> : <Volume2 size={18}/>}</span><span><span className="block text-sm font-medium text-discord-text-normal">Canal de {channel.type === "text" ? "texto" : "voz"}</span><span className="block text-xs text-discord-text-muted">O tipo do canal não pode ser alterado depois de criado.</span></span></div>
         {error && <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
       </div>
-      <footer className="flex justify-end gap-2 border-t border-white/[0.07] bg-discord-bg-primary/40 px-6 py-4"><button type="button" disabled={loading} onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-discord-text-muted hover:bg-white/5 hover:text-white">Cancelar</button><button type="submit" disabled={loading || !name.trim()} className="inline-flex items-center gap-2 rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"><Save size={15}/>{loading ? "Salvando…" : "Salvar alterações"}</button></footer>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.07] bg-discord-bg-primary/40 px-6 py-4">{onDelete ? <button type="button" disabled={loading} onClick={() => void remove()} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"><Trash2 size={15}/>Excluir canal</button> : <span />}<div className="ml-auto flex gap-2"><button type="button" disabled={loading} onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-discord-text-muted hover:bg-white/5 hover:text-white">Cancelar</button><button type="submit" disabled={loading || !name.trim()} className="inline-flex items-center gap-2 rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"><Save size={15}/>{loading ? "Salvando…" : "Salvar alterações"}</button></div></footer>
     </form>
   </div>;
 }

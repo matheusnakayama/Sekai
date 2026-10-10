@@ -21,6 +21,8 @@ import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
 import { attentionForServer } from "@/lib/attention";
+import { applyFaviconBadge } from "@/lib/faviconBadge";
+import { queueReminder, reminderBody, useMessageReminders } from "@/lib/messageReminders";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { refreshUnlockedThemes } from "@/lib/useTheme";
 import { FriendsHome } from "@/components/FriendsHome";
@@ -243,6 +245,7 @@ export default function Home() {
   const [isServerLoading, setIsServerLoading] = useState(false);
   const serverLoadSequence = useRef(0);
   const [inviteChannelId, setInviteChannelId] = useState<string | null>(null);
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   // Chamada de voz: fica montada enquanto você estiver conectado, mesmo ao trocar de canal.
   const [voiceSession, setVoiceSession] = useState<{
     channelId: string;
@@ -914,6 +917,8 @@ export default function Home() {
         const { data: joinedServerId, error } = await supabase.rpc("redeem_invite", { p_code: inviteCode });
         if (!error && joinedServerId) {
           const explicitChannelId = params.get("channel") || params.get("voiceChannel");
+          const linkedMessageId = params.get("message");
+          if (linkedMessageId) setFocusMessageId(linkedMessageId);
           const { data: inviteRow } = explicitChannelId ? { data: null } : await supabase.from("invites").select("channel_id").ilike("code", inviteCode.trim()).maybeSingle();
           const requestedChannelId = explicitChannelId || inviteRow?.channel_id || null;
           const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
@@ -939,6 +944,8 @@ export default function Home() {
         return;
       }
       const requestedChannelId = params.get("channel") || params.get("voiceChannel");
+      const linkedMessageId = params.get("message");
+      if (linkedMessageId) setFocusMessageId(linkedMessageId);
       if (requestedChannelId) {
         const { data: channel } = await supabase
           .from("channels")
@@ -1428,12 +1435,23 @@ export default function Home() {
       setMentionToast((current) => current?.channelId === notice.channelId && current.createdAt === notice.createdAt ? null : current);
     }, 7000);
   }, []);
-  const attentionByChannel = useServerAttention({
+  const { byChannel: attentionByChannel, markUnread } = useServerAttention({
     userId: currentUserId,
     selfNames,
     activeTextChannelId: activeServerId && activeChannelType === "text" ? activeChannelId : "",
     refreshKey: `${serverListVersion}|${channelListVersion}`,
     onMention: handleMentionNotice,
+  });
+  const freshMessageCount = useMemo(() => {
+    const channels = Object.values(attentionByChannel).reduce((sum, slot) => sum + slot.count, 0);
+    const direct = Object.values(dmUnreadByUser).reduce((sum, count) => sum + count, 0);
+    return channels + direct;
+  }, [attentionByChannel, dmUnreadByUser]);
+  useEffect(() => {
+    void applyFaviconBadge(freshMessageCount);
+  }, [freshMessageCount]);
+  useMessageReminders(currentUserId, (reminder) => {
+    void dialogs.notify({ title: "Lembrete", message: reminderBody(reminder) });
   });
   const railServers = useMemo(() => servers.map((server) => {
     const attention = attentionForServer(attentionByChannel, server.id);
@@ -1650,6 +1668,19 @@ export default function Home() {
 
   function handleEditChannel(channel: Channel) { setChannelSettingsTarget(channel); }
 
+  async function deleteChannel(channel: Channel) {
+    if (!await dialogs.confirm({ title: "Excluir canal", message: `Excluir #${channel.name}? Essa ação não pode ser desfeita.`, confirmLabel: "Excluir canal", danger: true })) return false;
+    const { error } = await supabase.from("channels").delete().eq("id", channel.id);
+    if (error) {
+      await dialogs.notify({ title: "Não foi possível excluir", message: error.message });
+      return false;
+    }
+    if (activeChannelId === channel.id) setActiveChannelId("");
+    if (channelSettingsTarget?.id === channel.id) setChannelSettingsTarget(null);
+    await loadChannelsAndMembers();
+    return true;
+  }
+
   async function handleSaveChannelSettings(channel: Channel, name: string, categoryId: string | null) {
     let position = channel.position ?? 0;
     if (categoryId !== channel.categoryId) {
@@ -1841,13 +1872,7 @@ export default function Home() {
         onEditChannel={(channel) => void handleEditChannel(channel)}
         onCreateChannelInvite={(channel) => void handleCreateChannelInvite(channel)}
         onReorderChannels={(nextChannels) => void handleReorderChannels(nextChannels)}
-        onDeleteChannel={async (channel) => {
-          if (!await dialogs.confirm({ title: "Excluir canal", message: `Excluir #${channel.name}? Essa ação não pode ser desfeita.`, confirmLabel: "Excluir canal", danger: true })) return;
-          const { error } = await supabase.from("channels").delete().eq("id", channel.id);
-          if (error) { await dialogs.notify({ title: "Não foi possível excluir", message: error.message }); return; }
-          if (activeChannelId === channel.id) setActiveChannelId("");
-          await loadChannelsAndMembers();
-        }}
+        onDeleteChannel={(channel) => { void deleteChannel(channel); }}
         onOpenServerMenu={() => activeServerId && setShowServerSettings(true)}
         onOpenSettings={() => setShowUserSettings(true)}
         onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
@@ -1916,6 +1941,7 @@ export default function Home() {
         categories={channelCategories.map(({ id, name }) => ({ id, name }))}
         onClose={() => setChannelSettingsTarget(null)}
         onSave={handleSaveChannelSettings}
+        onDelete={canManageChannels ? deleteChannel : undefined}
       />}
 
       {showUserSettings && currentUserId && (
@@ -2077,6 +2103,7 @@ export default function Home() {
         <ChatArea
           key={activeChannelId}
           serverId={activeServerId}
+          channelId={activeChannelId}
           channelName={activeChannel?.name ?? ""}
           messages={messages}
           loading={isChannelLoading}
@@ -2101,6 +2128,41 @@ export default function Home() {
           canManageSelfRoles={isOwner || isPlatformAdmin}
           onToggleMemberRole={handleToggleMemberRole}
           viewerNames={selfNames}
+          textChannels={channels.filter((channel) => channel.type === "text").map((channel) => ({ id: channel.id, name: channel.name }))}
+          onForwardMessage={async (channelId, content, attachmentUrl) => {
+            if (!currentUserId) throw new Error("Entre novamente para encaminhar.");
+            if (channelId === activeChannelId && activeChannelType === "text") {
+              await sendMessage(content, attachmentUrl);
+              return;
+            }
+            const { error } = await supabase.from("messages").insert({
+              channel_id: channelId,
+              author_id: currentUserId,
+              content,
+              attachment_url: attachmentUrl ?? null,
+            });
+            if (error) throw new Error(error.message);
+          }}
+          onMarkUnread={(message) => markUnread(activeChannelId, {
+            id: message.id,
+            channelId: activeChannelId,
+            authorId: message.authorId,
+            content: message.content,
+            createdAt: message.createdAt,
+          })}
+          onRemindMessage={(message, at) => {
+            if (!currentUserId) return;
+            queueReminder(currentUserId, {
+              id: crypto.randomUUID(),
+              channelId: activeChannelId,
+              channelName: activeChannel?.name ?? "canal",
+              authorName: message.authorName,
+              content: message.content,
+              at,
+            });
+          }}
+          focusMessageId={focusMessageId}
+          onFocusMessageHandled={() => setFocusMessageId(null)}
         />
       )}
       </div>

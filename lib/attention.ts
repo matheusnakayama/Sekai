@@ -12,6 +12,7 @@ export type ChannelAttention = {
   serverId: string;
   unread: boolean;
   mentions: number;
+  count: number;
 };
 
 export function laterTimestamp(current: string, next?: string) {
@@ -38,10 +39,12 @@ export function summarizeAttention(input: {
   userId: string;
   selfNames: string[];
   activeChannelId?: string;
+  heldChannelIds?: string[];
 }) {
+  const held = new Set(input.heldChannelIds ?? []);
   const result: Record<string, ChannelAttention> = {};
   for (const channel of input.channels) {
-    result[channel.id] = { serverId: channel.serverId, unread: false, mentions: 0 };
+    result[channel.id] = { serverId: channel.serverId, unread: false, mentions: 0, count: 0 };
   }
   const seen = new Set<string>();
   for (const message of input.messages) {
@@ -50,10 +53,17 @@ export function summarizeAttention(input: {
     const slot = result[message.channelId];
     if (!slot) continue;
     if (message.authorId === input.userId) continue;
-    if (input.activeChannelId && message.channelId === input.activeChannelId) continue;
+    if (input.activeChannelId && message.channelId === input.activeChannelId && !held.has(message.channelId)) continue;
     if (!isAfter(message.createdAt, input.cursors[message.channelId])) continue;
     slot.unread = true;
+    slot.count += 1;
     if (contentMentionsUser(message.content, input.selfNames)) slot.mentions += 1;
+  }
+  for (const channelId of held) {
+    const slot = result[channelId];
+    if (!slot || slot.count > 0) continue;
+    slot.unread = true;
+    slot.count = 1;
   }
   return result;
 }
