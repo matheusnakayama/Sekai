@@ -5,6 +5,7 @@ import { CamIcon, MicIcon } from './icons';
 import ErrorBanner from './ErrorBanner';
 import type { CallError } from '@/lib/types';
 import { readCallAudioPreference, writeCallAudioPreference } from '@/lib/callAudioPreference';
+import { openCallInput, voiceDeviceId } from '@/lib/voiceCapture';
 
 export default function PreJoin({
   roomId,
@@ -40,7 +41,7 @@ export default function PreJoin({
       );
       setAudioInputs(inputs);
       const currentDeviceId =
-        preferredDeviceId ?? activeStreamRef.current?.getAudioTracks()[0]?.getSettings().deviceId;
+        preferredDeviceId ?? voiceDeviceId(activeStreamRef.current?.getAudioTracks()[0]);
       setSelectedAudioInput(
         inputs.find((device) => device.deviceId === currentDeviceId)?.deviceId ?? inputs[0]?.deviceId ?? ''
       );
@@ -57,57 +58,39 @@ export default function PreJoin({
       setLoadingDevices(true);
       setDeviceError(null);
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = await openCallInput({ video: true });
         if (cancelled) {
           localStream.getTracks().forEach((t) => t.stop());
           return;
         }
         activeStreamRef.current = localStream;
         setStream(localStream);
-        setCamOn(true);
+        setCamOn(localStream.getVideoTracks().length > 0);
         setMicOn(() => {
           const saved = readCallAudioPreference();
-          return saved.micOn && !saved.deafened;
+          return saved.micOn && !saved.deafened && localStream!.getAudioTracks().length > 0;
         });
-        void refreshAudioInputs(localStream.getAudioTracks()[0]?.getSettings().deviceId);
+        void refreshAudioInputs(voiceDeviceId(localStream.getAudioTracks()[0]));
       } catch (combinedError) {
         if (cancelled) return;
 
-        // Não deixe a falta/recusa da câmera impedir o uso do microfone.
         try {
-          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           if (cancelled) {
             localStream.getTracks().forEach((t) => t.stop());
             return;
           }
           activeStreamRef.current = localStream;
           setStream(localStream);
-          setCamOn(false);
-          setMicOn(() => {
-            const saved = readCallAudioPreference();
-            return saved.micOn && !saved.deafened;
+          setCamOn(true);
+          setMicOn(false);
+          void refreshAudioInputs();
+          setDeviceError({
+            kind: 'permission-denied',
+            message: 'Câmera disponível, mas o microfone não pôde ser acessado.',
           });
-          void refreshAudioInputs(localStream.getAudioTracks()[0]?.getSettings().deviceId);
         } catch {
-          // Ainda tente oferecer a chamada com vídeo se apenas o microfone falhar.
-          try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            if (cancelled) {
-              localStream.getTracks().forEach((t) => t.stop());
-              return;
-            }
-            activeStreamRef.current = localStream;
-            setStream(localStream);
-            setCamOn(true);
-            setMicOn(false);
-            void refreshAudioInputs();
-            setDeviceError({
-              kind: 'permission-denied',
-              message: 'Câmera disponível, mas o microfone não pôde ser acessado.',
-            });
-          } catch {
-            setDeviceError(mapMediaError(combinedError));
-          }
+          setDeviceError(mapMediaError(combinedError));
         }
       } finally {
         if (!cancelled) setLoadingDevices(false);
@@ -162,10 +145,7 @@ export default function PreJoin({
     if (!deviceId || deviceId === selectedAudioInput) return;
 
     try {
-      const replacement = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: deviceId } },
-        video: false,
-      });
+      const replacement = await openCallInput({ audioDeviceId: deviceId, video: false });
       const replacementTrack = replacement.getAudioTracks()[0];
       if (!replacementTrack) throw new Error('O navegador não retornou uma faixa de áudio.');
 

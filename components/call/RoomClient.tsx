@@ -17,6 +17,7 @@ import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
 import { buildDisplayMediaRequest, prepareScreenAudioTrack } from '@/lib/screenShare';
+import { advanceVoiceGate, createVoiceGate, openCallInput } from '@/lib/voiceCapture';
 import type {
   CallError,
   IceServerConfig,
@@ -195,26 +196,18 @@ export default function RoomClient({
     void context.resume().catch(() => {});
     const samples = new Uint8Array(analyser.fftSize);
     let frame = 0;
-    let speaking = false;
-    let aboveThresholdSince: number | null = null;
-    let belowThresholdSince: number | null = null;
-    let noiseFloor = 0.006;
+    let gate = createVoiceGate();
     const sample = (time: number) => {
       analyser.getByteTimeDomainData(samples);
       let sum = 0;
       for (const value of samples) { const centered = (value - 128) / 128; sum += centered * centered; }
       const rms = Math.sqrt(sum / samples.length);
-      const startThreshold = Math.min(0.05, Math.max(0.014, noiseFloor * 2.8));
-      const stopThreshold = Math.min(0.035, Math.max(0.009, noiseFloor * 1.65));
-      if (!speaking) noiseFloor = noiseFloor * 0.985 + Math.min(rms, 0.04) * 0.015;
-      if (!speaking && rms >= startThreshold) { aboveThresholdSince ??= time; belowThresholdSince = null; }
-      else if (speaking && rms < stopThreshold) { belowThresholdSince ??= time; aboveThresholdSince = null; }
-      else { aboveThresholdSince = null; belowThresholdSince = null; }
-      // Histerese + tempos distintos de entrada/saída evitam piscar entre sílabas.
-      const next = speaking
-        ? !(belowThresholdSince !== null && time - belowThresholdSince > 420)
-        : aboveThresholdSince !== null && time - aboveThresholdSince > 130;
-      if (next !== speaking) { speaking = next; setLocalSpeaking(next); updateLocalParticipant({ isSpeaking: next }); }
+      const next = advanceVoiceGate(gate, rms, time);
+      if (next.speaking !== gate.speaking) {
+        setLocalSpeaking(next.speaking);
+        updateLocalParticipant({ isSpeaking: next.speaking });
+      }
+      gate = next;
       frame = window.requestAnimationFrame(sample);
     };
     frame = window.requestAnimationFrame(sample);
@@ -1130,16 +1123,7 @@ export default function RoomClient({
     let cancelled = false;
 
     async function start() {
-      let stream: MediaStream | null = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-        } catch {
-          stream = null;
-        }
-      }
+      const stream = await openCallInput({ video: true }).catch(() => null);
 
       if (cancelled) {
         stream?.getTracks().forEach((track) => track.stop());

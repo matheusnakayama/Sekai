@@ -20,8 +20,10 @@ export default function VideoTile({
   onExitPresentationFocus?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const voiceAudioRef = useRef<HTMLAudioElement>(null);
   const soundboardAudioRef = useRef<HTMLAudioElement>(null);
   const screenAudioRef = useRef<HTMLAudioElement>(null);
+  const voiceTrackKey = (participant.stream?.getAudioTracks() ?? []).map((track) => track.id).join(',');
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
@@ -62,13 +64,45 @@ export default function VideoTile({
     if (!video || !participant.stream) return;
 
     if (video.srcObject !== participant.stream) video.srcObject = participant.stream;
-    video.volume = volume;
-    // Alguns navegadores bloqueiam o áudio remoto até a pessoa interagir com a
-    // página. Tente iniciar a reprodução e ofereça um botão se houver bloqueio.
-    void video.play().then(() => setPlaybackBlocked(false)).catch(() => {
-      if (!participant.isLocal) setPlaybackBlocked(true);
+    video.muted = true;
+    void video.play().catch(() => {
+      if (!participant.isLocal && (participant.camOn || participant.isSharingScreen)) setPlaybackBlocked(true);
     });
-  }, [participant.isLocal, participant.stream, showVideo, volume]);
+  }, [participant.camOn, participant.isLocal, participant.isSharingScreen, participant.stream, showVideo]);
+
+  useEffect(() => {
+    const audio = voiceAudioRef.current;
+    if (!audio) return;
+    const tracks = (participant.stream?.getAudioTracks() ?? []).filter((track) => track.readyState !== 'ended');
+    audio.muted = participant.isLocal || muteRemoteAudio || tracks.length === 0;
+    if (!tracks.length || participant.isLocal) {
+      audio.srcObject = null;
+      return;
+    }
+
+    audio.srcObject = new MediaStream(tracks);
+    const start = () => {
+      void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+        if (!audio.muted) setPlaybackBlocked(true);
+      });
+    };
+    start();
+    tracks.forEach((track) => track.addEventListener('unmute', start));
+    return () => {
+      tracks.forEach((track) => track.removeEventListener('unmute', start));
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [muteRemoteAudio, participant.isLocal, voiceTrackKey]);
+
+  useEffect(() => {
+    const audio = voiceAudioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+    if (participant.isLocal || muteRemoteAudio) audio.muted = true;
+    else if (volume === 0) audio.muted = true;
+    else if (audio.srcObject) audio.muted = false;
+  }, [muteRemoteAudio, participant.isLocal, volume]);
 
   useEffect(() => {
     const audio = soundboardAudioRef.current;
@@ -113,6 +147,7 @@ export default function VideoTile({
   async function enablePlayback() {
     try {
       await videoRef.current?.play();
+      await voiceAudioRef.current?.play();
       if (participant.soundboardTrack) await soundboardAudioRef.current?.play();
       if (participant.screenAudioTrack) await screenAudioRef.current?.play();
       setPlaybackBlocked(false);
@@ -135,10 +170,11 @@ export default function VideoTile({
             ref={videoRef}
             autoPlay
             playsInline
-            muted={participant.isLocal || volume === 0 || (muteRemoteAudio && !participant.isLocal)}
+            muted
             className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''}`}
           />
         )}
+        <audio ref={voiceAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         <audio ref={soundboardAudioRef} autoPlay playsInline className="hidden" />
         <audio ref={screenAudioRef} autoPlay playsInline className="hidden" />
         {!showVideo && (

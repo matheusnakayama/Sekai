@@ -1,6 +1,7 @@
 'use client';
 
 import type { Channel } from 'pusher-js';
+import { advanceVoiceGate, createVoiceGate, voiceDescription } from '@/lib/voiceCapture';
 import type { IceServerConfig, SignalPayload } from './types';
 
 type TrackHandler = (peerId: string, stream: MediaStream) => void;
@@ -161,7 +162,7 @@ export class WebRTCManager {
       await peer.videoProfileReady;
       await peer.mediaTracksReady;
       await peer.soundboardTrackReady;
-      const offer = await pc.createOffer();
+      const offer = voiceDescription(await pc.createOffer());
       await pc.setLocalDescription(offer);
       this.send({ type: 'offer', from: this.localId, to: peerId, sdp: pc.localDescription ?? offer });
       this.scheduleOfferRetry(peerId, peer, 5_000);
@@ -437,6 +438,8 @@ export class WebRTCManager {
           const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
           if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
         }
+        const voiceSender = peer.audioTransceiver?.sender;
+        if (voiceSender) void this.configureVoiceSender(voiceSender);
         return;
       }
       if (pc.connectionState === 'failed') {
@@ -488,7 +491,7 @@ export class WebRTCManager {
     void (async () => {
       try {
         const restartingIce = peer.iceRestartQueued;
-        const offer = await pc.createOffer(restartingIce ? { iceRestart: true } : undefined);
+        const offer = voiceDescription(await pc.createOffer(restartingIce ? { iceRestart: true } : undefined));
         if (pc.signalingState !== 'stable') {
           peer.negotiationQueued = true;
           return;
@@ -1085,7 +1088,7 @@ export class WebRTCManager {
         await peer.mediaTracksReady;
         await peer.videoProfileReady;
         await peer.soundboardTrackReady;
-        const answer = await pc.createAnswer();
+        const answer = voiceDescription(await pc.createAnswer());
         await pc.setLocalDescription(answer);
         peer.negotiationQueued = false;
         this.send({ type: 'answer', from: this.localId, to: from, sdp: pc.localDescription ?? answer });
@@ -1118,6 +1121,21 @@ export class WebRTCManager {
 
   private send(payload: SignalPayload) {
     this.channel.trigger('client-signal', payload);
+  }
+
+  private async configureVoiceSender(sender: RTCRtpSender) {
+    try {
+      const parameters = sender.getParameters();
+      if (!parameters.encodings.length) return;
+      const primary = { ...parameters.encodings[0] };
+      primary.maxBitrate = 96_000;
+      primary.priority = 'high';
+      primary.networkPriority = 'high';
+      parameters.encodings[0] = primary;
+      await sender.setParameters(parameters);
+    } catch (error) {
+      console.warn('Não foi possível priorizar o microfone:', error);
+    }
   }
 
   private configureVideoSender(
@@ -1220,30 +1238,16 @@ export class WebRTCManager {
       const data = new Uint8Array(analyser.fftSize);
       const watcher: SpeakingWatcher = { ctx, analyser, raf: 0 };
 
-      let speaking = false;
-      let aboveThresholdSince: number | null = null;
-      let belowThresholdSince: number | null = null;
-      let noiseFloor = 0.006;
+      let gate = createVoiceGate();
       const tick = () => {
         if (this.speakingWatchers.get(id) !== watcher) return;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const value of data) { const centered = (value - 128) / 128; sum += centered * centered; }
         const rms = Math.sqrt(sum / data.length);
-        const now = performance.now();
-        const startThreshold = Math.min(0.05, Math.max(0.014, noiseFloor * 2.8));
-        const stopThreshold = Math.min(0.035, Math.max(0.009, noiseFloor * 1.65));
-        if (!speaking) noiseFloor = noiseFloor * 0.985 + Math.min(rms, 0.04) * 0.015;
-        if (!speaking && rms >= startThreshold) { aboveThresholdSince ??= now; belowThresholdSince = null; }
-        else if (speaking && rms < stopThreshold) { belowThresholdSince ??= now; aboveThresholdSince = null; }
-        else { aboveThresholdSince = null; belowThresholdSince = null; }
-        const nowSpeaking = speaking
-          ? !(belowThresholdSince !== null && now - belowThresholdSince > 420)
-          : aboveThresholdSince !== null && now - aboveThresholdSince > 130;
-        if (nowSpeaking !== speaking) {
-          speaking = nowSpeaking;
-          this.onSpeakingChange(id, speaking);
-        }
+        const next = advanceVoiceGate(gate, rms, performance.now());
+        if (next.speaking !== gate.speaking) this.onSpeakingChange(id, next.speaking);
+        gate = next;
         watcher.raf = requestAnimationFrame(tick);
       };
       this.speakingWatchers.set(id, watcher);
