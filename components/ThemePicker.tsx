@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Palette } from "lucide-react";
+import { colorsForMode } from "@/lib/colorMode";
 import { useTheme } from "@/lib/useTheme";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,8 @@ function gradientOf(stops: string[]) {
 }
 
 export default function ThemePicker({ placement = "down", align = "right", className }: ThemePickerProps) {
-  const { theme, setTheme, themes } = useTheme();
+  const { theme, setTheme, themes, colorMode, setColorMode } = useTheme();
+  const lightMode = colorMode === "light";
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -29,7 +31,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
     const anchor = buttonRef.current?.getBoundingClientRect();
     if (!anchor) return;
     const width = Math.min(288, window.innerWidth - 24);
-    const height = menuRef.current?.getBoundingClientRect().height ?? Math.min(420, window.innerHeight * 0.7);
+    const height = menuRef.current?.getBoundingClientRect().height ?? Math.min(480, window.innerHeight * 0.7);
     const alignedLeft = align === "right" ? anchor.right - width : anchor.left;
     let top = placement === "up" ? anchor.top - height - 8 : anchor.bottom + 8;
     if (top + height > window.innerHeight - 12) top = anchor.top - height - 8;
@@ -91,12 +93,42 @@ export default function ThemePicker({ placement = "down", align = "right", class
           className="fixed z-[1100] max-h-[70vh] w-[min(288px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl"
           style={position ?? { left: 12, top: 12 }}
         >
+          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-3 border-b border-white/10 bg-discord-bg-floating px-3 pb-3 pt-3">
+            <div className="mb-2 flex items-center justify-between text-[11px] font-semibold">
+              <span className={lightMode ? "text-discord-text-muted" : "text-white"}>Modo escuro</span>
+              <span className={lightMode ? "text-white" : "text-discord-text-muted"}>Modo claro</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lightMode}
+              aria-label={lightMode ? "Modo claro ligado" : "Modo escuro ligado"}
+              onClick={() => setColorMode(lightMode ? "dark" : "light")}
+              className={cn(
+                "relative h-8 w-full rounded-full border p-0.5 transition-colors",
+                lightMode ? "border-white/25 bg-white/10" : "border-white/15 bg-black/45"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 h-7 w-[calc(50%-2px)] rounded-full transition-all",
+                  lightMode ? "left-[calc(50%)] bg-white text-black" : "left-0.5 bg-white/15 text-white"
+                )}
+              />
+              <span className="relative grid h-full grid-cols-2 text-[10px] font-bold tracking-wide">
+                <span className={cn("grid place-items-center", lightMode ? "text-white/40" : "text-white")}>OFF</span>
+                <span className={cn("grid place-items-center", lightMode ? "text-black" : "text-white/40")}>ON</span>
+              </span>
+            </button>
+          </div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-discord-text-muted">
             Cor do tema
           </p>
           <div className="grid grid-cols-3 gap-2">
             {themes.map((option) => {
               const active = option.id === theme;
+              const stops = colorsForMode(option.stops, colorMode);
+              const background = colorsForMode(option.backgroundStops ?? [option.stops[0], option.stops[6]], colorMode);
               return (
                 <button
                   key={option.id}
@@ -111,8 +143,8 @@ export default function ThemePicker({ placement = "down", align = "right", class
                     className="relative block h-11 w-full overflow-hidden"
                     style={{
                       backgroundImage: option.overlay
-                        ? `url(/bankai/backgrounds/${option.overlay}.svg?v=2), ${gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]])}`
-                        : gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]]),
+                        ? `url(/bankai/backgrounds/${option.overlay}.svg?v=2), ${gradientOf(background)}`
+                        : gradientOf(background),
                       backgroundSize: option.overlay ? "140px 140px, cover" : undefined,
                     }}
                   >
@@ -124,7 +156,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
                       </span>
                     )}
                   </span>
-                  <span className="block h-1 w-full" style={{ backgroundImage: gradientOf(option.stops) }} />
+                  <span className="block h-1 w-full" style={{ backgroundImage: gradientOf(stops) }} />
                   <span className="block truncate px-2 py-1.5 text-[11px] font-semibold text-discord-text-normal">
                     {option.name}
                     {option.secret && <span className="mt-0.5 block text-[9px] font-medium uppercase tracking-wide text-discord-text-muted">Secreto</span>}

@@ -14,6 +14,11 @@ export interface ThemeOption {
 export const DEFAULT_THEME = "azul";
 export const THEME_STORAGE_KEY = "sekai-theme";
 
+/** Temas com as variáveis já escritas em globals.css. Os demais são pintados pelo cliente. */
+export const STYLESHEET_THEME_IDS = [
+  "azul", "roxo", "rosa", "verde", "ambar", "ciano", "rubi", "preto", "menta", "por-do-sol", "oceano", "candy", "grafite",
+] as const;
+
 export const THEMES: ThemeOption[] = [
   {
     "id": "azul",
