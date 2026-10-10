@@ -914,7 +914,7 @@ export default function Home() {
         const { data: joinedServerId, error } = await supabase.rpc("redeem_invite", { p_code: inviteCode });
         if (!error && joinedServerId) {
           const explicitChannelId = params.get("channel") || params.get("voiceChannel");
-          const { data: inviteRow } = explicitChannelId ? { data: null } : await supabase.from("invites").select("channel_id").eq("code", inviteCode.trim().toUpperCase()).maybeSingle();
+          const { data: inviteRow } = explicitChannelId ? { data: null } : await supabase.from("invites").select("channel_id").ilike("code", inviteCode.trim()).maybeSingle();
           const requestedChannelId = explicitChannelId || inviteRow?.channel_id || null;
           const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
           if (joinedServer) {
@@ -1640,7 +1640,7 @@ export default function Home() {
     if (serverId) {
       let channelId = requestedChannelId;
       if (!channelId) {
-        const { data: inviteRow } = await supabase.from("invites").select("channel_id").eq("code", code.trim().toUpperCase()).maybeSingle();
+        const { data: inviteRow } = await supabase.from("invites").select("channel_id").ilike("code", code.trim()).maybeSingle();
         channelId = inviteRow?.channel_id ?? null;
       }
       if (channelId) setInviteChannelId(channelId);

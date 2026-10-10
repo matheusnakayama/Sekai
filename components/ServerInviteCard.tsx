@@ -3,15 +3,9 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { inviteUrl } from "@/lib/invites";
+import { loadInvitePreview, type ServerInvitePreview } from "@/lib/invitePreview";
 
-export type ServerInvitePreview = {
-  name: string;
-  iconUrl?: string | null;
-  bannerUrl?: string | null;
-  createdAt?: string | null;
-  online?: number | null;
-  members?: number | null;
-};
+export type { ServerInvitePreview };
 
 const previewCache = new Map<string, ServerInvitePreview | null>();
 
@@ -82,39 +76,29 @@ export function ServerInviteCard({
 
 export function ServerInviteEmbed({ code }: { code: string }) {
   const normalized = code.trim();
-  const [preview, setPreview] = useState<ServerInvitePreview | null>(previewCache.get(normalized.toUpperCase()) ?? null);
+  const cached = previewCache.get(normalized.toUpperCase()) ?? null;
+  const [preview, setPreview] = useState<ServerInvitePreview | null>(cached);
+  const [ready, setReady] = useState(Boolean(cached));
   const supabase = createClient();
 
   useEffect(() => {
     const key = normalized.toUpperCase();
-    if (previewCache.has(key)) {
-      setPreview(previewCache.get(key) ?? null);
+    const cached = previewCache.get(key);
+    if (cached) {
+      setPreview(cached);
+      setReady(true);
       return;
     }
     let cancelled = false;
-    void supabase.rpc("preview_invite", { p_code: normalized }).then(({ data, error }) => {
-      if (error) return;
-      const row = data && typeof data === "object" ? data as {
-        name?: string;
-        iconUrl?: string | null;
-        bannerUrl?: string | null;
-        createdAt?: string | null;
-        online?: number | null;
-        members?: number | null;
-      } : null;
-      const next = row?.name ? {
-        name: row.name,
-        iconUrl: row.iconUrl ?? null,
-        bannerUrl: row.bannerUrl ?? null,
-        createdAt: row.createdAt ?? null,
-        online: typeof row.online === "number" ? row.online : null,
-        members: typeof row.members === "number" ? row.members : null,
-      } : null;
-      previewCache.set(key, next);
-      if (!cancelled) setPreview(next);
+    void loadInvitePreview(supabase, normalized).then((next) => {
+      if (cancelled) return;
+      if (next) previewCache.set(key, next);
+      setPreview(next);
+      setReady(true);
     });
     return () => { cancelled = true; };
   }, [normalized, supabase]);
 
+  if (!ready) return <div className="mt-2 h-44 w-full max-w-[320px] animate-pulse rounded-lg bg-[#111214]" aria-hidden="true" />;
   return <ServerInviteCard code={normalized} preview={preview} />;
 }
