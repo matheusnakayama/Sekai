@@ -49,7 +49,7 @@ function BadgeMark({ badge, sizeClass, imageSizeClass }: { badge: CustomBadge; s
       }}
       onBlur={() => setTip(null)}
     >
-      {badge.imageUrl ? <img src={badge.imageUrl} alt="" className={`${imageSizeClass} object-contain`}/> : badge.icon}
+      {badge.imageUrl ? <img src={badge.imageUrl.startsWith("/bankai/") ? `${badge.imageUrl.split("?")[0]}?v=3` : badge.imageUrl} alt="" className={`${imageSizeClass} object-contain`}/> : badge.icon}
       {tip && typeof document !== "undefined" && createPortal(
         <span role="tooltip" className="pointer-events-none fixed z-[80] max-w-[240px] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-white/10 bg-[#111214] px-2 py-1 text-[11px] font-medium text-white shadow-lg" style={{ left: tip.x, top: tip.y - 6 }}>
           {label}

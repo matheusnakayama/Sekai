@@ -226,7 +226,7 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
       <span className="flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1 leading-4">
           <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
-          <CustomBadgeList badges={member.badges} limit={2} />
+          <CustomBadgeList badges={member.badges} limit={3} />
         </span>
         {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
       </span>

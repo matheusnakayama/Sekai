@@ -1,7 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-<rect width="32" height="32" rx="8" fill="#2A1848"/>
-<rect x="12.2" y="6" width="7.6" height="16.5" rx="3.8" fill="#D6B449" stroke="#A7DF4B" stroke-width="1.2"/>
-<path d="M13.4 11.5h5.2M13.4 15h5.2M13.4 18.4h5.2" stroke="#4C288C" stroke-width="1"/>
-<path d="M14.6 22.5h2.8l-.6 3.2h-1.6l-.6-3.2z" fill="#A7DF4B"/>
-<circle cx="16" cy="9.2" r="1.1" fill="#F4E7B0"/>
+  <path d="M11.2 8.2c0-2.6 2.1-4.4 4.8-4.4s4.8 1.8 4.8 4.4v12.2c0 2.8-2.1 5-4.8 5s-4.8-2.2-4.8-5V8.2z" fill="#E2C15A"/>
+  <path d="M11.2 11.2h9.6M11.2 15.2h9.6M11.2 19.2h9.6" stroke="#3A2068" stroke-width="1.25"/>
+  <path d="M9.2 12.4 6.4 10.2 9.4 14.6zM22.8 12.4 25.6 10.2 22.6 14.6z" fill="#A7DF4B"/>
+  <path d="M9.4 17.2 6.2 18.8 9.6 19.6zM22.6 17.2 25.8 18.8 22.4 19.6z" fill="#7BC23A"/>
+  <circle cx="16" cy="7.2" r="1.7" fill="#F8F0C8"/>
+  <circle cx="15.3" cy="7" r=".35" fill="#2A1848"/>
+  <circle cx="16.7" cy="7" r=".35" fill="#2A1848"/>
+  <path d="M14.4 24.8h3.2l-.7 4.2h-1.8l-.7-4.2z" fill="#A7DF4B"/>
 </svg>
