@@ -1,4 +1,5 @@
 import { medalClipId } from "@/lib/medal";
+import { isTikTokShortUrl, socialVideoFromUrl } from "@/lib/socialVideoLinks";
 
 export type MessagePart = { type: "text" | "spoiler"; value: string };
 
@@ -36,7 +37,7 @@ export function linkifyUrls(content: string) {
 }
 
 export function isDirectMediaUrl(value: string) {
-  if (medalClipId(value)) return true;
+  if (medalClipId(value) || socialVideoFromUrl(value) || isTikTokShortUrl(value)) return true;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && MEDIA_EXTENSION.test(url.pathname + url.search);
@@ -46,7 +47,10 @@ export function isDirectMediaUrl(value: string) {
 }
 
 export function isVideoUrl(value: string) {
-  return medalClipId(value) !== null || /\.(mp4|webm)(?:$|[?#])/i.test(value);
+  return medalClipId(value) !== null
+    || socialVideoFromUrl(value) !== null
+    || isTikTokShortUrl(value)
+    || /\.(mp4|webm)(?:$|[?#])/i.test(value);
 }
 
 export function visibleText(content: string, embedMedia: boolean) {

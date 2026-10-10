@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
 import { medalClipId, medalSocialVideoUrl } from "@/lib/medal";
 import { extractUrls, isDirectMediaUrl, isVideoUrl, linkifyUrls, splitSpoilers, visibleText } from "@/lib/messageParts";
+import { isTikTokShortUrl, socialVideoFromUrl } from "@/lib/socialVideoLinks";
 import { inviteCodeFromUrl } from "@/lib/invites";
 import { linkifyMentions, type MentionName } from "@/lib/mentions";
 import { ServerInviteEmbed } from "@/components/ServerInviteCard";
@@ -39,10 +40,57 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
 
 function MediaEmbed({ url }: { url: string }) {
   const [broken, setBroken] = useState(false);
+  const [resolvedTikTokId, setResolvedTikTokId] = useState<string | null>(null);
   const clipId = medalClipId(url);
   const src = clipId ? medalSocialVideoUrl(clipId) : url;
+  const socialVideo = socialVideoFromUrl(url);
+  const shortTikTokUrl = isTikTokShortUrl(url);
+
+  useEffect(() => {
+    if (!shortTikTokUrl) return;
+    let cancelled = false;
+    void fetch(`/api/tiktok-embed?url=${encodeURIComponent(url)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Não foi possível carregar o vídeo.");
+        return response.json() as Promise<{ id?: string }>;
+      })
+      .then(({ id }) => {
+        if (!cancelled && id && /^\d{8,30}$/.test(id)) setResolvedTikTokId(id);
+        else if (!cancelled) setBroken(true);
+      })
+      .catch(() => { if (!cancelled) setBroken(true); });
+    return () => { cancelled = true; };
+  }, [shortTikTokUrl, url]);
+
   if (broken) {
     return <a href={url} target="_blank" rel="noreferrer" className="sekai-link mt-2 block break-all text-sm">{url}</a>;
+  }
+  if (shortTikTokUrl || socialVideo) {
+    const provider = socialVideo?.provider ?? "tiktok";
+    const id = socialVideo?.id ?? resolvedTikTokId;
+    if (!id) {
+      return <div className="mt-2 flex w-full max-w-sm items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-discord-text-muted">
+        <span>Carregando vídeo do TikTok…</span>
+        <a href={url} target="_blank" rel="noreferrer" className="shrink-0 text-discord-brand hover:underline">Abrir no TikTok</a>
+      </div>;
+    }
+    const playerUrl = provider === "tiktok"
+      ? `https://www.tiktok.com/player/v1/${encodeURIComponent(id)}?controls=1&description=1`
+      : `https://www.instagram.com/reel/${encodeURIComponent(id)}/embed/`;
+    return <div className="mt-2 w-full">
+      <div className={`overflow-hidden rounded-xl bg-black ${provider === "tiktok" ? "aspect-[9/16] w-full max-w-[360px] max-h-[min(640px,70dvh)]" : "h-[min(700px,75dvh)] w-full max-w-[420px]"}`}>
+        <iframe
+          src={playerUrl}
+          title={provider === "tiktok" ? "Vídeo do TikTok" : "Reel do Instagram"}
+          loading="lazy"
+          allow="autoplay; encrypted-media; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="h-full w-full border-0"
+        />
+      </div>
+      <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-discord-brand hover:underline">Abrir no {provider === "tiktok" ? "TikTok" : "Instagram"}</a>
+    </div>;
   }
   if (isVideoUrl(url)) {
     return (
