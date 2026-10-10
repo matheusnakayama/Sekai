@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Hash, Plus, Smile, SendHorizontal, Pencil, Trash2, X, Check, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
@@ -16,6 +17,7 @@ import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
 import { buildMentionNames, contentMentionsUser } from "@/lib/mentions";
+import { useDialogs } from "@/components/DialogProvider";
 
 const STANDARD_EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🙂", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "🙃", "😴", "😭", "😡", "🥳", "🤯", "😱", "🤗", "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "✨", "🔥", "🎉", "🎊", "🎂", "🌟", "💀", "👀", "🐱", "🐶", "🌈", "☕", "🍕", "🍿", "🎮", "🚀"];
 
@@ -111,6 +113,7 @@ export function ChatArea({
   viewerNames = [],
 }: ChatAreaProps) {
   const supabase = createClient();
+  const dialogs = useDialogs();
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
@@ -313,7 +316,12 @@ export function ChatArea({
           return (
           <div key={message.id}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
-          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+          <div onContextMenu={(event) => {
+            event.preventDefault();
+            const mine = message.authorId === currentUserId;
+            if (!mine && !canManageMessages) return;
+            setMenu({ x: event.clientX, y: event.clientY, message });
+          }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
             {chatDisplay.showAvatars && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -404,10 +412,32 @@ export function ChatArea({
 
       {prankOpen && <PrankSimulation onClose={() => setPrankOpen(false)} />}
 
-      {menu && <><button aria-label="Fechar menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setMenu(null)} /><div style={{ left: Math.min(menu.x, window.innerWidth - 220), top: Math.min(menu.y, window.innerHeight - 130) }} className="fixed z-50 w-52 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl backdrop-blur-xl">
-        {menu.message.authorId === currentUserId && <button onClick={() => { setEditing({ id: menu.message.id, content: menu.message.content }); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-white/10"><Pencil size={15}/>Editar mensagem</button>}
-        {(menu.message.authorId === currentUserId || canManageMessages) && <button onClick={async () => { if (window.confirm("Excluir esta mensagem?")) await onDeleteMessage?.(menu.message.id); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"><Trash2 size={15}/>Excluir mensagem</button>}
-      </div></>}
+      {menu && createPortal(
+        <>
+          <button aria-label="Fechar menu" className="fixed inset-0 z-[400] cursor-default" onClick={() => setMenu(null)} onContextMenu={(event) => { event.preventDefault(); setMenu(null); }} />
+          <div
+            role="menu"
+            style={{
+              left: Math.max(8, Math.min(menu.x, window.innerWidth - 220)),
+              top: Math.max(8, Math.min(menu.y, window.innerHeight - 120)),
+            }}
+            className="fixed z-[410] w-52 rounded-xl border border-white/10 bg-[#111214] p-1.5 shadow-2xl"
+          >
+            {menu.message.authorId === currentUserId && <button type="button" role="menuitem" onClick={() => { setEditing({ id: menu.message.id, content: menu.message.content }); setMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-white/10"><Pencil size={15}/>Editar mensagem</button>}
+            <button type="button" role="menuitem" onClick={() => {
+              const message = menu.message;
+              setMenu(null);
+              void (async () => {
+                const confirmed = await dialogs.confirm({ title: "Excluir mensagem", message: "Essa mensagem sai do canal para todo mundo.", confirmLabel: "Excluir mensagem", danger: true });
+                if (!confirmed) return;
+                try { await onDeleteMessage?.(message.id); }
+                catch (error) { await dialogs.notify({ title: "Não foi possível excluir", message: error instanceof Error ? error.message : "Tente de novo." }); }
+              })();
+            }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"><Trash2 size={15}/>Excluir mensagem</button>
+          </div>
+        </>,
+        document.body,
+      )}
 
       {/* Campo de mensagem */}
       <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">

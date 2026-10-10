@@ -50,6 +50,7 @@ function MediaEmbed({ url }: { url: string }) {
         controls
         playsInline
         preload="metadata"
+        onContextMenu={(event) => event.preventDefault()}
         onError={() => setBroken(true)}
         aria-label={clipId ? "Clipe do Medal" : "Vídeo"}
         className="mt-2 aspect-video w-full max-w-xl rounded-xl bg-black"
