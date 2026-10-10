@@ -1,37 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
-<path d="M40 40 H600 M40 160 H600 M40 280 H600 M40 400 H600 M40 520 H600" stroke="#8F2638" stroke-opacity="0.28" stroke-width="1.4" stroke-dasharray="10 8"/>
-<path d="M80 20 V620 M240 20 V620 M400 20 V620 M560 20 V620" stroke="#8F2638" stroke-opacity="0.16" stroke-width="1.2" stroke-dasharray="2 14"/>
-
-<g transform="translate(120 100)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(300 220)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(480 140)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(160 360)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(360 460)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(540 380)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(100 560)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
-<g transform="translate(420 580)" stroke="#F0E6D9" stroke-opacity="0.45" stroke-width="1.5">
-  <path d="M-8 -8 L8 8 M8 -8 L-8 8"/>
-  <path d="M0 -14 V14" stroke="#8F2638" stroke-opacity="0.55"/>
-</g>
+  <g id="mark">
+    <ellipse cy="10" rx="48" ry="12" fill="#3A2228"/>
+    <path d="M-26 8 L-20 -30 H20 L26 8 Z" fill="#24181C"/>
+    <g stroke="#E2C8C4" stroke-width="3.4" stroke-linecap="round">
+      <path d="M-12 -28 V6"/>
+      <path d="M-2 -30 V8"/>
+      <path d="M8 -30 V8"/>
+      <path d="M16 -26 V6"/>
+    </g>
+    <path d="M-22 -2 H22" stroke="#8F2638" stroke-width="7" stroke-linecap="round"/>
+    <path d="M-36 36 C-4 24 18 44 40 28" stroke="#C46A78" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <circle cx="40" cy="28" r="3.2" fill="none" stroke="#C46A78" stroke-width="2"/>
+    <path d="M40 28 L52 20" stroke="#E2C8C4" stroke-width="2" stroke-linecap="round"/></g>
+  <use href="#mark" transform="translate(161 70) rotate(-8) scale(1.15)" opacity="0.62"/>
+<use href="#mark" transform="translate(400 120) rotate(16) scale(0.82)" opacity="0.4"/>
+<use href="#mark" transform="translate(569 60) rotate(-18) scale(0.7)" opacity="0.34"/>
+<use href="#mark" transform="translate(78 250) rotate(10) scale(0.78)" opacity="0.36"/>
+<use href="#mark" transform="translate(307 280) rotate(-6) scale(1.05)" opacity="0.5"/>
+<use href="#mark" transform="translate(526 300) rotate(22) scale(0.72)" opacity="0.32"/>
+<use href="#mark" transform="translate(185 470) rotate(-14) scale(0.9)" opacity="0.42"/>
+<use href="#mark" transform="translate(434 500) rotate(8) scale(1.1)" opacity="0.48"/>
+<use href="#mark" transform="translate(83 560) rotate(20) scale(0.66)" opacity="0.3"/>
+<use href="#mark" transform="translate(602 460) rotate(-10) scale(0.74)" opacity="0.34"/>
+  
 </svg>

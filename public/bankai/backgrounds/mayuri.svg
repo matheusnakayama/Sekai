@@ -1,63 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
-
-<g transform="translate(90 80) rotate(12)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(250 160) rotate(-18)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(430 60) rotate(12)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(560 220) rotate(-18)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(140 340) rotate(12)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(320 400) rotate(-18)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(500 360) rotate(12)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(80 540) rotate(-18)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(260 560) rotate(12)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
-<g transform="translate(460 520) rotate(-18)">
-  <rect x="-16" y="-34" width="32" height="68" rx="16" stroke="#D6B449" stroke-opacity="0.55" stroke-width="1.6" fill="#A7DF4B" fill-opacity="0.12"/>
-  <rect x="-16" y="-8" width="32" height="8" fill="#D6B449" fill-opacity="0.45"/>
-  <circle cy="-18" r="4" fill="#F4E7B0" fill-opacity="0.55"/>
-  <path d="M0 34 v16" stroke="#A7DF4B" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/>
-</g>
+  <g id="mark">
+    <path fill="#A7DF4B" d="M-16 2 L-36 -8 L-14 12Z M16 2 L36 -8 L14 12Z M-14 20 L-34 30 L-10 32Z M14 20 L34 30 L10 32Z"/>
+    <ellipse cy="30" rx="13" ry="9" fill="#D6B449"/>
+    <ellipse cy="14" rx="17" ry="11" fill="#E6C85A"/>
+    <ellipse cy="-2" rx="15" ry="11" fill="#D6B449"/>
+    <circle cy="-26" r="15" fill="#F4E7B0"/>
+    <circle cx="-5" cy="-28" r="2" fill="#2E1A58"/>
+    <circle cx="5" cy="-28" r="2" fill="#2E1A58"/>
+    <path d="M-5 -20 Q0 -16 5 -20" stroke="#2E1A58" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M-8 -40 L-14 -52 M8 -40 L14 -52" stroke="#A7DF4B" stroke-width="3.2" stroke-linecap="round"/></g>
+  <use href="#mark" transform="translate(144 70) rotate(-8) scale(1.15)" opacity="0.62"/>
+<use href="#mark" transform="translate(383 120) rotate(16) scale(0.82)" opacity="0.4"/>
+<use href="#mark" transform="translate(552 60) rotate(-18) scale(0.7)" opacity="0.34"/>
+<use href="#mark" transform="translate(61 250) rotate(10) scale(0.78)" opacity="0.36"/>
+<use href="#mark" transform="translate(290 280) rotate(-6) scale(1.05)" opacity="0.5"/>
+<use href="#mark" transform="translate(509 300) rotate(22) scale(0.72)" opacity="0.32"/>
+<use href="#mark" transform="translate(168 470) rotate(-14) scale(0.9)" opacity="0.42"/>
+<use href="#mark" transform="translate(441 500) rotate(8) scale(1.1)" opacity="0.48"/>
+<use href="#mark" transform="translate(90 560) rotate(20) scale(0.66)" opacity="0.3"/>
+<use href="#mark" transform="translate(609 460) rotate(-10) scale(0.74)" opacity="0.34"/>
+  
 </svg>

@@ -1,28 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640" fill="none">
-<g transform="translate(160 160)" fill="none" stroke-linecap="round">
-    <circle r="18" stroke="#8EA5C2" stroke-opacity="0.45" stroke-width="1.3"/>
-    <circle r="34" stroke="#493A83" stroke-opacity="0.4" stroke-width="1.2"/>
-    <circle r="52" stroke="#8EA5C2" stroke-opacity="0.22" stroke-width="1"/>
-    <circle r="2.5" fill="#E4EAF2" fill-opacity="0.6" stroke="none"/>
-  </g><g transform="translate(460 200)" fill="none" stroke-linecap="round">
-    <circle r="22" stroke="#8EA5C2" stroke-opacity="0.45" stroke-width="1.3"/>
-    <circle r="38" stroke="#493A83" stroke-opacity="0.4" stroke-width="1.2"/>
-    <circle r="56" stroke="#8EA5C2" stroke-opacity="0.22" stroke-width="1"/>
-    <circle r="2.5" fill="#E4EAF2" fill-opacity="0.6" stroke="none"/>
-  </g><g transform="translate(180 460)" fill="none" stroke-linecap="round">
-    <circle r="26" stroke="#8EA5C2" stroke-opacity="0.45" stroke-width="1.3"/>
-    <circle r="42" stroke="#493A83" stroke-opacity="0.4" stroke-width="1.2"/>
-    <circle r="60" stroke="#8EA5C2" stroke-opacity="0.22" stroke-width="1"/>
-    <circle r="2.5" fill="#E4EAF2" fill-opacity="0.6" stroke="none"/>
-  </g><g transform="translate(480 470)" fill="none" stroke-linecap="round">
-    <circle r="30" stroke="#8EA5C2" stroke-opacity="0.45" stroke-width="1.3"/>
-    <circle r="46" stroke="#493A83" stroke-opacity="0.4" stroke-width="1.2"/>
-    <circle r="64" stroke="#8EA5C2" stroke-opacity="0.22" stroke-width="1"/>
-    <circle r="2.5" fill="#E4EAF2" fill-opacity="0.6" stroke="none"/>
-  </g><g transform="translate(320 320)" fill="none" stroke-linecap="round">
-    <circle r="34" stroke="#8EA5C2" stroke-opacity="0.45" stroke-width="1.3"/>
-    <circle r="50" stroke="#493A83" stroke-opacity="0.4" stroke-width="1.2"/>
-    <circle r="68" stroke="#8EA5C2" stroke-opacity="0.22" stroke-width="1"/>
-    <circle r="2.5" fill="#E4EAF2" fill-opacity="0.6" stroke="none"/>
-  </g>
+  <g id="mark">
+    <circle r="50" stroke="#8EA5C2" stroke-width="3.5" fill="none"/>
+    <circle r="36" stroke="#6E86B0" stroke-width="3.5" fill="none"/>
+    <circle r="22" stroke="#493A83" stroke-width="4" fill="none"/>
+    <circle r="7" fill="#E4EAF2"/>
+    <path d="M0 -50 V-62" stroke="#8EA5C2" stroke-width="2.5"/>
+    <path fill="#8EA5C2" d="M-12 -50 H12 L7 -30 H-7 Z"/>
+    <circle cy="-27" r="2.4" fill="#E4EAF2"/></g>
+  <use href="#mark" transform="translate(151 70) rotate(-8) scale(1.15)" opacity="0.62"/>
+<use href="#mark" transform="translate(390 120) rotate(16) scale(0.82)" opacity="0.4"/>
+<use href="#mark" transform="translate(559 60) rotate(-18) scale(0.7)" opacity="0.34"/>
+<use href="#mark" transform="translate(68 250) rotate(10) scale(0.78)" opacity="0.36"/>
+<use href="#mark" transform="translate(297 280) rotate(-6) scale(1.05)" opacity="0.5"/>
+<use href="#mark" transform="translate(516 300) rotate(22) scale(0.72)" opacity="0.32"/>
+<use href="#mark" transform="translate(175 470) rotate(-14) scale(0.9)" opacity="0.42"/>
+<use href="#mark" transform="translate(424 500) rotate(8) scale(1.1)" opacity="0.48"/>
+<use href="#mark" transform="translate(73 560) rotate(20) scale(0.66)" opacity="0.3"/>
+<use href="#mark" transform="translate(592 460) rotate(-10) scale(0.74)" opacity="0.34"/>
+  
 </svg>

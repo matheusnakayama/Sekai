@@ -111,7 +111,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
                     className="relative block h-11 w-full overflow-hidden"
                     style={{
                       backgroundImage: option.overlay
-                        ? `url(/bankai/backgrounds/${option.overlay}.svg), ${gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]])}`
+                        ? `url(/bankai/backgrounds/${option.overlay}.svg?v=2), ${gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]])}`
                         : gradientOf(option.backgroundStops ?? [option.stops[0], option.stops[6]]),
                       backgroundSize: option.overlay ? "140px 140px, cover" : undefined,
                     }}

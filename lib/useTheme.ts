@@ -79,7 +79,7 @@ function applyTheme(id: string) {
   const root = document.documentElement;
   if (selected?.overlay) {
     root.setAttribute("data-theme-overlay", selected.overlay);
-    root.style.setProperty("--chat-theme-art", `url("/bankai/backgrounds/${selected.overlay}.svg")`);
+    root.style.setProperty("--chat-theme-art", `url("/bankai/backgrounds/${selected.overlay}.svg?v=2")`);
   } else {
     root.removeAttribute("data-theme-overlay");
     root.style.removeProperty("--chat-theme-art");
