@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Music2, Play, Volume2, VolumeX } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Music, Music2, Play, Square, Volume2, VolumeX } from 'lucide-react';
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon } from './icons';
 
 export interface SoundboardEffect {
@@ -31,6 +31,9 @@ export default function Controls({
   soundEffects,
   soundEffectsLoading,
   playingSoundId,
+  callMusicName,
+  onPlayCallMusic,
+  onStopCallMusic,
   onToggleMic,
   onToggleDeafen,
   onToggleCam,
@@ -55,6 +58,9 @@ export default function Controls({
   soundEffects: SoundboardEffect[];
   soundEffectsLoading: boolean;
   playingSoundId: string | null;
+  callMusicName: string | null;
+  onPlayCallMusic: (file: File) => void;
+  onStopCallMusic: () => void;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
   onToggleCam: () => void;
@@ -68,6 +74,8 @@ export default function Controls({
 }) {
   const [copied, setCopied] = useState(false);
   const [soundboardOpen, setSoundboardOpen] = useState(false);
+  const [musicOpen, setMusicOpen] = useState(false);
+  const musicFileRef = useRef<HTMLInputElement>(null);
 
   function handleCopy() {
     onCopyLink();
@@ -170,6 +178,42 @@ export default function Controls({
         )}
       </div>
 
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setMusicOpen((open) => !open)}
+          aria-label="Tocar uma música na call"
+          aria-expanded={musicOpen}
+          title="Tocar música na call"
+          className={`h-12 w-12 rounded-full border flex items-center justify-center transition-colors ${callMusicName || musicOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
+        >
+          <Music className="h-5 w-5" />
+        </button>
+        {musicOpen && (
+          <div className="absolute bottom-full right-0 z-50 mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-2xl border border-surface-border bg-[#17191f] p-3 text-white shadow-2xl">
+            <h3 className="px-1 text-sm font-semibold">Música na call</h3>
+            <p className="mt-1 px-1 text-[11px] leading-relaxed text-white/50">Escolha um arquivo de áudio do seu computador. Quem estiver nesta call escuta junto.</p>
+            <input
+              ref={musicFileRef}
+              type="file"
+              accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                onPlayCallMusic(file);
+                setMusicOpen(false);
+              }}
+            />
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => musicFileRef.current?.click()} className="flex-1 rounded-xl bg-theme-gradient px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110">Escolher arquivo</button>
+              {callMusicName && <button type="button" onClick={onStopCallMusic} className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10"><Square className="h-3 w-3 fill-current" />Parar</button>}
+            </div>
+          </div>
+        )}
+      </div>
+
       {sharingScreen && (
         <button
           type="button"
@@ -236,6 +280,14 @@ export default function Controls({
         <HangupIcon />
         <span className="hidden sm:inline">Sair</span>
       </button>
+
+      {callMusicName && (
+        <div className="flex basis-full items-center justify-center gap-2 pt-1 text-xs text-white/75">
+          <Music className="h-3.5 w-3.5 shrink-0" />
+          <span className="max-w-[240px] truncate">Tocando {callMusicName}</span>
+          <button type="button" onClick={onStopCallMusic} className="rounded-lg px-2 py-1 font-semibold text-white transition hover:bg-white/10">Parar</button>
+        </div>
+      )}
     </div>
   );
 }

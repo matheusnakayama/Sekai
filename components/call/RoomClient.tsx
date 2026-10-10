@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/client';
 import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusherClient';
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
+import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
 import type {
   CallError,
   IceServerConfig,
@@ -84,6 +85,7 @@ export default function RoomClient({
   const [soundEffects, setSoundEffects] = useState<SoundboardEffect[]>([]);
   const [soundEffectsLoading, setSoundEffectsLoading] = useState(false);
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+  const [callMusicName, setCallMusicName] = useState<string | null>(null);
   const [muteRemoteAudioDuringShare, setMuteRemoteAudioDuringShare] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -116,6 +118,10 @@ export default function RoomClient({
   const screenShareOperationRef = useRef(false);
   const screenAudioEnabledRef = useRef(false);
   const muteRemoteAudioFallbackRef = useRef(false);
+  const callMusicRef = useRef<CallMusicPlayback | null>(null);
+  const musicGenerationRef = useRef(0);
+  const soundboardSendRef = useRef(Promise.resolve());
+  const releaseCallMusicRef = useRef<() => void>(() => {});
   const supabase = createClient();
 
   useEffect(() => {
@@ -136,6 +142,7 @@ export default function RoomClient({
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenAudioContextRef.current?.close().catch(() => {});
     screenAudioContextRef.current = null;
+    releaseCallMusicRef.current();
     cameraStreamRef.current = null;
     screenStreamRef.current = null;
     screenAudioTrackRef.current = null;
@@ -661,6 +668,57 @@ export default function RoomClient({
     await previousContext?.close().catch(() => {});
     return !!mixedTrack;
   }, []);
+
+  const sendSoundboardTrack = useCallback((track: MediaStreamTrack | null) => {
+    const next = soundboardSendRef.current
+      .catch(() => undefined)
+      .then(() => managerRef.current?.replaceSoundboardTrack(track) ?? Promise.resolve());
+    soundboardSendRef.current = next.then(() => undefined);
+    return next;
+  }, []);
+
+  const releaseCallMusic = useCallback(() => {
+    musicGenerationRef.current += 1;
+    const playback = callMusicRef.current;
+    callMusicRef.current = null;
+    setCallMusicName(null);
+    void sendSoundboardTrack(null);
+    void stopCallMusicPlayback(playback);
+  }, [sendSoundboardTrack]);
+
+  releaseCallMusicRef.current = releaseCallMusic;
+
+  useEffect(() => {
+    const gain = callMusicRef.current?.localGain;
+    if (gain) gain.gain.value = deafened ? 0 : 1;
+  }, [deafened]);
+
+  const playCallMusic = useCallback(async (file: File) => {
+    if (!isPlayableAudioFile(file)) {
+      showProblem('Escolha um arquivo de áudio, como mp3, wav ou ogg.');
+      return;
+    }
+    releaseCallMusic();
+    const generation = musicGenerationRef.current;
+    try {
+      const playback = await startCallMusicPlayback(file, !deafened);
+      if (musicGenerationRef.current !== generation) {
+        void stopCallMusicPlayback(playback);
+        return;
+      }
+      callMusicRef.current = playback;
+      playback.audio.addEventListener('ended', () => {
+        if (callMusicRef.current?.audio === playback.audio) releaseCallMusic();
+      }, { once: true });
+      await sendSoundboardTrack(playback.track);
+      if (musicGenerationRef.current !== generation) return;
+      setCallMusicName(file.name.replace(/\.[^.]+$/, '') || file.name);
+    } catch (error) {
+      console.error('Não foi possível tocar a música na call:', error);
+      releaseCallMusic();
+      showProblem('Não foi possível tocar esse arquivo na call.');
+    }
+  }, [deafened, releaseCallMusic, sendSoundboardTrack]);
 
   const playSoundboardEffect = useCallback(async (effect: SoundboardEffect) => {
     if (!serverId) return false;
@@ -1415,6 +1473,9 @@ export default function RoomClient({
           soundEffects={soundEffects}
           soundEffectsLoading={soundEffectsLoading}
           playingSoundId={playingSoundId}
+          callMusicName={callMusicName}
+          onPlayCallMusic={(file) => { void playCallMusic(file); }}
+          onStopCallMusic={releaseCallMusic}
           onPlaySoundEffect={(effect) => { void playSoundboardEffect(effect); }}
           participantCount={participantList.length}
           onToggleMic={toggleMic}
