@@ -47,13 +47,13 @@ function hslToHex(hue: number, saturation: number, lightness: number) {
   return `#${channel(red)}${channel(green)}${channel(blue)}`;
 }
 
-/** Abaixa a claridade sem trocar o matiz. Os tons já escuros quase não se mexem. */
+/** Abaixa bastante a claridade e guarda o matiz. Os tons já escuros descem pouco. */
 export function darkenThemeColor(color: string) {
   const [red, green, blue] = hexToRgb(color);
   const [hue, saturation, lightness] = rgbToHsl(red, green, blue);
-  const drop = 0.045 + Math.max(0, lightness - 0.22) * 0.22;
-  const next = Math.max(0.07, lightness - drop);
-  return hslToHex(hue, Math.min(1, saturation * 1.04), next);
+  const next = Math.max(0.09, lightness * 0.36 + 0.04);
+  const nextSaturation = saturation < 0.08 ? saturation : Math.min(1, saturation * 1.08);
+  return hslToHex(hue, nextSaturation, next);
 }
 
 export function colorsForMode(stops: readonly string[], mode: ColorMode) {

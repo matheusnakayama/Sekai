@@ -31,7 +31,7 @@ export default function ThemePicker({ placement = "down", align = "right", class
     const anchor = buttonRef.current?.getBoundingClientRect();
     if (!anchor) return;
     const width = Math.min(288, window.innerWidth - 24);
-    const height = menuRef.current?.getBoundingClientRect().height ?? Math.min(480, window.innerHeight * 0.7);
+    const height = menuRef.current?.getBoundingClientRect().height ?? Math.min(440, window.innerHeight * 0.7);
     const alignedLeft = align === "right" ? anchor.right - width : anchor.left;
     let top = placement === "up" ? anchor.top - height - 8 : anchor.bottom + 8;
     if (top + height > window.innerHeight - 12) top = anchor.top - height - 8;
@@ -93,37 +93,33 @@ export default function ThemePicker({ placement = "down", align = "right", class
           className="fixed z-[1100] max-h-[70vh] w-[min(288px,calc(100vw-24px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl"
           style={position ?? { left: 12, top: 12 }}
         >
-          <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-3 border-b border-white/10 bg-discord-bg-floating px-3 pb-3 pt-3">
-            <div className="mb-2 flex items-center justify-between text-[11px] font-semibold">
-              <span className={lightMode ? "text-discord-text-muted" : "text-white"}>Modo escuro</span>
-              <span className={lightMode ? "text-white" : "text-discord-text-muted"}>Modo claro</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={lightMode}
-              aria-label={lightMode ? "Modo claro ligado" : "Modo escuro ligado"}
-              onClick={() => setColorMode(lightMode ? "dark" : "light")}
-              className={cn(
-                "relative h-8 w-full rounded-full border p-0.5 transition-colors",
-                lightMode ? "border-white/25 bg-white/10" : "border-white/15 bg-black/45"
-              )}
-            >
-              <span
+          <div className="mb-2 flex items-end justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-discord-text-muted">
+              Cor do tema
+            </p>
+            <div className="flex flex-col items-center">
+              <span className="mb-1 text-[10px] font-semibold leading-none text-discord-text-muted">Theme</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!lightMode}
+                aria-label={lightMode ? "Modo claro" : "Modo escuro"}
+                title={lightMode ? "Modo claro" : "Modo escuro"}
+                onClick={() => setColorMode(lightMode ? "dark" : "light")}
                 className={cn(
-                  "absolute top-0.5 h-7 w-[calc(50%-2px)] rounded-full transition-all",
-                  lightMode ? "left-[calc(50%)] bg-white text-black" : "left-0.5 bg-white/15 text-white"
+                  "relative h-[22px] w-9 rounded-full transition-colors",
+                  lightMode ? "bg-zinc-600" : "bg-[#50d080]"
                 )}
-              />
-              <span className="relative grid h-full grid-cols-2 text-[10px] font-bold tracking-wide">
-                <span className={cn("grid place-items-center", lightMode ? "text-white/40" : "text-white")}>OFF</span>
-                <span className={cn("grid place-items-center", lightMode ? "text-black" : "text-white/40")}>ON</span>
-              </span>
-            </button>
+              >
+                <span
+                  className={cn(
+                    "absolute top-[3px] h-4 w-4 rounded-full bg-white shadow-sm transition-all",
+                    lightMode ? "left-[3px]" : "left-[17px]"
+                  )}
+                />
+              </button>
+            </div>
           </div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-discord-text-muted">
-            Cor do tema
-          </p>
           <div className="grid grid-cols-3 gap-2">
             {themes.map((option) => {
               const active = option.id === theme;
