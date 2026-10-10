@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { SpotifyMark } from "@/components/NowPlayingCard";
 import { beginSpotifyConnect, clearNowPlaying, readSpotifySession, SPOTIFY_CLIENT_ID, spotifyRedirectUri, writeSpotifySession, type SpotifySession } from "@/lib/spotify";
 
 export function SpotifyConnections({ userId }: { userId: string }) {
@@ -48,7 +49,7 @@ export function SpotifyConnections({ userId }: { userId: string }) {
 
       <article className="rounded-2xl border border-white/[0.08] bg-discord-bg-primary p-4 sm:p-5">
         <div className="flex items-start gap-3">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#1DB954] text-lg font-black text-black">S</span>
+          <SpotifyMark className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="font-semibold text-discord-header-primary">Spotify</h2>
             <p className="mt-1 text-xs leading-5 text-discord-text-muted">{session ? `Conectado como ${session.displayName}` : "Mostre a música atual no perfil, do mesmo jeito que uma atividade ao vivo."}</p>

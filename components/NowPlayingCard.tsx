@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { isFreshActivity, type NowPlaying } from "@/lib/spotify";
 
-function SpotifyMark({ className }: { className?: string }) {
+export function SpotifyMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
       <circle cx="12" cy="12" r="12" fill="#1DB954" />
