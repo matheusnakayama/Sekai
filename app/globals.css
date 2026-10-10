@@ -696,8 +696,39 @@ html[data-reduced-motion="true"] *::after {
   transition: height 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
 }
 
-.group:hover .server-rail-pill {
+.group:hover .server-rail-pill:not(.server-rail-pill-unread) {
   box-shadow: 4px 0 10px color-mix(in srgb, var(--g1) 45%, transparent);
+}
+
+.server-rail-pill-unread {
+  background-image: none;
+  background-color: #f2f3f5;
+  box-shadow: none;
+}
+
+.mention-chip,
+.mention-chip-mine {
+  display: inline;
+  border-radius: 4px;
+  padding: 0 0.2rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none !important;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  background: color-mix(in srgb, var(--g4) 42%, transparent);
+  color: color-mix(in srgb, var(--g1) 28%, white) !important;
+}
+
+.mention-chip-mine {
+  background: var(--g4);
+  color: #fff !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--g1) 45%, transparent);
+}
+
+.mention-message {
+  background: color-mix(in srgb, var(--g4) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--g3);
 }
 
 .server-rail-pill-active {

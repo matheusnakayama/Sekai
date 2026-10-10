@@ -17,6 +17,7 @@ import { DIRECT_CALL_INVITE } from "@/lib/directCalls";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
 import { NowPlayingCard, useNowPlaying } from "@/components/NowPlayingCard";
 import { useChatDisplay } from "@/lib/chatPreferences";
+import { buildMentionNames } from "@/lib/mentions";
 
 interface FriendHomeProps {
   currentUserId: string;
@@ -299,6 +300,10 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     return query ? dmMessages.filter((item) => item.content.toLocaleLowerCase("pt-BR").includes(query)) : dmMessages;
   }, [dmMessages, messageSearch]);
   const activeFriend = selectedFriend ? { ...selectedFriend, status: resolvePresence(selectedFriend) } : null;
+  const dmMentionNames = useMemo(() => buildMentionNames([
+    { id: currentUserId, displayName: currentUserProfile?.display_name, username: currentUserProfile?.username },
+    ...(activeFriend ? [{ id: activeFriend.id, displayName: activeFriend.display_name || activeFriend.username, username: activeFriend.username }] : []),
+  ], currentUserId), [activeFriend, currentUserId, currentUserProfile?.display_name, currentUserProfile?.username]);
   const friendActivity = useNowPlaying(activeFriend?.id ?? "", activeFriend?.status ?? "offline");
 
   function other(item: Friendship) { return item.sender_id === currentUserId ? item.receiver : item.sender; }
@@ -489,7 +494,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                           const fresh = Date.now() - timestamp.getTime() < 2 * 60 * 1000;
                           return <button type="button" disabled={!fresh} onClick={() => onJoinDirectCall?.(item.sender_id, author.display_name || author.username, false)} className="rounded-lg bg-discord-brand px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">{fresh ? "Atender" : "Expirada"}</button>;
                         })()}
-                      </div> : item.content ? <ChatMessageBody content={item.content} preferences={chatDisplay} /> : null}
+                      </div> : item.content ? <ChatMessageBody content={item.content} preferences={chatDisplay} mentionNames={dmMentionNames} /> : null}
                       {chatDisplay.showUploads && item.attachment_url && <a href={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block max-w-full" aria-label="Abrir imagem enviada"><HoverGifImage src={signedDmImageUrls[item.attachment_url] ?? signedDmImageCache.current.get(item.attachment_url) ?? item.attachment_url} alt="Imagem enviada na conversa" className="max-h-80 max-w-full rounded-lg object-contain"/></a>}
                     </div>
                   </article>
@@ -500,7 +505,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           {chatDisplay.composerPreview && dmDraft.trim() && !dmDraft.startsWith("/") && !dmDraft.startsWith("!") && (
             <div className="mx-2 mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 sm:mx-5">
               <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
-              <ChatMessageBody content={dmDraft} preferences={chatDisplay} previewLinks={false} />
+              <ChatMessageBody content={dmDraft} preferences={chatDisplay} previewLinks={false} mentionNames={dmMentionNames} />
             </div>
           )}
           <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex min-h-14 items-center gap-1 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:mx-5 sm:gap-3 sm:px-4 sm:py-2">

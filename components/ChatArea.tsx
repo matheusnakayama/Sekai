@@ -15,6 +15,7 @@ import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
+import { buildMentionNames, contentMentionsUser } from "@/lib/mentions";
 
 const STANDARD_EMOJIS = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🙂", "😉", "😊", "😍", "🥰", "😘", "😎", "🤔", "🙃", "😴", "😭", "😡", "🥳", "🤯", "😱", "🤗", "👍", "👎", "👏", "🙌", "🙏", "💪", "🤝", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💯", "✨", "🔥", "🎉", "🎊", "🎂", "🌟", "💀", "👀", "🐱", "🐶", "🌈", "☕", "🍕", "🍿", "🎮", "🚀"];
 
@@ -62,6 +63,7 @@ interface ChatAreaProps {
   canManageRoles?: boolean;
   canManageSelfRoles?: boolean;
   onToggleMemberRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
+  viewerNames?: string[];
 }
 
 function formatTime(iso: string) {
@@ -106,6 +108,7 @@ export function ChatArea({
   canManageRoles = false,
   canManageSelfRoles = false,
   onToggleMemberRole,
+  viewerNames = [],
 }: ChatAreaProps) {
   const supabase = createClient();
   const [draft, setDraft] = useState("");
@@ -123,6 +126,11 @@ export function ChatArea({
   const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
   const [prankOpen, setPrankOpen] = useState(false);
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
+  const mentionNames = useMemo(() => buildMentionNames([
+    ...viewerNames.map((label) => ({ id: currentUserId ?? undefined, displayName: label })),
+    ...members,
+  ], currentUserId), [members, currentUserId, viewerNames]);
+  const selfMentionNames = useMemo(() => mentionNames.filter((name) => name.mine).map((name) => name.label), [mentionNames]);
   const composerRef = useRef<HTMLInputElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const previousLastMessageId = useRef<string | null>(null);
@@ -305,7 +313,7 @@ export function ChatArea({
           return (
           <div key={message.id}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
-          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2`}>
+          <div onContextMenu={(event) => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY, message }); }} className={`group flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
             {chatDisplay.showAvatars && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -342,7 +350,7 @@ export function ChatArea({
                     <button type="button" onClick={() => setPrankOpen(true)} className="shrink-0 rounded-lg bg-theme-gradient px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110">Abrir</button>
                   </div>
                 ) : <p className="mt-1 text-xs italic text-discord-text-muted">Um convite para a brincadeira foi enviado a um membro.</p>;
-                return <ChatMessageBody content={message.content} preferences={chatDisplay} emojiImages={emojiImages} />;
+                return <ChatMessageBody content={message.content} preferences={chatDisplay} emojiImages={emojiImages} mentionNames={mentionNames} />;
               })()}
 
               {chatDisplay.showUploads && message.attachmentUrl && (
@@ -432,7 +440,7 @@ export function ChatArea({
         {chatDisplay.composerPreview && draft.trim() && !draft.startsWith("/") && !draft.startsWith("!") && (
           <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[.14em] text-discord-text-muted">Prévia</p>
-            <ChatMessageBody content={draft} preferences={chatDisplay} emojiImages={emojiImages} previewLinks={false} />
+            <ChatMessageBody content={draft} preferences={chatDisplay} emojiImages={emojiImages} previewLinks={false} mentionNames={mentionNames} />
           </div>
         )}
 

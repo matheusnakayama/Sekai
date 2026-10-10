@@ -114,8 +114,8 @@ export function useListeningByUser(userIds: string[]) {
 export function ListeningLine({ track, artUrl }: ListeningActivity) {
   const art = safeSpotifyArtUrl(artUrl);
   return (
-    <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-discord-text-muted">
-      {art ? <img src={art} alt="" className="h-4 w-4 shrink-0 rounded-[3px] object-cover" /> : <SpotifyMark className="h-3.5 w-3.5 shrink-0" />}
+    <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">
+      {art ? <img src={art} alt="" className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover" /> : <SpotifyMark className="h-3.5 w-3.5 shrink-0" />}
       <span className="min-w-0 truncate">Escutando {track}</span>
     </span>
   );

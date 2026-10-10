@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, Users, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { aggregateRolePermissions, hasPermission, PERMISSIONS, toBigInt } from "@/lib/permissions";
@@ -19,6 +19,8 @@ import RoomClient from "@/components/call/RoomClient";
 import { MemberList, MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
+import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
+import { attentionForServer } from "@/lib/attention";
 import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlashCommand";
 import { refreshUnlockedThemes } from "@/lib/useTheme";
 import { FriendsHome } from "@/components/FriendsHome";
@@ -1411,6 +1413,35 @@ export default function Home() {
     currentMember?.displayName ?? myProfile?.displayName ?? "Você",
     currentMember?.avatarUrl ?? myProfile?.avatarUrl ?? null,
   );
+  const selfNames = useMemo(() => {
+    const values = [myProfile?.displayName, myProfile?.username, currentMember?.displayName, currentMember?.username];
+    return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+  }, [currentMember?.displayName, currentMember?.username, myProfile?.displayName, myProfile?.username]);
+  const [mentionToast, setMentionToast] = useState<MentionNotice | null>(null);
+  const mentionToastTimer = useRef<number | null>(null);
+  const handleMentionNotice = useCallback((notice: MentionNotice) => {
+    setMentionToast(notice);
+    if (mentionToastTimer.current) window.clearTimeout(mentionToastTimer.current);
+    mentionToastTimer.current = window.setTimeout(() => {
+      setMentionToast((current) => current?.channelId === notice.channelId && current.createdAt === notice.createdAt ? null : current);
+    }, 7000);
+  }, []);
+  const attentionByChannel = useServerAttention({
+    userId: currentUserId,
+    selfNames,
+    activeTextChannelId: activeServerId && activeChannelType === "text" ? activeChannelId : "",
+    refreshKey: `${serverListVersion}|${channelListVersion}`,
+    onMention: handleMentionNotice,
+  });
+  const railServers = useMemo(() => servers.map((server) => {
+    const attention = attentionForServer(attentionByChannel, server.id);
+    return { ...server, hasUnread: attention.hasUnread, mentionCount: attention.mentionCount || undefined };
+  }), [attentionByChannel, servers]);
+  const visibleChannels = useMemo(() => channels.map((channel) => {
+    const attention = attentionByChannel[channel.id];
+    if (!attention || (!attention.unread && !attention.mentions)) return channel;
+    return { ...channel, unread: attention.unread, mentionCount: attention.mentions || undefined };
+  }), [attentionByChannel, channels]);
 
   async function joinVoiceChannel(channel: Channel) {
     setVoiceError("");
@@ -1779,7 +1810,7 @@ export default function Home() {
       {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
       <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
       <ServerSidebar
-        servers={servers}
+        servers={railServers}
         activeServerId={activeServerId}
         onSelectServer={(serverId) => { handleSelectServer(serverId); setMobileNavigationOpen(false); setMobileMembersOpen(false); }}
         onCreateServer={() => { setShowCreateServer(true); setMobileNavigationOpen(false); }}
@@ -1791,7 +1822,7 @@ export default function Home() {
         key={activeServerId}
         serverId={activeServerId}
         serverName={servers.find((s) => s.id === activeServerId)?.name ?? "Selecione um servidor"}
-        channels={channels}
+        channels={visibleChannels}
         categories={channelCategories}
         activeChannelId={activeChannelId}
         onSelectChannel={(channelId) => { handleSelectChannel(channelId); setMobileNavigationOpen(false); }}
@@ -2062,6 +2093,7 @@ export default function Home() {
           canManageRoles={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_ROLES")}
           canManageSelfRoles={isOwner || isPlatformAdmin}
           onToggleMemberRole={handleToggleMemberRole}
+          viewerNames={selfNames}
         />
       )}
       </div>
@@ -2090,6 +2122,10 @@ export default function Home() {
         mutedSoundEffectUserIds={mutedSoundEffectUserIds}
         onToggleSoundEffects={handleToggleSoundEffects}
       /></div>}
+      {mentionToast && <button onClick={() => { setInviteChannelId(mentionToast.channelId); setActiveServerId(mentionToast.serverId); setCallExpanded(false); setMentionToast(null); }} className={`fixed left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary ${dmToast ? "bottom-28" : "bottom-5"}`}>
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-discord-danger text-sm font-bold text-white">@</span>
+        <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Menção</span><span className="block truncate text-sm font-semibold text-white">{servers.find((server) => server.id === mentionToast.serverId)?.name ?? "Servidor"}</span><span className="block truncate text-xs text-discord-text-muted">{mentionToast.preview || "Você foi mencionado"}</span></span>
+      </button>}
       {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">{dmToast.content === "Ligação de voz recebida" ? "Chamada recebida" : "Nova mensagem direta"}</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>

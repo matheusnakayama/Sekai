@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
 import { extractUrls, isDirectMediaUrl, isVideoUrl, splitSpoilers, visibleText } from "@/lib/messageParts";
+import { linkifyMentions, type MentionName } from "@/lib/mentions";
 
 type Preview = { url: string; title: string; description: string; image: string; site: string };
 const previewCache = new Map<string, Preview | null>();
@@ -16,10 +17,16 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
   if (!withEmoji.trim()) return null;
   const Tag = inline ? "span" : "div";
   return (
-    <Tag className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm">
+    <Tag className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-a:no-underline prose-code:text-discord-text-normal sm:text-sm">
       <ReactMarkdown components={{
         p: ({ children }) => inline ? <span>{children}</span> : <p className="my-0">{children}</p>,
         img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" />,
+        a: ({ href, children }) => {
+          if (href === "#sekai-mention" || href === "#sekai-mention-mine") {
+            return <span className={href === "#sekai-mention-mine" ? "mention-chip mention-chip-mine" : "mention-chip"}>{children}</span>;
+          }
+          return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+        },
       }}>
         {withEmoji}
       </ReactMarkdown>
@@ -27,9 +34,9 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
   );
 }
 
-function SpoilerText({ value, always }: { value: string; always: boolean }) {
+function SpoilerText({ value, always, emojis }: { value: string; always: boolean; emojis: Map<string, string> }) {
   const [open, setOpen] = useState(always);
-  if (open) return <span className="rounded bg-white/10 px-1">{value}</span>;
+  if (open) return <MarkdownText content={value} emojis={emojis} inline />;
   return (
     <button type="button" onClick={() => setOpen(true)} className="rounded bg-white/25 px-1 text-transparent transition hover:bg-white/40" aria-label="Mostrar spoiler">
       {value}
@@ -42,11 +49,13 @@ export function ChatMessageBody({
   preferences,
   emojiImages = new Map(),
   previewLinks = true,
+  mentionNames = [],
 }: {
   content: string;
   preferences: Pick<ChatDisplayPreferences, "embedLinkMedia" | "showLinkPreviews" | "spoilerDisplay">;
   emojiImages?: Map<string, string>;
   previewLinks?: boolean;
+  mentionNames?: MentionName[];
 }) {
   const parts = splitSpoilers(content);
   const inline = parts.some((part) => part.type === "spoiler");
@@ -74,8 +83,8 @@ export function ChatMessageBody({
   return (
     <div className="min-w-0">
       {parts.map((part, index) => part.type === "spoiler"
-        ? <SpoilerText key={index} value={part.value} always={preferences.spoilerDisplay === "always"} />
-        : <MarkdownText key={index} content={visibleText(part.value, preferences.embedLinkMedia)} emojis={emojiImages} inline={inline} />)}
+        ? <SpoilerText key={index} value={linkifyMentions(part.value, mentionNames)} always={preferences.spoilerDisplay === "always"} emojis={emojiImages} />
+        : <MarkdownText key={index} content={linkifyMentions(visibleText(part.value, preferences.embedLinkMedia), mentionNames)} emojis={emojiImages} inline={inline} />)}
       {media.map((url) => isVideoUrl(url)
         ? <video key={url} src={url} controls className="mt-2 max-h-80 max-w-full rounded-lg" />
         : <img key={url} src={url} alt="" loading="lazy" className="mt-2 max-h-80 max-w-full rounded-lg object-contain" />)}

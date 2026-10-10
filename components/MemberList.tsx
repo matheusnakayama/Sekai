@@ -1,5 +1,6 @@
 "use client";
 
+import { Figtree } from "next/font/google";
 import { cn } from "@/lib/utils";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import { RoleInsignia } from "@/components/RoleBadgeList";
@@ -13,6 +14,12 @@ import type { CustomBadge } from "@/lib/badges";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { UserPlus } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
+
+const memberFont = Figtree({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  display: "swap",
+});
 
 export interface MemberItem {
   id: string;
@@ -98,18 +105,18 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
 
   return (
     <>
-    <div className="h-full w-60 overflow-y-auto bg-discord-bg-dark px-2 py-2">
-      {groups.map(({ id, roleName, roleColor, roleInsigniaUrl, members: roleMembers }) => (
-        <section key={id} className="mb-3">
-          <div className="flex min-h-10 min-w-0 items-center gap-1.5 px-2 py-2 md:min-h-0">
+    <div className={cn("member-roster h-full w-60 overflow-y-auto bg-discord-bg-dark px-1.5 py-2", memberFont.className)}>
+      {groups.map(({ id, roleName, roleColor, roleInsigniaUrl, members: roleMembers }, index) => (
+        <section key={id} className="mb-1">
+          <div className={cn("flex min-w-0 items-center gap-1.5 px-2 pb-1", index === 0 ? "pt-1" : "pt-3")}>
             {roleName.toLocaleLowerCase() !== "@everyone" && roleName.toLocaleLowerCase() !== "everyone" && roleName !== "Membro" && (
               <RoleInsignia role={{ id, name: roleName, color: roleColor, insigniaUrl: roleInsigniaUrl }} size="small" />
             )}
-            <p className="min-w-0 flex-1 truncate text-sm font-medium text-discord-text-muted md:text-xs">
+            <p className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.06em] text-[#a8b0bb]">
               {roleName} — {roleMembers.length}
             </p>
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-px">
             {roleMembers.map((m) => (
               <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
@@ -117,13 +124,13 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         </section>
       ))}
       {offlineMembers.length > 0 && (
-        <section className="mb-3">
-          <div className="flex min-h-10 min-w-0 items-center gap-1.5 px-2 py-2 md:min-h-0">
-            <p className="min-w-0 flex-1 truncate text-sm font-medium text-discord-text-muted md:text-xs">
+        <section className="mb-1">
+          <div className={cn("flex min-w-0 items-center gap-1.5 px-2 pb-1", groups.length === 0 ? "pt-1" : "pt-3")}>
+            <p className="min-w-0 flex-1 truncate text-[11px] font-bold uppercase tracking-[0.06em] text-[#a8b0bb]">
               Offline — {offlineMembers.length}
             </p>
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-px">
             {offlineMembers.map((m) => (
               <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
@@ -202,13 +209,13 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
   const [hovered, setHovered] = useState(false);
 
   return (
-    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group flex min-h-12 w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-discord-bg-modifier-hover md:min-h-0 md:py-1.5", member.status === "offline" && "opacity-45 hover:opacity-80")}>
-      <div className="relative h-9 w-9 shrink-0 md:h-8 md:w-8">
+    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative flex min-h-[38px] w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+      <div className="relative h-8 w-8 shrink-0">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
           <CroppedProfileImage src={member.avatarUrl} alt="" className="rounded-full" isHovered={hovered} positionX={member.avatarPositionX} positionY={member.avatarPositionY} zoom={member.avatarZoom} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white md:text-xs">
+          <div className="flex h-full w-full items-center justify-center text-[13px] font-semibold text-white">
             {member.displayName[0]?.toUpperCase()}
           </div>
         )}
@@ -217,13 +224,13 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
       </div>
 
       <span className="flex min-w-0 flex-1 flex-col justify-center">
-        <span className="flex min-w-0 items-center gap-1.5 leading-5">
-          <span className="min-w-0 truncate text-[15px] font-medium md:text-sm" style={{ color: member.roleColor || "var(--discord-text-normal)" }}>{member.displayName}</span>
+        <span className="flex min-w-0 items-center gap-1 leading-4">
+          <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
           <CustomBadgeList badges={member.badges} limit={2} />
         </span>
-        {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-xs leading-4 text-discord-text-muted">{member.customStatus}</span>}
+        {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
       </span>
-      {!isSelf && <UserPlus className="ml-auto h-4 w-4 shrink-0 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
+      {!isSelf && <UserPlus className="absolute right-1.5 h-3.5 w-3.5 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
     </button>
   );
 }

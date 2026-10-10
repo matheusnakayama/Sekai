@@ -52,7 +52,7 @@ function ServerIcon({
       <span
         className={cn(
           "server-rail-pill absolute left-0 w-[5px] rounded-r-full",
-          active ? "server-rail-pill-active h-10" : hasUnread ? "h-2" : "h-0 group-hover:h-5"
+          active ? "server-rail-pill-active h-10" : hasUnread ? "server-rail-pill-unread h-2" : "h-0 group-hover:h-5"
         )}
       />
 
@@ -73,7 +73,7 @@ function ServerIcon({
           {children}
         </button>
         {mentionCount ? (
-          <span className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-discord-bg-darkest bg-discord-danger px-1 text-[11px] font-bold text-white">
+          <span className="absolute -bottom-1 -right-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-discord-bg-darkest bg-discord-danger px-1 text-[11px] font-bold leading-none text-white">
             {mentionCount > 99 ? "99+" : mentionCount}
           </span>
         ) : null}

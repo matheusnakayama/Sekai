@@ -34,6 +34,7 @@ export interface Channel {
   position?: number;
   categoryPosition?: number;
   unread?: boolean;
+  mentionCount?: number;
 }
 
 export interface ChannelCategory {
@@ -287,7 +288,9 @@ export function ChannelSidebar({
                               "flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-[15px] font-medium md:min-h-0 md:gap-1.5 md:py-1.5 md:text-sm",
                               active
                                 ? "bg-discord-bg-modifier-hover text-discord-header-primary"
-                                : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
+                                : channel.unread || channel.mentionCount
+                                  ? "font-semibold text-discord-header-primary hover:bg-discord-bg-modifier-hover"
+                                  : "text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
                             )}
                           >
                             {channel.type === "text" ? (
@@ -296,8 +299,10 @@ export function ChannelSidebar({
                               <Volume2 className="h-4 w-4 shrink-0" />
                             )}
                             <span className="truncate">{channel.name}</span>
-                            {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-discord-online" title="Conectado" />}
-                            {channel.unread && <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-white" />}
+                            {((voiceMembersByChannel[channel.id]?.length ?? 0) > 0 || channel.mentionCount || channel.unread) && <span className="ml-auto flex shrink-0 items-center gap-1">
+                              {(voiceMembersByChannel[channel.id]?.length ?? 0) > 0 && <span className="h-2 w-2 rounded-full bg-discord-online" title="Conectado" />}
+                              {channel.mentionCount ? <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-discord-danger px-1 text-[10px] font-bold leading-none text-white">{channel.mentionCount > 99 ? "99+" : channel.mentionCount}</span> : channel.unread ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
+                            </span>}
                           </button>
                           {(canCreateInvite || canManageChannels) && <div className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
                             {canCreateInvite && <button type="button" onClick={() => onCreateChannelInvite?.(channel)} title="Convidar para este canal" aria-label={`Convidar para ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><UserPlus className="h-3.5 w-3.5"/></button>}
