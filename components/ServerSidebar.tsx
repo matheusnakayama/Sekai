@@ -65,7 +65,7 @@ function ServerIcon({
           onFocus={(event) => showTooltip(event.currentTarget)}
           onBlur={() => setTooltipPosition(null)}
           className={cn(
-            "flex h-12 w-12 items-center justify-center overflow-hidden transition-[background-color,border-radius,color] duration-150 ease-out active:scale-[0.96]",
+            "server-icon-button flex h-12 w-12 items-center justify-center overflow-hidden",
             "bg-discord-bg-dark text-discord-text-normal hover:bg-discord-brand hover:bg-theme-gradient hover:text-white",
             active ? "rounded-2xl bg-discord-brand bg-theme-gradient text-white" : "rounded-3xl hover:rounded-2xl"
           )}
