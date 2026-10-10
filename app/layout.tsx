@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
+import { complementaryLinkColor } from "@/lib/linkColor";
+import { THEMES } from "@/lib/themes";
+
+const linkColors = Object.fromEntries(THEMES.map((theme) => [theme.id, complementaryLinkColor(theme.stops)]));
 
 export const metadata: Metadata = {
   title: "Sekai",
@@ -33,7 +37,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('sekai-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}",
+              `try{var m=${JSON.stringify(linkColors)};var t=localStorage.getItem('sekai-theme');if(t){document.documentElement.setAttribute('data-theme',t);if(m[t])document.documentElement.style.setProperty('--sekai-link',m[t])}}catch(e){}`,
           }}
         />
       </head>

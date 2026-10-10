@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
 import { medalClipId, medalSocialVideoUrl } from "@/lib/medal";
-import { extractUrls, isDirectMediaUrl, isVideoUrl, splitSpoilers, visibleText } from "@/lib/messageParts";
+import { extractUrls, isDirectMediaUrl, isVideoUrl, linkifyUrls, splitSpoilers, visibleText } from "@/lib/messageParts";
 import { inviteCodeFromUrl } from "@/lib/invites";
 import { linkifyMentions, type MentionName } from "@/lib/mentions";
 import { ServerInviteEmbed } from "@/components/ServerInviteCard";
@@ -13,14 +13,14 @@ type Preview = { url: string; title: string; description: string; image: string;
 const previewCache = new Map<string, Preview | null>();
 
 function MarkdownText({ content, emojis, inline }: { content: string; emojis: Map<string, string>; inline: boolean }) {
-  const withEmoji = content.replace(/:([a-z0-9_-]{1,32}):/gi, (token, name: string) => {
+  const withEmoji = linkifyUrls(content).replace(/:([a-z0-9_-]{1,32}):/gi, (token, name: string) => {
     const url = emojis.get(name.toLowerCase());
     return url ? `![${name}](<${url}>)` : token;
   });
   if (!withEmoji.trim()) return null;
   const Tag = inline ? "span" : "div";
   return (
-    <Tag className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-a:no-underline prose-code:text-discord-text-normal sm:text-sm">
+    <Tag className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm">
       <ReactMarkdown components={{
         p: ({ children }) => inline ? <span>{children}</span> : <p className="my-0">{children}</p>,
         img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" />,
@@ -28,7 +28,7 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
           if (href === "#sekai-mention" || href === "#sekai-mention-mine") {
             return <span className={href === "#sekai-mention-mine" ? "mention-chip mention-chip-mine" : "mention-chip"}>{children}</span>;
           }
-          return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+          return <a href={href} target="_blank" rel="noreferrer" className="sekai-link">{children}</a>;
         },
       }}>
         {withEmoji}
@@ -42,7 +42,7 @@ function MediaEmbed({ url }: { url: string }) {
   const clipId = medalClipId(url);
   const src = clipId ? medalSocialVideoUrl(clipId) : url;
   if (broken) {
-    return <a href={url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-sm text-discord-text-link">{url}</a>;
+    return <a href={url} target="_blank" rel="noreferrer" className="sekai-link mt-2 block break-all text-sm">{url}</a>;
   }
   if (isVideoUrl(url)) {
     return (

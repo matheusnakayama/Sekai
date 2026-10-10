@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { complementaryLinkColor } from "@/lib/linkColor";
 import { DEFAULT_THEME, THEMES, THEME_STORAGE_KEY, type ThemeOption } from "@/lib/themes";
 
 const THEME_EVENT = "sekai-theme-change";
@@ -93,9 +94,12 @@ function applyTheme(id: string) {
     ...Array.from({ length: 7 }, (_, i) => `--gw${i + 1}`),
   ].forEach((name) => root.style.removeProperty(name));
   if (selected) {
+    root.style.setProperty("--sekai-link", complementaryLinkColor(selected.stops));
     const backgroundStops = selected.backgroundStops ?? [selected.stops[0], selected.stops[6]];
     root.style.setProperty("--bg-gradient-start", backgroundStops[0]);
     root.style.setProperty("--bg-gradient-end", backgroundStops[1]);
+  } else {
+    root.style.removeProperty("--sekai-link");
   }
   if (!selected || ["azul", "roxo", "rosa", "verde", "ambar", "ciano", "rubi", "preto", "menta", "por-do-sol", "oceano", "candy", "grafite"].includes(id)) return;
   const stop = (index: number) => toRgb(selected.stops[index]).join(" ");

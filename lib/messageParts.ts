@@ -23,6 +23,18 @@ export function extractUrls(content: string) {
   return Array.from(content.matchAll(URL_PATTERN), (match) => match[0].replace(/[.,!?;:]+$/g, ""));
 }
 
+export function linkifyUrls(content: string) {
+  return content.split(/(```[\s\S]*?```|`[^`]*`)/g).map((chunk, index) => {
+    if (index % 2 === 1) return chunk;
+    return chunk.replace(/\[([^\]]*)\]\(([^)\s]+)\)|https?:\/\/[^\s<>)\]]+/gi, (match) => {
+      if (match.startsWith("[")) return match;
+      const url = match.replace(/[.,!?;:]+$/g, "");
+      const trail = match.slice(url.length);
+      return `[${url}](${url})${trail}`;
+    });
+  }).join("");
+}
+
 export function isDirectMediaUrl(value: string) {
   if (medalClipId(value)) return true;
   try {

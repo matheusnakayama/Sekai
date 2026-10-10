@@ -56,7 +56,7 @@ const config: Config = {
           // Texto
           "text-normal": "#dbdee1",
           "text-muted": "#949ba4",
-          "text-link": "#00a8fc",
+          "text-link": "var(--sekai-link)",
           "header-primary": "#f2f3f5",
 
           // Status
