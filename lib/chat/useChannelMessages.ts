@@ -40,7 +40,7 @@ export function useChannelMessages(
       authorName: row.profiles?.display_name || row.profiles?.username || "Usuário",
       authorAvatarUrl: row.profiles?.avatar_url,
       content: row.content,
-      systemType: row.content === "[sekai-system:member_joined]" ? "member_joined" : undefined,
+      systemType: row.content.match(/^\[sekai-system:(member_joined|member_left|member_kicked|member_banned)\]$/)?.[1] as ChatMessage["systemType"],
       attachmentUrl: row.attachment_url,
       createdAt: row.created_at,
       reactions: [],

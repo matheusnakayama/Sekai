@@ -18,6 +18,9 @@ type Preferences = {
   blockInviteLinks: boolean;
   slowmodeSeconds: number;
   welcomeMessagesEnabled: boolean;
+  memberLeaveMessagesEnabled: boolean;
+  memberKickMessagesEnabled: boolean;
+  memberBanMessagesEnabled: boolean;
   welcomeChannelId: string | null;
 };
 
@@ -33,6 +36,9 @@ const DEFAULTS: Preferences = {
   blockInviteLinks: true,
   slowmodeSeconds: 0,
   welcomeMessagesEnabled: false,
+  memberLeaveMessagesEnabled: false,
+  memberKickMessagesEnabled: false,
+  memberBanMessagesEnabled: false,
   welcomeChannelId: null,
 };
 
@@ -42,7 +48,7 @@ const SECTION_INFO: Record<Section, { title: string; description: string }> = {
   security: { title: "Configurações de segurança", description: "Ajuste as proteções padrão para a comunidade." },
   automod: { title: "AutoMod", description: "Reduza spam, menções excessivas e convites externos nos canais de texto." },
   community: { title: "Comunidade", description: "Ative os recursos de comunidade e apresente seu servidor aos membros." },
-  system: { title: "Mensagens do sistema", description: "Escolha se o Sekai deve anunciar a entrada de novos membros e em qual canal." },
+  system: { title: "Mensagens do sistema", description: "Escolha quais entradas e saídas de membros o Sekai anuncia e em qual canal." },
 };
 
 export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }: {
@@ -89,7 +95,8 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
   }
 
   async function save() {
-    if (section === "system" && prefs.welcomeMessagesEnabled && !prefs.welcomeChannelId) {
+    const systemMessagesEnabled = prefs.welcomeMessagesEnabled || prefs.memberLeaveMessagesEnabled || prefs.memberKickMessagesEnabled || prefs.memberBanMessagesEnabled;
+    if (section === "system" && systemMessagesEnabled && !prefs.welcomeChannelId) {
       setError("Escolha o canal onde as mensagens do sistema serão publicadas.");
       return;
     }
@@ -153,8 +160,11 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
             </Card>
           </>}
 
-          {section === "system" && <Card title="Mensagens do Sistema" description="Avise no canal escolhido sempre que uma pessoa entrar no servidor.">
-            <Toggle checked={prefs.welcomeMessagesEnabled} disabled={!canManage} onChange={(value) => update("welcomeMessagesEnabled", value)} title="Enviar mensagem quando alguém entrar" text="Publica uma mensagem de boas-vindas para todos os membros do servidor."/>
+          {section === "system" && <Card title="Mensagens do Sistema" description="Escolha quais eventos de membros serão anunciados no canal selecionado.">
+            <Toggle checked={prefs.welcomeMessagesEnabled} disabled={!canManage} onChange={(value) => update("welcomeMessagesEnabled", value)} title="Quando alguém entrar" text="Publica uma mensagem de boas-vindas para todos os membros do servidor."/>
+            <Toggle checked={prefs.memberLeaveMessagesEnabled} disabled={!canManage} onChange={(value) => update("memberLeaveMessagesEnabled", value)} title="Quando alguém sair" text="Anuncia quando um membro deixa o servidor por conta própria."/>
+            <Toggle checked={prefs.memberKickMessagesEnabled} disabled={!canManage} onChange={(value) => update("memberKickMessagesEnabled", value)} title="Quando alguém for expulso" text="Anuncia expulsões feitas pela moderação."/>
+            <Toggle checked={prefs.memberBanMessagesEnabled} disabled={!canManage} onChange={(value) => update("memberBanMessagesEnabled", value)} title="Quando alguém for banido" text="Anuncia banimentos feitos pela moderação."/>
             <Field label="Canal de mensagens do sistema" hint="Escolha um canal de texto deste servidor.">
               <select value={prefs.welcomeChannelId ?? ""} disabled={!canManage} onChange={(event) => update("welcomeChannelId", event.target.value || null)} className={inputClass}>
                 <option value="">Selecione um canal</option>
@@ -162,7 +172,7 @@ export function ServerPreferencesPanel({ serverId, section, canManage, onAudit }
               </select>
               {!channels.length && <p className="mt-2 text-xs text-discord-text-muted">Este servidor ainda não tem canais de texto disponíveis.</p>}
             </Field>
-            <p className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-xs leading-5 text-discord-text-muted">A mensagem será enviada somente para novas entradas após salvar e instalar a migração SQL do Supabase.</p>
+            <p className="rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-xs leading-5 text-discord-text-muted">Os avisos passam a valer após salvar e instalar a migração SQL do Supabase.</p>
           </Card>}
 
           {error && <p role="alert" className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}

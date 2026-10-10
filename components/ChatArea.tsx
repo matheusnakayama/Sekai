@@ -29,7 +29,7 @@ export interface ChatMessage {
   authorName: string;
   authorAvatarUrl?: string | null;
   content: string;
-  systemType?: "member_joined";
+  systemType?: "member_joined" | "member_left" | "member_kicked" | "member_banned";
   attachmentUrl?: string | null;
   createdAt: string; // ISO
   reactions?: { emoji: string; count: number; reactedByMe?: boolean }[];
@@ -469,13 +469,20 @@ export function ChatArea({
           const previousTimestamp = index > 0 ? new Date(messages[index - 1].createdAt) : null;
           const showDate = !previousTimestamp || timestamp.toDateString() !== previousTimestamp.toDateString();
           const authorStatus = memberById.get(message.authorId)?.status;
+          const systemCopy = message.systemType === "member_joined"
+            ? "entrou no servidor. Dê boas-vindas!"
+            : message.systemType === "member_left"
+              ? "saiu do servidor."
+              : message.systemType === "member_kicked"
+                ? "foi expulso do servidor."
+                : "foi banido do servidor.";
           return (
           <div key={message.id} id={`message-${message.id}`}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
-          {message.systemType === "member_joined" ? (
+          {message.systemType ? (
             <div className="my-1 flex items-center gap-2 rounded-xl border border-discord-brand/20 bg-discord-brand/[0.06] px-3 py-2 text-sm text-discord-text-normal">
-              <span aria-hidden="true" className="text-base">👋</span>
-              <p className="min-w-0 flex-1"><strong className="font-semibold text-discord-header-primary">{message.authorName}</strong> entrou no servidor. Dê boas-vindas!</p>
+              <span aria-hidden="true" className="text-base">{message.systemType === "member_joined" ? "👋" : message.systemType === "member_left" ? "↗" : message.systemType === "member_kicked" ? "⤴" : "⛔"}</span>
+              <p className="min-w-0 flex-1"><strong className="font-semibold text-discord-header-primary">{message.authorName}</strong> {systemCopy}</p>
               <time dateTime={timestamp.toISOString()} className="shrink-0 text-[11px] text-discord-text-muted">{formatTime(message.createdAt)}</time>
             </div>
           ) : (
