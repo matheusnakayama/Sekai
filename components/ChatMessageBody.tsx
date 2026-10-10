@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
+import { medalClipId, medalSocialVideoUrl } from "@/lib/medal";
 import { extractUrls, isDirectMediaUrl, isVideoUrl, splitSpoilers, visibleText } from "@/lib/messageParts";
 import { linkifyMentions, type MentionName } from "@/lib/mentions";
 
@@ -32,6 +33,30 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
       </ReactMarkdown>
     </Tag>
   );
+}
+
+function MediaEmbed({ url }: { url: string }) {
+  const [broken, setBroken] = useState(false);
+  const clipId = medalClipId(url);
+  const src = clipId ? medalSocialVideoUrl(clipId) : url;
+  if (broken) {
+    return <a href={url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-sm text-discord-text-link">{url}</a>;
+  }
+  if (isVideoUrl(url)) {
+    return (
+      <video
+        ref={(node) => { node?.setAttribute("referrerpolicy", "no-referrer"); }}
+        src={src}
+        controls
+        playsInline
+        preload="metadata"
+        onError={() => setBroken(true)}
+        aria-label={clipId ? "Clipe do Medal" : "Vídeo"}
+        className="mt-2 aspect-video w-full max-w-xl rounded-xl bg-black"
+      />
+    );
+  }
+  return <img src={url} alt="" loading="lazy" className="mt-2 max-h-80 max-w-full rounded-lg object-contain" />;
 }
 
 function SpoilerText({ value, always, emojis }: { value: string; always: boolean; emojis: Map<string, string> }) {
@@ -85,9 +110,7 @@ export function ChatMessageBody({
       {parts.map((part, index) => part.type === "spoiler"
         ? <SpoilerText key={index} value={linkifyMentions(part.value, mentionNames)} always={preferences.spoilerDisplay === "always"} emojis={emojiImages} />
         : <MarkdownText key={index} content={linkifyMentions(visibleText(part.value, preferences.embedLinkMedia), mentionNames)} emojis={emojiImages} inline={inline} />)}
-      {media.map((url) => isVideoUrl(url)
-        ? <video key={url} src={url} controls className="mt-2 max-h-80 max-w-full rounded-lg" />
-        : <img key={url} src={url} alt="" loading="lazy" className="mt-2 max-h-80 max-w-full rounded-lg object-contain" />)}
+      {media.map((url) => <MediaEmbed key={url} url={url} />)}
       {preview && (
         <a href={preview.url} target="_blank" rel="noreferrer" className="mt-2 flex max-w-md overflow-hidden rounded-xl border border-white/10 bg-black/20 no-underline">
           {preview.image && <img src={preview.image} alt="" className="h-20 w-20 shrink-0 object-cover" />}

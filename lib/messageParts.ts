@@ -1,3 +1,5 @@
+import { medalClipId } from "@/lib/medal";
+
 export type MessagePart = { type: "text" | "spoiler"; value: string };
 
 const SPOILER = /\|\|([\s\S]+?)\|\|/g;
@@ -22,6 +24,7 @@ export function extractUrls(content: string) {
 }
 
 export function isDirectMediaUrl(value: string) {
+  if (medalClipId(value)) return true;
   try {
     const url = new URL(value);
     return url.protocol === "https:" && MEDIA_EXTENSION.test(url.pathname + url.search);
@@ -31,7 +34,7 @@ export function isDirectMediaUrl(value: string) {
 }
 
 export function isVideoUrl(value: string) {
-  return /\.(mp4|webm)(?:$|[?#])/i.test(value);
+  return medalClipId(value) !== null || /\.(mp4|webm)(?:$|[?#])/i.test(value);
 }
 
 export function visibleText(content: string, embedMedia: boolean) {
