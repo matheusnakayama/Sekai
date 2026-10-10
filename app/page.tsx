@@ -1766,7 +1766,7 @@ export default function Home() {
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
       {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(312px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
+      <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
       <ServerSidebar
         servers={servers}
         activeServerId={activeServerId}

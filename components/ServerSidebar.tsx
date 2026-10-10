@@ -47,36 +47,37 @@ function ServerIcon({
   }
 
   return (
-    <div className="group relative flex items-center justify-center">
+    <div className="group relative flex h-12 w-full items-center justify-center">
       {/* Indicador de pílula à esquerda (ativo = mais alta, hover = média) */}
       <span
         className={cn(
-          "absolute left-0 w-1 rounded-r-full bg-white transition-all duration-150 ease-out",
-          active ? "h-10" : hasUnread ? "h-2" : "h-0 group-hover:h-5"
+          "server-rail-pill absolute left-0 w-[5px] rounded-r-full",
+          active ? "server-rail-pill-active h-10" : hasUnread ? "h-2" : "h-0 group-hover:h-5"
         )}
       />
 
-      <button
-        onClick={onClick}
-        aria-label={label}
-        onMouseEnter={(event) => showTooltip(event.currentTarget)}
-        onMouseLeave={() => setTooltipPosition(null)}
-        onFocus={(event) => showTooltip(event.currentTarget)}
-        onBlur={() => setTooltipPosition(null)}
-        className={cn(
-          "flex h-12 w-12 items-center justify-center overflow-hidden transition-[background-color,border-radius,transform,color] duration-150 ease-out active:scale-[0.96]",
-          "bg-discord-bg-dark text-discord-text-normal hover:bg-discord-brand hover:bg-theme-gradient hover:text-white",
-          active ? "translate-x-2 rounded-2xl bg-discord-brand bg-theme-gradient text-white" : "rounded-3xl hover:rounded-2xl"
-        )}
-      >
-        {children}
-      </button>
-
-      {mentionCount ? (
-        <span className="absolute -bottom-1 right-0 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-discord-bg-darkest bg-discord-danger px-1 text-[11px] font-bold text-white">
-          {mentionCount > 99 ? "99+" : mentionCount}
-        </span>
-      ) : null}
+      <div className={cn("relative shrink-0 transition-transform duration-150", active && "translate-x-1")}>
+        <button
+          onClick={onClick}
+          aria-label={label}
+          onMouseEnter={(event) => showTooltip(event.currentTarget)}
+          onMouseLeave={() => setTooltipPosition(null)}
+          onFocus={(event) => showTooltip(event.currentTarget)}
+          onBlur={() => setTooltipPosition(null)}
+          className={cn(
+            "flex h-12 w-12 items-center justify-center overflow-hidden transition-[background-color,border-radius,color] duration-150 ease-out active:scale-[0.96]",
+            "bg-discord-bg-dark text-discord-text-normal hover:bg-discord-brand hover:bg-theme-gradient hover:text-white",
+            active ? "rounded-2xl bg-discord-brand bg-theme-gradient text-white" : "rounded-3xl hover:rounded-2xl"
+          )}
+        >
+          {children}
+        </button>
+        {mentionCount ? (
+          <span className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-[3px] border-discord-bg-darkest bg-discord-danger px-1 text-[11px] font-bold text-white">
+            {mentionCount > 99 ? "99+" : mentionCount}
+          </span>
+        ) : null}
+      </div>
 
       {tooltipPosition && createPortal(
         <div
@@ -103,17 +104,17 @@ export function ServerSidebar({
   onServerContext,
 }: ServerSidebarProps) {
   return (
-    <div className="flex h-full w-[72px] flex-col items-center gap-2 bg-discord-bg-darkest py-3">
+    <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
       {/* Botão "Início" (DM) */}
       <ServerIcon active={!activeServerId} onClick={() => { onSelectServer(""); onOpenHome?.(); }} label="Mensagens diretas">
         <span className="text-lg font-bold">S</span>
       </ServerIcon>
 
-      <div className="my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
+      <div className="mx-auto my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
 
-      <div className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
+      <div className="flex w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto">
         {servers.map((server) => (
-          <div key={server.id} onContextMenu={(event) => { event.preventDefault(); onServerContext?.(server.id); }}>
+          <div key={server.id} className="w-full" onContextMenu={(event) => { event.preventDefault(); onServerContext?.(server.id); }}>
           <ServerIcon
             active={server.id === activeServerId}
             hasUnread={server.hasUnread}

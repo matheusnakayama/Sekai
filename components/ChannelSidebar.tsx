@@ -222,7 +222,7 @@ export function ChannelSidebar({
   }
 
   return (
-    <div className="server-view-enter flex h-full w-[min(15rem,calc(100vw-4.5rem))] shrink-0 flex-col bg-discord-bg-dark md:w-60">
+    <div className="server-view-enter flex h-full w-[min(15rem,calc(100vw-6rem))] shrink-0 flex-col bg-discord-bg-dark md:w-60">
       {/* Cabeçalho do servidor */}
       <div className="bg-theme-wash flex h-12 shrink-0 items-center border-b border-black/20 px-3 shadow-sm">
         <button onClick={onOpenServerMenu} className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left hover:brightness-125">
