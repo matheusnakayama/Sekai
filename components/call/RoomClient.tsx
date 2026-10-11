@@ -113,6 +113,7 @@ export default function RoomClient({
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const [hostId, setHostId] = useState('');
   const [focusedPresentationId, setFocusedPresentationId] = useState<string | null>(null);
+  const [revealedScreenShareIds, setRevealedScreenShareIds] = useState<Set<string>>(() => new Set());
   const [fatalError, setFatalError] = useState<CallError | null>(null);
   const [banner, setBanner] = useState<{ message: string; connection: boolean; persistent?: boolean } | null>(null);
   const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
@@ -129,6 +130,7 @@ export default function RoomClient({
   const presentationSectionRef = useRef<HTMLElement | null>(null);
   const chatOpenRef = useRef(false);
   const hostIdRef = useRef('');
+  const remoteScreenSharingIdsRef = useRef(new Set<string>());
   const memberJoinTimesRef = useRef(new Map<string, number>());
   const micLockedByHostRef = useRef(false);
   const managerRef = useRef<WebRTCManager | null>(null);
@@ -325,6 +327,8 @@ export default function RoomClient({
     micOn: boolean;
   }) {
     setPhase('connecting');
+    remoteScreenSharingIdsRef.current.clear();
+    setRevealedScreenShareIds(new Set());
     setChatMessages([]);
     setChatUnreadCount(0);
     memberJoinTimesRef.current.clear();
@@ -484,6 +488,17 @@ export default function RoomClient({
       };
 
       manager.onScreenShareState = (peerId, sharing) => {
+        const wasSharing = remoteScreenSharingIdsRef.current.has(peerId);
+        if (sharing) remoteScreenSharingIdsRef.current.add(peerId);
+        else remoteScreenSharingIdsRef.current.delete(peerId);
+        if (wasSharing !== sharing) {
+          setRevealedScreenShareIds((current) => {
+            if (!current.has(peerId)) return current;
+            const next = new Set(current);
+            next.delete(peerId);
+            return next;
+          });
+        }
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
           return { ...prev, [peerId]: { ...participant, isSharingScreen: sharing } };
@@ -1223,6 +1238,15 @@ export default function RoomClient({
     }
   }
 
+  function revealScreenShare(participantId: string) {
+    setRevealedScreenShareIds((current) => {
+      if (current.has(participantId)) return current;
+      const next = new Set(current);
+      next.add(participantId);
+      return next;
+    });
+  }
+
   function exitPresentationFocus() {
     setFocusedPresentationId(null);
     if (document.fullscreenElement) {
@@ -1466,6 +1490,8 @@ export default function RoomClient({
                 outputDeviceId={selectedOutputDeviceId}
                 masterOutputVolume={outputVolume}
                 focusedParticipantId={focusedPresentationId}
+                revealedScreenShareIds={revealedScreenShareIds}
+                onRevealScreenShare={revealScreenShare}
                 onFocusPresentation={focusPresentation}
                 onExitPresentationFocus={exitPresentationFocus}
               />
@@ -1482,6 +1508,8 @@ export default function RoomClient({
             outputDeviceId={selectedOutputDeviceId}
             masterOutputVolume={outputVolume}
             focusedParticipantId={focusedPresentationId}
+            revealedScreenShareIds={revealedScreenShareIds}
+            onRevealScreenShare={revealScreenShare}
             onFocusPresentation={focusPresentation}
             onExitPresentationFocus={exitPresentationFocus}
           />

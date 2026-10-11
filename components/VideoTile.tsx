@@ -11,6 +11,8 @@ export default function VideoTile({
   masterOutputVolume = 1,
   soundEffectsMuted = false,
   focused = false,
+  screenShareRevealed = false,
+  onRevealScreenShare,
   onFocusPresentation,
   onExitPresentationFocus,
 }: {
@@ -20,6 +22,8 @@ export default function VideoTile({
   masterOutputVolume?: number;
   soundEffectsMuted?: boolean;
   focused?: boolean;
+  screenShareRevealed?: boolean;
+  onRevealScreenShare: (participantId: string) => void;
   onFocusPresentation?: () => void;
   onExitPresentationFocus?: () => void;
 }) {
@@ -35,6 +39,7 @@ export default function VideoTile({
   const [showScreenVolume, setShowScreenVolume] = useState(false);
   const [videoLive, setVideoLive] = useState(false);
   const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
+  const isScreenSharePreview = participant.isSharingScreen && !participant.isLocal && !screenShareRevealed;
 
   const playAudioElement = useCallback(async (audio: HTMLAudioElement) => {
     const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void>; sinkId?: string };
@@ -173,7 +178,7 @@ export default function VideoTile({
     const audio = screenAudioRef.current;
     if (!audio) return;
     audio.volume = Math.max(0, Math.min(1, screenVolume * masterOutputVolume));
-    audio.muted = participant.isLocal || screenVolume === 0 || muteRemoteAudio;
+    audio.muted = participant.isLocal || screenVolume === 0 || muteRemoteAudio || (!participant.isLocal && !screenShareRevealed);
     if (!participant.screenAudioTrack) {
       audio.srcObject = null;
       return;
@@ -187,7 +192,7 @@ export default function VideoTile({
       audio.pause();
       audio.srcObject = null;
     };
-  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.screenAudioTrack, playAudioElement, screenVolume]);
+  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.screenAudioTrack, playAudioElement, screenShareRevealed, screenVolume]);
 
   async function enablePlayback() {
     try {
@@ -216,7 +221,7 @@ export default function VideoTile({
             autoPlay
             playsInline
             muted
-            className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''}`}
+            className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''} ${isScreenSharePreview ? 'blur-xl brightness-[0.4] scale-105' : ''} transition-[filter,transform] duration-500`}
           />
         )}
         <audio ref={voiceAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
@@ -229,7 +234,29 @@ export default function VideoTile({
         )}
       </div>
 
-      {participant.isSharingScreen && (focused ? onExitPresentationFocus : onFocusPresentation) && (
+      {isScreenSharePreview && (
+        <div className="absolute inset-0 z-[6] flex items-center justify-center bg-black/20 px-3" role="group" aria-label={`Prévia da apresentação de ${participant.name}`}>
+          <div className="flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border border-white/15 bg-black/65 px-3 py-3 text-center text-white shadow-2xl backdrop-blur-sm sm:flex-row sm:gap-3 sm:text-left">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-theme-gradient text-white shadow-lg">
+              <ScreenShareIcon active />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">{participant.name} começou a apresentar</p>
+              <p className="mt-1 text-[11px] text-white/65">A imagem está desfocada até você abrir a apresentação.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onRevealScreenShare(participant.id)}
+              aria-label={`Ver apresentação de ${participant.name}`}
+              className="shrink-0 rounded-xl bg-theme-gradient px-3 py-1.5 text-xs font-semibold text-white shadow transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              Ver apresentação
+            </button>
+          </div>
+        </div>
+      )}
+
+      {participant.isSharingScreen && !isScreenSharePreview && (focused ? onExitPresentationFocus : onFocusPresentation) && (
         <button
           type="button"
           onClick={focused ? onExitPresentationFocus : onFocusPresentation}
@@ -241,7 +268,7 @@ export default function VideoTile({
         </button>
       )}
 
-      {participant.screenAudioTrack && !participant.isLocal && (
+      {participant.screenAudioTrack && !participant.isLocal && screenShareRevealed && (
         <div className="absolute right-3 top-[4.5rem] z-20 flex flex-col items-center gap-1">
           {showScreenVolume && <div className="flex h-36 items-center justify-center rounded-full border border-white/15 bg-black/75 px-3 py-2 shadow-xl backdrop-blur">
             <input

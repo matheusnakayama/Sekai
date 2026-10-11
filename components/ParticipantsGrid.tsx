@@ -10,6 +10,8 @@ export default function ParticipantsGrid({
   masterOutputVolume = 1,
   mutedSoundEffectUserIds = [],
   focusedParticipantId = null,
+  revealedScreenShareIds,
+  onRevealScreenShare,
   onFocusPresentation,
   onExitPresentationFocus,
 }: {
@@ -19,6 +21,8 @@ export default function ParticipantsGrid({
   masterOutputVolume?: number;
   mutedSoundEffectUserIds?: string[];
   focusedParticipantId?: string | null;
+  revealedScreenShareIds: ReadonlySet<string>;
+  onRevealScreenShare: (participantId: string) => void;
   onFocusPresentation?: (participantId: string) => void;
   onExitPresentationFocus?: () => void;
 }) {
@@ -32,6 +36,8 @@ export default function ParticipantsGrid({
           outputDeviceId={outputDeviceId}
           masterOutputVolume={masterOutputVolume}
           soundEffectsMuted={mutedSoundEffectUserIds.includes(focusedParticipant.id)}
+          screenShareRevealed={focusedParticipant.isLocal || revealedScreenShareIds.has(focusedParticipant.id)}
+          onRevealScreenShare={onRevealScreenShare}
           focused
           onExitPresentationFocus={onExitPresentationFocus}
         />
@@ -52,6 +58,8 @@ export default function ParticipantsGrid({
           outputDeviceId={outputDeviceId}
           masterOutputVolume={masterOutputVolume}
           soundEffectsMuted={mutedSoundEffectUserIds.includes(p.id)}
+          screenShareRevealed={p.isLocal || revealedScreenShareIds.has(p.id)}
+          onRevealScreenShare={onRevealScreenShare}
           onFocusPresentation={() => onFocusPresentation?.(p.id)}
         />
       ))}
