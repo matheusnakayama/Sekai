@@ -126,7 +126,7 @@ export default function PresentationMiniPreview({
       { x: margin, y: maxY },
       { x: maxX, y: maxY },
     ];
-    const nearest = corners.reduce((best, corner) => {
+    const nearest = corners.reduce<{ x: number; y: number; distance: number }>((best, corner) => {
       const distance = Math.hypot(corner.x - drag.x, corner.y - drag.y);
       return distance < best.distance ? { ...corner, distance } : best;
     }, { ...corners[0], distance: Number.POSITIVE_INFINITY });
