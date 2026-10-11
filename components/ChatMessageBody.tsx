@@ -27,7 +27,7 @@ function TikTokVideoPlayer({ videoId }: { videoId: string }) {
         className="absolute inset-0 h-full w-full border-0"
       />
       <div aria-hidden="true" className="pointer-events-auto absolute inset-x-0 top-0 z-10 h-10 bg-transparent" />
-      <div aria-hidden="true" className="pointer-events-auto absolute right-0 top-10 z-10 h-[calc(100%-7.5rem)] w-11 bg-transparent" />
+      <div aria-hidden="true" className="pointer-events-auto absolute right-0 top-10 z-10 h-[calc(100%_-_7.5rem)] w-11 bg-transparent" />
     </div>
   );
 }
