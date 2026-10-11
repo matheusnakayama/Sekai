@@ -29,8 +29,8 @@ export default function ParticipantsGrid({
   const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId);
   if (focusedParticipant) {
     return (
-      <div className="flex h-full min-h-0 w-full flex-col gap-3">
-        <div className="min-h-0 flex-1">
+      <div className="absolute inset-0 flex min-h-0 w-full flex-col gap-3">
+        <div className="min-h-0 w-full flex-1">
           <VideoTile
             participant={focusedParticipant}
             muteRemoteAudio={muteRemoteAudio}

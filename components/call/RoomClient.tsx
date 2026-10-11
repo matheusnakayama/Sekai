@@ -1406,7 +1406,7 @@ export default function RoomClient({
   const isConnecting = phase === 'connecting';
 
   return (
-    <main className="min-h-screen flex flex-col bg-transparent">
+    <main className="h-full min-h-0 flex flex-col bg-transparent">
       <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-surface-border">
         <div className="flex items-center gap-2 text-sm text-white/60">
           <span className="h-2 w-2 rounded-full bg-success animate-speaking" />
@@ -1473,7 +1473,7 @@ export default function RoomClient({
         </div>
       )}
 
-      <section className="flex min-h-0 flex-1 overflow-hidden px-3 py-4 sm:px-6">
+      <section className="relative flex min-h-0 flex-1 overflow-hidden px-3 py-4 sm:px-6">
         {isConnecting ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-white/60 animate-fadeIn">Conectando à sala…</p>
