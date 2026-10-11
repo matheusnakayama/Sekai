@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ThemePicker from "@/components/ThemePicker";
+import AnchoredPopover from "@/components/AnchoredPopover";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
@@ -127,6 +128,13 @@ export function ChannelSidebar({
   currentUser,
   onToggleMute,
   onToggleCamera,
+  onToggleDeafen,
+  voiceAudioSettings,
+  onSelectVoiceInputDevice,
+  onSelectVoiceOutputDevice,
+  onVoiceInputVolumeChange,
+  onVoiceOutputVolumeChange,
+  onVoiceProfileChange,
   onOpenSettings,
   onPresenceChange,
   canManageChannels = false,
@@ -151,12 +159,20 @@ export function ChannelSidebar({
 }: ChannelSidebarProps) {
   const supabase = createClient();
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [voiceAudioMenuOpen, setVoiceAudioMenuOpen] = useState<"input" | "output" | null>(null);
+  const [voiceProfileMenuOpen, setVoiceProfileMenuOpen] = useState(false);
+  const voiceInputAnchorRef = useRef<HTMLDivElement>(null);
+  const voiceOutputAnchorRef = useRef<HTMLDivElement>(null);
   const hasVoiceDurations = Boolean(connectedVoiceStartedAt || connectedVoiceMembers.some((member) => member.joinedAt) || Object.values(voiceMembersByChannel).some((members) => members.some((member) => member.joinedAt)));
   useEffect(() => {
     if (!hasVoiceDurations) return;
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [hasVoiceDurations]);
+  useEffect(() => {
+    setVoiceAudioMenuOpen(null);
+    setVoiceProfileMenuOpen(false);
+  }, [connectedVoiceChannelId]);
   const orderedChannels = [...channels].sort((a, b) => (a.categoryPosition ?? 0) - (b.categoryPosition ?? 0) || (a.position ?? 0) - (b.position ?? 0));
   const categoryIds = new Set(categories.map((category) => category.id));
   const categorySections: ChannelCategory[] = [
@@ -437,10 +453,52 @@ export function ChannelSidebar({
               </p>
               <p className="truncate pl-5 text-[11px] text-discord-text-muted">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
-            <div className="flex w-full items-center justify-evenly gap-1 rounded-xl border border-white/[0.07] bg-white/[0.035] p-1">
-              <button type="button" onClick={onToggleMute} disabled={!onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>
-                <MicIcon off={currentUser.isMuted} />
-              </button>
+            <div className="flex w-full items-center justify-between gap-0.5 rounded-xl border border-white/[0.07] bg-white/[0.035] p-1">
+              <div ref={voiceInputAnchorRef} className="relative flex items-center gap-0.5">
+                <button type="button" onClick={onToggleMute} disabled={!onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>
+                  <MicIcon off={currentUser.isMuted} />
+                </button>
+                <button type="button" onClick={() => { setVoiceAudioMenuOpen((open) => open === "input" ? null : "input"); setVoiceProfileMenuOpen(false); }} aria-label="Configurações do microfone" aria-expanded={voiceAudioMenuOpen === "input"} title="Configurações do microfone" className="grid h-6 w-5 place-items-center rounded-md text-discord-text-muted transition hover:bg-white/10 hover:text-white">
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")} />
+                </button>
+                <AnchoredPopover open={voiceAudioMenuOpen === "input"} anchorRef={voiceInputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+                  <h3 className="px-1 text-sm font-semibold">Dispositivo de entrada</h3>
+                  <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                    {voiceAudioSettings?.inputDevices.length ? voiceAudioSettings.inputDevices.map((device) => <VoiceAudioOption key={device.deviceId} label={device.label} selected={device.deviceId === voiceAudioSettings.selectedInputDeviceId} onClick={() => { onSelectVoiceInputDevice?.(device.deviceId); setVoiceAudioMenuOpen(null); }} />) : <p className="px-2 py-2 text-xs text-white/50">Nenhum microfone encontrado</p>}
+                  </div>
+                  <div className="my-3 border-t border-white/10" />
+                  <button type="button" onClick={() => setVoiceProfileMenuOpen((open) => !open)} aria-expanded={voiceProfileMenuOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition hover:bg-white/[0.06]">
+                    <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceAudioSettings?.voiceProfile === "noise-suppression" ? "Supressão de ruído" : "Padrão"}</span></span><Settings className="h-4 w-4 text-white/55" />
+                  </button>
+                  {voiceProfileMenuOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1">
+                    <VoiceAudioOption label="Padrão" selected={voiceAudioSettings?.voiceProfile === "standard"} onClick={() => { onVoiceProfileChange?.("standard"); setVoiceProfileMenuOpen(false); }} />
+                    <VoiceAudioOption label="Supressão de ruído" selected={voiceAudioSettings?.voiceProfile === "noise-suppression"} onClick={() => { onVoiceProfileChange?.("noise-suppression"); setVoiceProfileMenuOpen(false); }} />
+                  </div>}
+                  <label className="mt-3 block border-t border-white/10 pt-3">
+                    <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span>
+                    <input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={voiceAudioSettings?.inputVolume ?? 1} onChange={(event) => onVoiceInputVolumeChange?.(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
+                  </label>
+                </AnchoredPopover>
+              </div>
+              <div ref={voiceOutputAnchorRef} className="relative flex items-center gap-0.5">
+                <button type="button" onClick={onToggleDeafen} disabled={!onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>
+                  <Headphones className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={() => { setVoiceAudioMenuOpen((open) => open === "output" ? null : "output"); setVoiceProfileMenuOpen(false); }} aria-label="Configurações da saída de áudio" aria-expanded={voiceAudioMenuOpen === "output"} title="Configurações da saída de áudio" className="grid h-6 w-5 place-items-center rounded-md text-discord-text-muted transition hover:bg-white/10 hover:text-white">
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", voiceAudioMenuOpen === "output" && "rotate-180")} />
+                </button>
+                <AnchoredPopover open={voiceAudioMenuOpen === "output"} anchorRef={voiceOutputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+                  <h3 className="px-1 text-sm font-semibold">Dispositivo de saída</h3>
+                  {!voiceAudioSettings?.outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-white/55">Este navegador não permite escolher a saída de áudio. O Sekai continuará usando a saída padrão do sistema.</p> : <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                    <VoiceAudioOption label="Padrão do sistema" selected={!voiceAudioSettings.selectedOutputDeviceId || voiceAudioSettings.selectedOutputDeviceId === "default"} onClick={() => { onSelectVoiceOutputDevice?.(""); setVoiceAudioMenuOpen(null); }} />
+                    {voiceAudioSettings.outputDevices.filter((device) => device.deviceId !== "default").map((device) => <VoiceAudioOption key={device.deviceId} label={device.label} selected={device.deviceId === voiceAudioSettings.selectedOutputDeviceId} onClick={() => { onSelectVoiceOutputDevice?.(device.deviceId); setVoiceAudioMenuOpen(null); }} />)}
+                  </div>}
+                  <label className="mt-3 block border-t border-white/10 pt-3">
+                    <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-white/55">{Math.round((voiceAudioSettings?.outputVolume ?? 1) * 100)}%</span></span>
+                    <input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={voiceAudioSettings?.outputVolume ?? 1} onChange={(event) => onVoiceOutputVolumeChange?.(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
+                  </label>
+                </AnchoredPopover>
+              </div>
               <button type="button" onClick={onToggleCamera} disabled={!onToggleCamera} title={currentUser.isCameraOn ? "Desativar câmera" : "Ativar câmera"} aria-label={currentUser.isCameraOn ? "Desativar câmera" : "Ativar câmera"} aria-pressed={!currentUser.isCameraOn} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isCameraOn ? "text-discord-text-muted hover:text-white" : "text-discord-danger")}>
                 <CamIcon off={!currentUser.isCameraOn} />
               </button>
@@ -505,5 +563,11 @@ function formatVoiceDuration(elapsedMs: number) {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function VoiceAudioOption({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} aria-pressed={selected} className={cn("flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs transition", selected ? "bg-brand-500/20 text-white" : "text-white/75 hover:bg-white/[0.06] hover:text-white")}>
+    <span className="truncate">{label}</span>{selected && <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />}
+  </button>;
 }
 

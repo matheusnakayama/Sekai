@@ -41,6 +41,14 @@ interface PresenceMembersSnapshot {
   each: (callback: (member: PresenceMember) => void) => void;
 }
 
+type DocumentPictureInPictureApi = {
+  requestWindow: (options?: { width?: number; height?: number }) => Promise<Window>;
+};
+
+type WindowWithDocumentPictureInPicture = Window & {
+  documentPictureInPicture?: DocumentPictureInPictureApi;
+};
+
 export default function RoomClient({
   roomId,
   serverId,
@@ -122,6 +130,7 @@ export default function RoomClient({
   const [hostId, setHostId] = useState('');
   const [focusedParticipantId, setFocusedParticipantId] = useState<string | null>(null);
   const [revealedScreenShareIds, setRevealedScreenShareIds] = useState<Set<string>>(() => new Set());
+  const [presentationPipWindow, setPresentationPipWindow] = useState<Window | null>(null);
   const [fatalError, setFatalError] = useState<CallError | null>(null);
   const [banner, setBanner] = useState<{ message: string; connection: boolean; persistent?: boolean } | null>(null);
   const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
@@ -1318,6 +1327,47 @@ export default function RoomClient({
     setFocusedParticipantId(null);
   }
 
+  async function minimizeCall() {
+    if (watchingPresentation && !presentationPipWindow) {
+      const pipApi = (window as WindowWithDocumentPictureInPicture).documentPictureInPicture;
+      if (pipApi?.requestWindow) {
+        try {
+          // requestWindow precisa acontecer durante o clique de minimizar.
+          const pipWindow = await pipApi.requestWindow({ width: 360, height: 240 });
+          pipWindow.document.title = `Apresentação de ${focusedParticipant?.name ?? roomName}`;
+          pipWindow.document.documentElement.style.height = '100%';
+          pipWindow.document.body.style.cssText = 'margin:0;min-width:100%;min-height:100%;overflow:hidden;background:#111214;';
+          for (const source of Array.from(document.head.querySelectorAll('style, link[rel="stylesheet"]'))) {
+            const stylesheet = source.cloneNode(true) as HTMLStyleElement | HTMLLinkElement;
+            if (stylesheet.tagName === 'LINK') {
+              const href = stylesheet.getAttribute('href');
+              if (href) (stylesheet as HTMLLinkElement).href = new URL(href, document.baseURI).href;
+            }
+            pipWindow.document.head.appendChild(stylesheet);
+          }
+          setPresentationPipWindow(pipWindow);
+        } catch (error) {
+          // Se o navegador não conseguir abrir a janela flutuante, a miniatura
+          // continua no Sekai e ainda pode ser arrastada para qualquer canto.
+          console.info('Picture-in-Picture de documento indisponível:', error);
+        }
+      }
+    }
+    onMinimize?.();
+  }
+
+  function restoreCallFromMiniPreview() {
+    if (presentationPipWindow && !presentationPipWindow.closed) presentationPipWindow.close();
+    setPresentationPipWindow(null);
+    onRestoreCall?.();
+  }
+
+  function stopWatchingFromMiniPreview() {
+    if (presentationPipWindow && !presentationPipWindow.closed) presentationPipWindow.close();
+    setPresentationPipWindow(null);
+    stopWatchingPresentation();
+  }
+
   async function handleCopyLink() {
     const { data: channel, error: channelError } = await supabase
       .from('channels')
@@ -1394,6 +1444,25 @@ export default function RoomClient({
     focusedParticipant && !focusedParticipant.isLocal && focusedParticipant.isSharingScreen && revealedScreenShareIds.has(focusedParticipant.id)
   );
   const isHost = Boolean(localIdRef.current) && hostId === localIdRef.current;
+
+  useEffect(() => {
+    if (!presentationPipWindow) return;
+    const pipWindow = presentationPipWindow;
+    const handlePageHide = () => {
+      setPresentationPipWindow((current) => current === pipWindow ? null : current);
+    };
+    pipWindow.addEventListener('pagehide', handlePageHide, { once: true });
+    return () => {
+      pipWindow.removeEventListener('pagehide', handlePageHide);
+      if (!pipWindow.closed) pipWindow.close();
+    };
+  }, [presentationPipWindow]);
+
+  useEffect(() => {
+    if (!presentationPipWindow || (!callVisible && watchingPresentation && phase === 'in-call')) return;
+    if (!presentationPipWindow.closed) presentationPipWindow.close();
+    setPresentationPipWindow(null);
+  }, [callVisible, phase, presentationPipWindow, watchingPresentation]);
 
   if (phase === 'pre-join' && autoJoining) {
     return (
@@ -1482,7 +1551,7 @@ export default function RoomClient({
           {onMinimize && (
             <button
               type="button"
-              onClick={onMinimize}
+              onClick={() => { void minimizeCall(); }}
               className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-semibold text-white/75 transition hover:bg-surface-card hover:text-white"
             >
               Minimizar
@@ -1649,10 +1718,10 @@ export default function RoomClient({
       {!callVisible && watchingPresentation && focusedParticipant && typeof document !== 'undefined' && createPortal(
         <PresentationMiniPreview
           participant={focusedParticipant}
-          onOpen={onRestoreCall ?? (() => {})}
-          onStopWatching={stopWatchingPresentation}
+          onOpen={restoreCallFromMiniPreview}
+          onStopWatching={stopWatchingFromMiniPreview}
         />,
-        document.body
+        presentationPipWindow && !presentationPipWindow.closed ? presentationPipWindow.document.body : document.body
       )}
     </main>
   );

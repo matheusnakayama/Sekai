@@ -1,7 +1,22 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Participant } from '@/lib/types';
+
+type Point = { x: number; y: number };
+type DragSession = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  moved: boolean;
+  view: Window;
+};
 
 export default function PresentationMiniPreview({
   participant,
@@ -13,6 +28,12 @@ export default function PresentationMiniPreview({
   onStopWatching: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<DragSession | null>(null);
+  const positionRef = useRef<Point | null>(null);
+  const suppressOpenClickRef = useRef(false);
+  const [position, setPosition] = useState<Point | null>(null);
+  const [dragging, setDragging] = useState(false);
   const videoTrackKey = (participant.stream?.getVideoTracks() ?? []).map((track) => track.id).join(',');
 
   useEffect(() => {
@@ -27,11 +48,123 @@ export default function PresentationMiniPreview({
     };
   }, [participant.stream, videoTrackKey]);
 
+  useEffect(() => {
+    const view = previewRef.current?.ownerDocument.defaultView;
+    if (!view) return;
+    const keepInView = () => {
+      const current = positionRef.current;
+      const rect = previewRef.current?.getBoundingClientRect();
+      if (!current || !rect) return;
+      const margin = 12;
+      const next = {
+        x: clamp(current.x, margin, Math.max(margin, view.innerWidth - rect.width - margin)),
+        y: clamp(current.y, margin, Math.max(margin, view.innerHeight - rect.height - margin)),
+      };
+      positionRef.current = next;
+      setPosition(next);
+    };
+    view.addEventListener('resize', keepInView);
+    return () => view.removeEventListener('resize', keepInView);
+  }, []);
+
+  function updatePosition(next: Point) {
+    positionRef.current = next;
+    setPosition(next);
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    const target = event.target as Element | null;
+    if (event.button !== 0 || (target && typeof target.closest === 'function' && target.closest('[data-no-drag]'))) return;
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!view) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+      view,
+    };
+    updatePosition({ x: rect.left, y: rect.top });
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    drag.moved = true;
+    const margin = 12;
+    drag.x = clamp(drag.originX + deltaX, margin, Math.max(margin, drag.view.innerWidth - drag.width - margin));
+    drag.y = clamp(drag.originY + deltaY, margin, Math.max(margin, drag.view.innerHeight - drag.height - margin));
+    updatePosition({ x: drag.x, y: drag.y });
+  }
+
+  function finishPointerDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setDragging(false);
+    if (!drag.moved) return;
+
+    const margin = 12;
+    const maxX = Math.max(margin, drag.view.innerWidth - drag.width - margin);
+    const maxY = Math.max(margin, drag.view.innerHeight - drag.height - margin);
+    const corners = [
+      { x: margin, y: margin },
+      { x: maxX, y: margin },
+      { x: margin, y: maxY },
+      { x: maxX, y: maxY },
+    ];
+    const nearest = corners.reduce((best, corner) => {
+      const distance = Math.hypot(corner.x - drag.x, corner.y - drag.y);
+      return distance < best.distance ? { ...corner, distance } : best;
+    }, { ...corners[0], distance: Number.POSITIVE_INFINITY });
+    updatePosition({ x: nearest.x, y: nearest.y });
+    suppressOpenClickRef.current = true;
+    drag.view.setTimeout(() => { suppressOpenClickRef.current = false; }, 350);
+  }
+
+  function openCallFromPreview() {
+    if (suppressOpenClickRef.current) {
+      suppressOpenClickRef.current = false;
+      return;
+    }
+    onOpen();
+  }
+
   return (
-    <aside className="fixed bottom-4 right-4 z-[240] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/15 bg-[#111214] shadow-2xl ring-1 ring-black/40 sm:bottom-6 sm:right-6">
+    <aside
+      ref={previewRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointerDrag}
+      onPointerCancel={finishPointerDrag}
+      title="Arraste para mover a miniatura"
+      style={position ? {
+        left: position.x,
+        top: position.y,
+        right: 'auto',
+        bottom: 'auto',
+        transition: dragging
+          ? 'left 90ms cubic-bezier(.2,.8,.2,1), top 90ms cubic-bezier(.2,.8,.2,1), transform 160ms ease-out'
+          : 'left 420ms cubic-bezier(.22,1,.36,1), top 420ms cubic-bezier(.22,1,.36,1), transform 420ms cubic-bezier(.22,1,.36,1)',
+      } : undefined}
+      className={`fixed bottom-4 right-4 z-[240] w-[min(360px,calc(100vw-2rem))] touch-none select-none overflow-hidden rounded-2xl border border-white/15 bg-[#111214] shadow-2xl ring-1 ring-black/40 will-change-[left,top,transform] sm:bottom-6 sm:right-6 ${dragging ? 'scale-[1.02] cursor-grabbing' : 'cursor-grab'}`}
+    >
       <button
         type="button"
-        onClick={onOpen}
+        onClick={openCallFromPreview}
         aria-label={`Voltar à chamada e ver a apresentação de ${participant.name}`}
         className="group relative block aspect-video w-full overflow-hidden bg-black text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
       >
@@ -46,6 +179,7 @@ export default function PresentationMiniPreview({
         onClick={onStopWatching}
         aria-label="Parar de assistir à apresentação"
         title="Parar de assistir"
+        data-no-drag
         className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/70 text-white shadow-lg backdrop-blur transition hover:bg-black"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -54,4 +188,8 @@ export default function PresentationMiniPreview({
       </button>
     </aside>
   );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(value, max));
 }

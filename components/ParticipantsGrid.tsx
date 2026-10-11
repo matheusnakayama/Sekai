@@ -29,8 +29,8 @@ export default function ParticipantsGrid({
   const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId);
   if (focusedParticipant) {
     return (
-      <div className="absolute inset-0 flex min-h-0 w-full flex-col gap-3">
-        <div className="min-h-0 w-full flex-1">
+      <div className="absolute inset-0 flex min-h-0 w-full flex-col gap-3 p-2 sm:gap-4 sm:p-4">
+        <div className="flex min-h-0 w-full flex-1 justify-center">
           <VideoTile
             participant={focusedParticipant}
             muteRemoteAudio={muteRemoteAudio}
@@ -45,21 +45,23 @@ export default function ParticipantsGrid({
           />
         </div>
         {participants.length > 1 && (
-          <div className="flex shrink-0 gap-3 overflow-x-auto pb-1" aria-label="Outros participantes da chamada">
-            {participants.filter((participant) => participant.id !== focusedParticipant.id).map((participant) => (
-              <div key={participant.id} className="w-36 shrink-0 sm:w-48">
-                <VideoTile
-                  participant={participant}
-                  muteRemoteAudio={muteRemoteAudio}
-                  outputDeviceId={outputDeviceId}
-                  masterOutputVolume={masterOutputVolume}
-                  soundEffectsMuted={mutedSoundEffectUserIds.includes(participant.id)}
-                  screenShareRevealed={participant.isLocal || revealedScreenShareIds.has(participant.id)}
-                  onRevealScreenShare={onRevealScreenShare}
-                  onFocusParticipant={() => onSelectParticipant?.(participant.id)}
-                />
-              </div>
-            ))}
+          <div className="w-full shrink-0 overflow-x-auto pb-1" aria-label="Outros participantes da chamada">
+            <div className="mx-auto flex w-max gap-3">
+              {participants.filter((participant) => participant.id !== focusedParticipant.id).map((participant) => (
+                <div key={participant.id} className="w-36 shrink-0 sm:w-48">
+                  <VideoTile
+                    participant={participant}
+                    muteRemoteAudio={muteRemoteAudio}
+                    outputDeviceId={outputDeviceId}
+                    masterOutputVolume={masterOutputVolume}
+                    soundEffectsMuted={mutedSoundEffectUserIds.includes(participant.id)}
+                    screenShareRevealed={participant.isLocal || revealedScreenShareIds.has(participant.id)}
+                    onRevealScreenShare={onRevealScreenShare}
+                    onFocusParticipant={() => onSelectParticipant?.(participant.id)}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

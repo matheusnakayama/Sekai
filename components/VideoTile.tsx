@@ -209,12 +209,14 @@ export default function VideoTile({
   return (
     <div
       className={focused
-        ? 'relative h-full min-h-0 w-full overflow-hidden bg-black'
+        ? `relative h-full min-h-0 w-full overflow-hidden rounded-2xl border bg-surface-card transition-shadow ${
+            participant.isSpeaking ? 'voice-speaking-tile' : 'border-surface-border'
+          }`
         : `relative rounded-xl overflow-hidden bg-surface-card border transition-shadow ${
             participant.isSpeaking ? 'voice-speaking-tile' : 'border-surface-border'
           }`}
     >
-      <div className={`relative w-full h-full ${focused ? 'min-h-0 bg-black' : 'aspect-video bg-gradient-to-br from-surface-card to-surface'}`}>
+      <div className={`relative h-full w-full bg-gradient-to-br from-surface-card to-surface ${focused ? 'min-h-0' : 'aspect-video'}`}>
         {participant.stream && (
           <video
             ref={videoRef}
