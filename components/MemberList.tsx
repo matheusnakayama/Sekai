@@ -42,6 +42,7 @@ export interface MemberItem {
   avatarZoom?: number | null;
   profileCardColor?: string | null;
   badges?: CustomBadge[];
+  showBadgesInMemberList?: boolean;
   status: "online" | "idle" | "dnd" | "offline";
   /** Estado salvo no perfil, separado do estado de conexão ao vivo. */
   profilePresence?: "online" | "idle" | "dnd" | "offline";
@@ -238,7 +239,8 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
     return () => observer.disconnect();
   }, [member.displayName, member.memberListBannerUrl]);
 
-  const bannerMask = `linear-gradient(90deg, transparent 0, transparent ${bannerStart}px, black ${bannerStart + 34}px, black 100%)`;
+  const bannerFadeStart = Math.max(0, bannerStart - 12);
+  const bannerMask = `linear-gradient(90deg, transparent 0, transparent ${bannerFadeStart}px, rgba(0,0,0,.035) ${bannerStart}px, rgba(0,0,0,.14) ${bannerStart + 14}px, rgba(0,0,0,.46) ${bannerStart + 34}px, black ${bannerStart + 58}px, black 100%)`;
 
   return (
     <button ref={rowRef} type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
@@ -262,7 +264,7 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
       <span className="relative z-10 flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1 leading-4">
           <span ref={nameRef} className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
-          <CustomBadgeList badges={member.badges} limit={3} />
+          {member.showBadgesInMemberList !== false && <CustomBadgeList badges={member.badges} limit={3} respectMemberListVisibility />}
         </span>
         {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
       </span>

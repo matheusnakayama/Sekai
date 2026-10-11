@@ -188,7 +188,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     let cancelled = false;
     const profileId = selectedFriend.id;
     void supabase.from("user_badges")
-      .select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
+      .select("user_id, visible_in_member_list, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
       .eq("user_id", profileId)
       .then(({ data }) => {
         if (cancelled) return;

@@ -1,5 +1,3 @@
-import { BANKAIS } from "@/lib/bankai";
-
 export interface CustomBadge {
   id: string;
   name: string;
@@ -7,6 +5,7 @@ export interface CustomBadge {
   backgroundColor: string;
   foregroundColor: string;
   imageUrl?: string | null;
+  visibleInMemberList?: boolean;
 }
 
 export function mapUserBadgeRows(rows: unknown): Map<string, CustomBadge[]> {
@@ -28,6 +27,7 @@ export function mapUserBadgeRows(rows: unknown): Map<string, CustomBadge[]> {
       backgroundColor: typeof badge.background_color === "string" ? badge.background_color : "#4f46e5",
       foregroundColor: typeof badge.foreground_color === "string" ? badge.foreground_color : "#ffffff",
       imageUrl: typeof badge.image_url === "string" ? badge.image_url : null,
+      visibleInMemberList: row.visible_in_member_list !== false,
     });
     badgesByUser.set(row.user_id, userBadges);
   }
@@ -35,7 +35,7 @@ export function mapUserBadgeRows(rows: unknown): Map<string, CustomBadge[]> {
   return badgesByUser;
 }
 
-/** Nome da Bankai no hover; insígnias comuns continuam com o próprio nome. */
+/** O título exibido acompanha o nome editável da insígnia. */
 export function badgeHoverLabel(badge: { id: string; name: string }) {
-  return BANKAIS.find((item) => item.badgeId === badge.id)?.bankai ?? badge.name;
+  return badge.name;
 }

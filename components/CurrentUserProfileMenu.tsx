@@ -264,7 +264,7 @@ export function CurrentUserProfileMenu({ user, onOpenSettings, onPresenceChange,
         aria-label="Definir status"
       >
         {PRESENCE_OPTIONS.map((option) => <button key={option.id} type="button" role="menuitemradio" aria-checked={user.presence === option.id} aria-busy={pendingPresence === option.id} disabled={pendingPresence !== null} onClick={() => void changePresence(option.id)} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-discord-bg-modifier-hover disabled:cursor-wait disabled:opacity-60">
-          <PresenceIndicator presence={option.id} size={16} cutoutColor="rgb(43, 45, 49)" dndBarColor="#ffffff" />
+          <PresenceIndicator presence={option.id} size={16} cutoutColor="rgb(43, 45, 49)" hollowSymbols />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">{option.label}</span>
             {option.description && <span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">{option.description}</span>}

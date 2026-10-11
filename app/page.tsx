@@ -317,7 +317,7 @@ export default function Home() {
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
@@ -688,13 +688,13 @@ export default function Home() {
     if (!currentUserId) return;
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, status")
+      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status")
       .eq("id", currentUserId)
       .single();
     if (data) {
       const { data: badgeRows } = await supabase
         .from("user_badges")
-        .select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
+        .select("user_id, visible_in_member_list, custom_badges(id, name, icon, background_color, foreground_color, image_url)")
         .eq("user_id", currentUserId);
       const badges = mapUserBadgeRows(badgeRows).get(currentUserId) ?? [];
       setMyProfile({
@@ -716,6 +716,7 @@ export default function Home() {
         memberListBannerPositionY: data.member_list_banner_position_y ?? 50,
         memberListBannerZoom: data.member_list_banner_zoom ?? 100,
         profileCardColor: data.profile_card_color,
+        showBadgesInMemberList: data.show_badges_in_member_list !== false,
         badges,
         presence: data.status,
       });
@@ -1054,7 +1055,7 @@ export default function Home() {
     const [serverResult, categoryResult, memberResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, status)").eq("server_id", serverId),
+      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)").eq("server_id", serverId),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1087,7 +1088,7 @@ export default function Home() {
     const memberRows = memberResult.data ?? [];
     const memberUserIds = [...new Set(memberRows.map((member: any) => member.user_id).filter(Boolean))];
     const badgeRequest = memberUserIds.length
-        ? supabase.from("user_badges").select("user_id, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds)
+        ? supabase.from("user_badges").select("user_id, visible_in_member_list, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds)
         : Promise.resolve({ data: [], error: null });
     const [memberRoleResult, allRoleResult] = await Promise.all([
       supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, insignia_url, position, permissions, is_default)").eq("server_id", serverId),
@@ -1140,6 +1141,7 @@ export default function Home() {
         memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
         memberListBannerZoom: m.member_list_banner_url ? m.member_list_banner_zoom ?? 100 : m.profiles?.member_list_banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
+        showBadgesInMemberList: m.profiles?.show_badges_in_member_list !== false,
         badges: existingBadgesByUser.get(m.user_id) ?? [],
         profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
           ? m.profiles.status

@@ -45,8 +45,8 @@ export function PresenceIndicator({
   // visible. Discord's cutout sits just beyond the avatar's lower-right edge.
   const badgeSize = "clamp(13px, 27%, 19px)";
   const iconSize = avatarBadge ? "100%" : Math.max(0, size - borderWidth * 2);
-  // Keep avatar badges filled. The hollow symbol is only useful at larger sizes.
-  const hollowDnd = hollowSymbols && !avatarBadge;
+  // Avatar badges use the profile surface in the notch; larger indicators use transparency.
+  const hollowDnd = presence === "dnd" && (hollowSymbols || avatarBadge);
 
   return (
     <span
@@ -63,7 +63,7 @@ export function PresenceIndicator({
         height: avatarBadge ? badgeSize : size,
         backgroundColor: presence === "idle"
           ? avatarBadge ? cutoutColor : "transparent"
-          : hollowDnd && presence === "dnd" ? "transparent" : PRESENCE_COLORS[presence],
+          : hollowDnd ? "transparent" : PRESENCE_COLORS[presence],
         borderColor: borderColor ?? "transparent",
         borderStyle: indicatorBorderWidth > 0 ? "solid" : "none",
         borderWidth: indicatorBorderWidth,
@@ -81,7 +81,7 @@ export function PresenceIndicator({
       </svg>}
       {presence === "dnd" && (hollowDnd ? (
         <svg aria-hidden="true" viewBox="0 0 16 16" width={iconSize} height={iconSize} className="shrink-0">
-          <defs><mask id={`${maskId}-dnd`}><rect width="16" height="16" fill="white"/><rect x="4" y="7" width="8" height="2" rx="1" fill="black"/></mask></defs>
+          <defs><mask id={`${maskId}-dnd`} maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16"><rect width="16" height="16" fill="white"/><rect x="4" y="7" width="8" height="2" rx="1" fill="black"/></mask></defs>
           <circle cx="8" cy="8" r="7.5" fill={PRESENCE_COLORS.dnd} mask={`url(#${maskId}-dnd)`}/>
         </svg>
       ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full" style={{ backgroundColor: avatarBadge ? "#ffffff" : dndBarColor }} />)}
