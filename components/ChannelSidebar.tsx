@@ -7,9 +7,6 @@ import {
   Hash,
   Music2,
   Volume2,
-  Mic,
-  MicOff,
-  Headphones,
   Settings,
   UserPlus,
   Plus,
@@ -21,11 +18,10 @@ import ThemePicker from "@/components/ThemePicker";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
-import AnchoredPopover from "@/components/AnchoredPopover";
 import type { CustomBadge } from "@/lib/badges";
 import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
-import { ScreenShareIcon } from "@/components/icons";
+import { CamIcon, MicIcon, ScreenShareIcon } from "@/components/icons";
 
 export interface Channel {
   id: string;
@@ -82,9 +78,11 @@ interface ChannelSidebarProps {
     presence: "online" | "idle" | "dnd" | "offline";
     isMuted?: boolean;
     isDeafened?: boolean;
+    isCameraOn?: boolean;
     isSpeaking?: boolean;
   };
   onToggleMute?: () => void;
+  onToggleCamera?: () => void;
   onToggleDeafen?: () => void;
   voiceAudioSettings?: VoiceAudioSettings | null;
   onSelectVoiceInputDevice?: (deviceId: string) => void;
@@ -126,13 +124,7 @@ export function ChannelSidebar({
   onOpenServerMenu,
   currentUser,
   onToggleMute,
-  onToggleDeafen,
-  voiceAudioSettings,
-  onSelectVoiceInputDevice,
-  onSelectVoiceOutputDevice,
-  onVoiceInputVolumeChange,
-  onVoiceOutputVolumeChange,
-  onVoiceProfileChange,
+  onToggleCamera,
   onOpenSettings,
   onPresenceChange,
   canManageChannels = false,
@@ -178,10 +170,6 @@ export function ChannelSidebar({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
   const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
   const [soundboardOpen, setSoundboardOpen] = useState(false);
-  const [voiceAudioMenuOpen, setVoiceAudioMenuOpen] = useState<"input" | "output" | null>(null);
-  const [voiceSettingsExpanded, setVoiceSettingsExpanded] = useState(false);
-  const inputAudioAnchorRef = useRef<HTMLDivElement>(null);
-  const outputAudioAnchorRef = useRef<HTMLDivElement>(null);
   const [soundboardEffects, setSoundboardEffects] = useState<SoundboardEffect[]>([]);
   const [soundboardLoading, setSoundboardLoading] = useState(false);
   const [soundboardError, setSoundboardError] = useState("");
@@ -312,6 +300,9 @@ export function ChannelSidebar({
                       ...channelLiveMembers.filter((member) => !savedMemberIds.has(member.id)),
                     ];
                     const hasVoiceMembers = channel.type === "voice" && (voiceMembers.length > 0 || channel.id === connectedVoiceChannelId);
+                    const voiceDurationStart = channel.id === connectedVoiceChannelId && connectedVoiceStartedAt != null
+                      ? connectedVoiceStartedAt
+                      : voiceMembers[0]?.joinedAt;
                     return (
                       <div
                         key={channel.id}
@@ -342,7 +333,7 @@ export function ChannelSidebar({
                             )}
                             <span className="truncate">{channel.name}</span>
                             {(hasVoiceMembers || channel.mentionCount || channel.unread) && <span className="ml-auto flex shrink-0 items-center gap-1">
-                              {hasVoiceMembers && <><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--sekai-link, rgb(var(--d-brand)))" }} title="Há pessoas na chamada" />{voiceMembers[0]?.joinedAt && <span className="text-[10px] tabular-nums" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}>{formatVoiceDuration(clockNow - voiceMembers[0].joinedAt)}</span>}</>}
+                              {hasVoiceMembers && <><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--sekai-link, rgb(var(--d-brand)))" }} title="Há pessoas na chamada" />{voiceDurationStart != null && <span className="text-[10px] tabular-nums" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}>{formatVoiceDuration(clockNow - voiceDurationStart)}</span>}</>}
                               {channel.mentionCount ? <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-discord-danger px-1 text-[10px] font-bold leading-none text-white">{channel.mentionCount > 99 ? "99+" : channel.mentionCount}</span> : channel.unread ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
                             </span>}
                           </button>
@@ -433,65 +424,34 @@ export function ChannelSidebar({
         </div>}
       </div>
 
-      {/* Barra de chamada conectada (como no Discord) */}
+      {/* Barra de chamada conectada */}
       {connectedVoiceChannelId && (
-        <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
-          <div className="flex flex-col gap-1.5">
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold md:text-xs" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}><Volume2 className="h-4 w-4 shrink-0 md:h-3.5 md:w-3.5"/><span>Voz conectada</span>{connectedVoiceStartedAt && <span className="ml-auto text-[10px] tabular-nums">{formatVoiceDuration(clockNow - connectedVoiceStartedAt)}</span>}</p>
-              <p className="truncate pl-5 text-xs text-discord-text-muted md:text-[11px]">{connectedVoiceChannelName ?? "Canal de voz"}</p>
+        <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2.5">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-emerald-400">
+                <Volume2 className="h-3.5 w-3.5 shrink-0" />
+                <span>Voz conectada</span>
+              </p>
+              <p className="truncate pl-5 text-[11px] text-discord-text-muted">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
-            <div className="flex items-center gap-1">
-            {onToggleMute && <div ref={inputAudioAnchorRef} className="relative flex items-center">
-              <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5"/> : <Mic className="h-5 w-5"/>}</button>
-              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "input" ? null : "input")} aria-label="Opções do microfone" aria-expanded={voiceAudioMenuOpen === "input"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")}/></button>
-              <AnchoredPopover open={voiceAudioMenuOpen === "input"} anchorRef={inputAudioAnchorRef} width={288} className="rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
-                <p className="px-1 text-xs font-semibold">Dispositivo de entrada</p>
-                <div className="mt-2 max-h-28 space-y-1 overflow-y-auto">{voiceAudioSettings?.inputDevices.length ? voiceAudioSettings.inputDevices.map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceInputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedInputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedInputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>) : <p className="px-2 py-2 text-xs text-discord-text-muted">Carregando microfones…</p>}</div>
-                <div className="my-2 border-t border-white/[0.08]"/>
-                <button type="button" onClick={() => setVoiceSettingsExpanded((expanded) => !expanded)} aria-expanded={voiceSettingsExpanded} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-discord-bg-modifier-hover"><span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-discord-text-muted">{voiceAudioSettings?.voiceProfile === "noise-suppression" ? "Supressão de ruído" : "Padrão"}</span></span><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", voiceSettingsExpanded && "rotate-180")}/></button>
-                {voiceSettingsExpanded && <div className="mt-1 space-y-1">{(["standard", "noise-suppression"] as VoiceProfile[]).map((profile) => <button key={profile} type="button" onClick={() => onVoiceProfileChange?.(profile)} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.voiceProfile === profile && "bg-discord-brand/15 text-white")}><span>{profile === "standard" ? "Padrão" : "Supressão de ruído"}</span>{voiceAudioSettings?.voiceProfile === profile && <span className="h-1.5 w-1.5 rounded-full bg-discord-brand"/>}</button>)}</div>}
-                <label className="mt-2 block border-t border-white/[0.08] pt-3"><span className="flex justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-discord-text-muted">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span><input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={voiceAudioSettings?.inputVolume ?? 1} onChange={(event) => onVoiceInputVolumeChange?.(Number(event.target.value))} className="mt-2 w-full" style={{ accentColor: "rgb(var(--d-brand))" }}/></label>
-                <button type="button" onClick={() => setVoiceSettingsExpanded((expanded) => !expanded)} aria-expanded={voiceSettingsExpanded} className="mt-2 flex w-full items-center gap-2 border-t border-white/[0.08] px-2 pt-3 text-left text-xs font-semibold hover:text-white"><Settings className="h-4 w-4"/>Configurações de voz</button>
-              </AnchoredPopover>
-            </div>}
-            {onToggleDeafen && <div ref={outputAudioAnchorRef} className="relative flex items-center">
-              <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-5 w-5"/></button>
-              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "output" ? null : "output")} aria-label="Opções da saída de áudio" aria-expanded={voiceAudioMenuOpen === "output"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "output" && "rotate-180")}/></button>
-              <AnchoredPopover open={voiceAudioMenuOpen === "output"} anchorRef={outputAudioAnchorRef} width={288} className="rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
-                <p className="px-1 text-xs font-semibold">Dispositivo de saída</p>
-                {!voiceAudioSettings?.outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-discord-text-muted">Este navegador usa a saída padrão do sistema e não permite escolhê-la pelo Sekai.</p> : <div className="mt-2 max-h-28 space-y-1 overflow-y-auto"><button type="button" onClick={() => onSelectVoiceOutputDevice?.("")} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", !voiceAudioSettings?.selectedOutputDeviceId && "bg-discord-brand/15 text-white")}>Padrão do sistema{!voiceAudioSettings?.selectedOutputDeviceId && <span className="h-1.5 w-1.5 rounded-full bg-discord-brand"/>}</button>{(voiceAudioSettings?.outputDevices ?? []).filter((device) => device.deviceId !== "default").map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceOutputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>)}</div>}
-                <label className="mt-2 block border-t border-white/[0.08] pt-3"><span className="flex justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-discord-text-muted">{Math.round((voiceAudioSettings?.outputVolume ?? 1) * 100)}%</span></span><input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={voiceAudioSettings?.outputVolume ?? 1} onChange={(event) => onVoiceOutputVolumeChange?.(Number(event.target.value))} className="mt-2 w-full" style={{ accentColor: "rgb(var(--d-brand))" }}/></label>
-              </AnchoredPopover>
-            </div>}
-            <button
-              onClick={onDisconnectVoice}
-              title="Desconectar da chamada"
-              aria-label="Desconectar da chamada"
-              className="rounded-md p-1.5 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-danger"
-            >
-              <PhoneOff className="h-[18px] w-[18px]" />
-            </button>
-            </div>
-          </div>
-          {connectedVoiceServerId && (
-            <div className="mt-2 flex items-center gap-1.5 border-t border-white/[0.06] pt-2">
-              <button
-                type="button"
-                onClick={onPresentScreen}
-                disabled={!onPresentScreen}
-                title="Apresentar tela na chamada"
-                aria-label="Apresentar tela na chamada"
-                className="flex h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.035] text-xs font-medium text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-              >
+            <div className="flex w-full items-center justify-evenly gap-1 rounded-xl border border-white/[0.07] bg-white/[0.035] p-1">
+              <button type="button" onClick={onToggleMute} disabled={!onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Silenciar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>
+                <MicIcon off={currentUser.isMuted} />
+              </button>
+              <button type="button" onClick={onToggleCamera} disabled={!onToggleCamera} title={currentUser.isCameraOn ? "Desativar câmera" : "Ativar câmera"} aria-label={currentUser.isCameraOn ? "Desativar câmera" : "Ativar câmera"} aria-pressed={!currentUser.isCameraOn} className={cn("grid h-8 w-8 place-items-center rounded-lg transition hover:bg-white/10 disabled:opacity-40", currentUser.isCameraOn ? "text-discord-text-muted hover:text-white" : "text-discord-danger")}>
+                <CamIcon off={!currentUser.isCameraOn} />
+              </button>
+              {(connectedVoiceServerId || onPresentScreen) && <button type="button" onClick={onPresentScreen} disabled={!onPresentScreen} title="Transmitir tela" aria-label="Transmitir tela" className="grid h-8 w-8 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/10 hover:text-white disabled:opacity-40">
                 <ScreenShareIcon active={false} />
-                Apresentar tela
+              </button>}
+              <button type="button" onClick={onDisconnectVoice} disabled={!onDisconnectVoice} title="Sair da chamada" aria-label="Sair da chamada" className="grid h-8 w-8 place-items-center rounded-lg text-discord-danger transition hover:bg-discord-danger/15 disabled:opacity-40">
+                <PhoneOff className="h-4 w-4" />
               </button>
             </div>
-          )}
+          </div>
         </div>
       )}
-
       {/* Painel do usuário */}
       <CurrentUserProfileMenu user={currentUser} onOpenSettings={onOpenSettings} onPresenceChange={onPresenceChange}>
       {({ toggle, openSettings, isOpen, triggerRef }) => <div ref={triggerRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">

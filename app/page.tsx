@@ -36,6 +36,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 type VoiceControlHandle = {
   toggleMic: () => void;
   toggleDeafen: () => void;
+  toggleCam: () => void;
   toggleScreenShare: () => Promise<void>;
   playSoundEffect: (effect: SoundboardEffect) => Promise<boolean>;
   audioSettings: VoiceAudioSettings;
@@ -274,7 +275,7 @@ export default function Home() {
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
   const [voiceParticipantsChannelId, setVoiceParticipantsChannelId] = useState<string | null>(null);
   const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
-  const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
+  const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, camOn: false, isSpeaking: false });
   const [voiceAudioSettings, setVoiceAudioSettings] = useState<VoiceAudioSettings | null>(null);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [voiceActivityByServer, setVoiceActivityByServer] = useState<Record<string, boolean>>({});
@@ -1317,8 +1318,8 @@ export default function Home() {
       ? current : next);
   }, []);
 
-  const handleVoiceControlStateChange = useCallback((state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => {
-    setVoiceControlState((current) => current.micOn === state.micOn && current.deafened === state.deafened && current.isSpeaking === state.isSpeaking ? current : state);
+  const handleVoiceControlStateChange = useCallback((state: { micOn: boolean; deafened: boolean; camOn: boolean; isSpeaking: boolean }) => {
+    setVoiceControlState((current) => current.micOn === state.micOn && current.deafened === state.deafened && current.camOn === state.camOn && current.isSpeaking === state.isSpeaking ? current : state);
   }, []);
 
   async function handleAddFriend(userId: string) {
@@ -1986,6 +1987,7 @@ export default function Home() {
         onOpenServerMenu={() => activeServerId && setShowServerSettings(true)}
         onOpenSettings={() => setShowUserSettings(true)}
         onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
+        onToggleCamera={voiceSession ? () => voiceControlsRef.current?.toggleCam() : undefined}
         onToggleDeafen={voiceSession ? () => voiceControlsRef.current?.toggleDeafen() : undefined}
         voiceAudioSettings={voiceAudioSettings}
         onSelectVoiceInputDevice={(deviceId) => voiceControlsRef.current?.selectInputDevice(deviceId)}
@@ -1999,7 +2001,7 @@ export default function Home() {
         connectedVoiceServerId={voiceSession?.kind === "server" ? voiceSession.serverId : undefined}
         connectedVoiceMembers={connectedVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}
-        onPresentScreen={voiceSession?.kind === "server" ? () => { void voiceControlsRef.current?.toggleScreenShare(); } : undefined}
+        onPresentScreen={voiceSession ? () => { void voiceControlsRef.current?.toggleScreenShare(); } : undefined}
         onPlaySoundEffect={(effect) => playServerSoundEffect(activeServerId, effect)}
         soundboardAudioReady={soundboardAudioReady}
         onDisconnectVoice={disconnectVoice}
@@ -2021,6 +2023,7 @@ export default function Home() {
           customStatus: myProfile?.customStatus,
           presence: myProfile?.presence ?? "online",
           isMuted: !voiceControlState.micOn,
+          isCameraOn: voiceControlState.camOn,
           isDeafened: voiceControlState.deafened,
           isSpeaking: voiceControlState.isSpeaking,
         }}

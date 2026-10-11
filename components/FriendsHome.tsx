@@ -451,7 +451,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-black/20 px-2 shadow-sm sm:gap-3 sm:px-5">
             <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-text-normal md:hidden" onClick={onOpenMobileNavigation} aria-label="Abrir servidores"><Menu size={20}/></button>
             <button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-white md:hidden" onClick={() => setSelectedFriend(null)} aria-label="Voltar para amigos"><ArrowLeft size={20}/></button>
-            <FriendIdentity profile={activeFriend} compact isHovered={hoveredDmProfileId === activeFriend.id} onHoverChange={(hovered) => setHoveredDmProfileId(hovered ? activeFriend.id : null)} onProfileClick={openMiniProfile}/>
+            <FriendIdentity profile={activeFriend} compact showStatus={false} isHovered={hoveredDmProfileId === activeFriend.id} onHoverChange={(hovered) => setHoveredDmProfileId(hovered ? activeFriend.id : null)} onProfileClick={openMiniProfile}/>
             <span className="hidden border-l border-white/10 pl-3 text-xs text-discord-text-muted lg:block">Mensagem direta</span>
             <div className="ml-auto flex min-w-0 items-center gap-2">
               {messageSearchOpen && <input autoFocus value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Buscar na conversa" aria-label="Buscar mensagens desta conversa" className="w-36 rounded-md bg-discord-bg-secondary px-2.5 py-1.5 text-xs text-discord-text-normal outline-none focus:ring-1 focus:ring-white/20 sm:w-52"/>}
@@ -466,7 +466,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           <div ref={dmScrollRef} onScroll={trackDmScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-6 sm:px-6">
             <div className="mb-7 border-b border-white/10 pb-6">
               <button type="button" onMouseEnter={() => setHoveredDmProfileId(activeFriend.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === activeFriend.id ? null : id)} onClick={(event) => openMiniProfile(activeFriend, event.currentTarget)} aria-label={`Abrir perfil de ${activeFriend.display_name || activeFriend.username}`} className="block rounded-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
-                <FriendAvatar profile={activeFriend} size="lg" isHovered={hoveredDmProfileId === activeFriend.id}/>
+                <FriendAvatar profile={activeFriend} size="lg" showStatus={false} isHovered={hoveredDmProfileId === activeFriend.id}/>
               </button>
               <h1 className="mt-3 text-2xl font-bold text-discord-header-primary"><button type="button" onMouseEnter={() => setHoveredDmProfileId(activeFriend.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === activeFriend.id ? null : id)} onClick={(event) => openMiniProfile(activeFriend, event.currentTarget)} className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{activeFriend.display_name || activeFriend.username}</button></h1>
               <p className="mt-1 text-sm text-discord-text-muted">@{activeFriend.username}</p>
@@ -483,7 +483,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                 return <div key={item.id}>
                   {showDate && <div className="my-5 flex items-center gap-3 text-[11px] font-semibold text-discord-text-muted"><span className="h-px flex-1 bg-white/10"/><span>{formatDirectMessageDate(timestamp)}</span><span className="h-px flex-1 bg-white/10"/></div>}
                   <article className={`group flex rounded-md px-2 py-1.5 transition hover:bg-white/[0.025] ${chatDisplay.showAvatars ? "gap-3" : ""} ${grouped ? "pt-0.5" : "mt-2"}`}>
-                    {chatDisplay.showAvatars && <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" isHovered={hoveredDmProfileId === author.id}/></button>}</div>}
+                    {chatDisplay.showAvatars && <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" showStatus={false} isHovered={hoveredDmProfileId === author.id}/></button>}</div>}
                     <div className="min-w-0 flex-1">
                       {!grouped && <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} className="rounded-sm text-sm font-semibold text-discord-header-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{author.display_name || author.username}</button><time className="text-[10px] text-discord-text-muted">{timestamp.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</time></div>}
                       {item.content === DIRECT_CALL_INVITE ? <div className="flex flex-wrap items-center gap-3 rounded-xl border border-discord-brand/30 bg-discord-brand/10 px-4 py-3">
@@ -594,15 +594,16 @@ function FriendAvatar({ profile, size = "md", showStatus = true, isHovered = fal
   </span>;
 }
 
-function FriendIdentity({ profile, compact = false, isHovered = false, onHoverChange, onProfileClick }: {
+function FriendIdentity({ profile, compact = false, showStatus = true, isHovered = false, onHoverChange, onProfileClick }: {
   profile?: Profile;
   compact?: boolean;
+  showStatus?: boolean;
   isHovered?: boolean;
   onHoverChange?: (hovered: boolean) => void;
   onProfileClick?: (profile: Profile, anchor: HTMLButtonElement) => void;
 }) {
   const content = <>
-    <FriendAvatar profile={profile} size={compact ? "sm" : "md"} isHovered={isHovered}/>
+    <FriendAvatar profile={profile} size={compact ? "sm" : "md"} showStatus={showStatus} isHovered={isHovered}/>
     <span className="min-w-0 text-left">
       <span className="block truncate text-sm font-medium text-discord-text-normal">{profile?.display_name || profile?.username || "Usuário"}</span>
       <span className="block truncate text-xs text-discord-text-muted">@{profile?.username || ""}</span>

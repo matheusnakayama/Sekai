@@ -67,6 +67,7 @@ export default function RoomClient({
   onControlsReady?: (controls: {
     toggleMic: () => void;
     toggleDeafen: () => void;
+    toggleCam: () => void;
     toggleScreenShare: () => Promise<void>;
     playSoundEffect: (effect: SoundboardEffect) => Promise<boolean>;
     audioSettings: VoiceAudioSettings;
@@ -76,7 +77,7 @@ export default function RoomClient({
     setOutputVolume: (volume: number) => void;
     setVoiceProfile: (profile: VoiceProfile) => void;
   } | null) => void;
-  onControlStateChange?: (state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => void;
+  onControlStateChange?: (state: { micOn: boolean; deafened: boolean; camOn: boolean; isSpeaking: boolean }) => void;
   mutedSoundEffectUserIds?: string[];
   /** Entra direto, sem a tela de pré-visualização. A câmera começa desligada e o microfone segue o último estado da call. */
   autoJoin?: boolean;
@@ -151,8 +152,8 @@ export default function RoomClient({
   }, [onParticipantsChange, participants, phase]);
 
   useEffect(() => {
-    onControlStateChange?.({ micOn, deafened, isSpeaking: phase === 'in-call' && localSpeaking });
-  }, [micOn, deafened, localSpeaking, phase, onControlStateChange]);
+    onControlStateChange?.({ micOn, deafened, camOn, isSpeaking: phase === 'in-call' && localSpeaking });
+  }, [micOn, deafened, camOn, localSpeaking, phase, onControlStateChange]);
 
   useEffect(() => {
     const track = cameraStreamRef.current?.getAudioTracks()[0];
@@ -867,6 +868,7 @@ export default function RoomClient({
     onControlsReady?.({
       toggleMic,
       toggleDeafen,
+      toggleCam,
       toggleScreenShare,
       playSoundEffect: playSoundboardEffect,
       audioSettings: { inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported },
@@ -876,7 +878,7 @@ export default function RoomClient({
       setOutputVolume,
       setVoiceProfile: selectVoiceProfile,
     });
-  }, [onControlsReady, toggleMic, toggleDeafen, toggleScreenShare, playSoundboardEffect, inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported, selectInputDevice, selectVoiceProfile]);
+  }, [onControlsReady, toggleMic, toggleDeafen, toggleCam, toggleScreenShare, playSoundboardEffect, inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported, selectInputDevice, selectVoiceProfile]);
 
   useEffect(() => () => onControlsReady?.(null), [onControlsReady]);
 
@@ -1516,7 +1518,7 @@ export default function RoomClient({
         )}
       </section>
 
-      <footer className="px-3 sm:px-6 py-4 border-t border-surface-border">
+      <footer className="border-t border-white/[0.04] bg-[#111214] px-3 py-2 sm:px-6 sm:py-3">
         <Controls
           micOn={micOn}
           deafened={deafened}
@@ -1555,11 +1557,7 @@ export default function RoomClient({
           isHost={isHost}
           micLockedByHost={micLockedByHost}
         />
-        {sharingScreen && screenCaptureInfo && (
-          <p className="mt-2 text-center text-xs text-white/55">
-            Captura: {screenCaptureInfo}. A tela vai numa transmissão só de ida, separada da voz, na qualidade escolhida desde o início.
-          </p>
-        )}
+        <p className="sr-only" aria-live="polite">{sharingScreen && screenCaptureInfo ? `Transmitindo tela: ${screenCaptureInfo}.` : ""}</p>
       </footer>
 
       {goLiveOpen && (

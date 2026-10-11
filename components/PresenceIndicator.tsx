@@ -41,7 +41,9 @@ export function PresenceIndicator({
 }) {
   const maskId = useId().replace(/:/g, "");
   const indicatorBorderWidth = avatarBadge ? 2 : borderWidth;
-  const badgeSize = "clamp(14px, 32%, 20px)";
+  // Keep the badge proportional to the avatar and let more of the image remain
+  // visible. Discord's cutout sits just beyond the avatar's lower-right edge.
+  const badgeSize = "clamp(13px, 27%, 19px)";
   const iconSize = avatarBadge ? "100%" : Math.max(0, size - borderWidth * 2);
   // Keep avatar badges filled. The hollow symbol is only useful at larger sizes.
   const hollowDnd = hollowSymbols && !avatarBadge;
@@ -54,12 +56,14 @@ export function PresenceIndicator({
       className={cn("presence-indicator inline-grid shrink-0 place-items-center rounded-full", className)}
       style={{
         position: avatarBadge ? "absolute" : "relative",
-        right: avatarBadge ? -2 : undefined,
-        bottom: avatarBadge ? -2 : undefined,
+        right: avatarBadge ? -4 : undefined,
+        bottom: avatarBadge ? -4 : undefined,
         zIndex: avatarBadge ? 10 : undefined,
         width: avatarBadge ? badgeSize : size,
         height: avatarBadge ? badgeSize : size,
-        backgroundColor: presence === "idle" || (hollowDnd && presence === "dnd") ? "transparent" : PRESENCE_COLORS[presence],
+        backgroundColor: presence === "idle"
+          ? avatarBadge ? cutoutColor : "transparent"
+          : hollowDnd && presence === "dnd" ? "transparent" : PRESENCE_COLORS[presence],
         borderColor: borderColor ?? "transparent",
         borderStyle: indicatorBorderWidth > 0 ? "solid" : "none",
         borderWidth: indicatorBorderWidth,

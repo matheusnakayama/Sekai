@@ -12,7 +12,6 @@ import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
 import type { MemberItem, ServerRoleOption } from "@/components/MemberList";
 import { PrankSimulation } from "@/components/PrankSimulation";
-import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { createClient } from "@/lib/supabase/client";
 import { resolveChatImageUrl } from "@/lib/chatImageUrls";
@@ -689,7 +688,6 @@ export function ChatArea({
           const timestamp = new Date(message.createdAt);
           const previousTimestamp = index > 0 ? new Date(messages[index - 1].createdAt) : null;
           const showDate = !previousTimestamp || timestamp.toDateString() !== previousTimestamp.toDateString();
-          const authorStatus = memberById.get(message.authorId)?.status;
           const systemCopy = message.systemType === "member_joined"
             ? "entrou no servidor. Dê boas-vindas!"
             : message.systemType === "member_left"
@@ -733,7 +731,6 @@ export function ChatArea({
                   </span>
                 )}
               </span>
-              {authorStatus && <PresenceIndicator presence={authorStatus} avatarBadge borderColor="rgb(var(--d-primary))" cutoutColor="rgb(var(--d-primary))" />}
             </button>}
 
             <div className="min-w-0 flex-1">

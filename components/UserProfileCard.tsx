@@ -402,12 +402,14 @@ export function UserProfileCard({
         <div className="relative -mt-9 h-[68px] w-[68px]">
           <div className="relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand" style={{ borderColor: profilePalette.surface }}>
             {profile.avatarUrl ? (
-              <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" positionX={profile.avatarPositionX} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
+              <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" positionX={Math.min(100, (profile.avatarPositionX ?? 50) + 5)} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
             ) : (
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
           </div>
-          <PresenceIndicator presence={profile.status} avatarBadge borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} />
+          <span className="absolute -top-2 left-0 h-16 w-16">
+            <PresenceIndicator presence={profile.status} avatarBadge borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} className="scale-110 -translate-x-1 translate-y-1" />
+          </span>
         </div>
 
         <div className="mt-2">
