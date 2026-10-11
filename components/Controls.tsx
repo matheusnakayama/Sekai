@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { ChevronDown, Music, Music2, Play, Settings, Square, Volume2, VolumeX } from 'lucide-react';
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon } from './icons';
+import AnchoredPopover from './AnchoredPopover';
 
 export interface SoundboardEffect {
   id: string;
@@ -116,6 +117,8 @@ export default function Controls({
   const [audioMenuOpen, setAudioMenuOpen] = useState<'input' | 'output' | null>(null);
   const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
   const musicFileRef = useRef<HTMLInputElement>(null);
+  const inputAnchorRef = useRef<HTMLDivElement>(null);
+  const outputAnchorRef = useRef<HTMLDivElement>(null);
 
   function handleCopy() {
     onCopyLink();
@@ -125,7 +128,7 @@ export default function Controls({
 
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-3">
-      <div className="relative flex items-center gap-1.5">
+      <div ref={inputAnchorRef} className="relative flex items-center gap-1.5">
         <ControlButton
           active={micOn}
           activeLabel="Silenciar microfone"
@@ -138,7 +141,7 @@ export default function Controls({
           <MicIcon off={!micOn} />
         </ControlButton>
         <AudioArrowButton label="Opções do microfone" open={audioMenuOpen === 'input'} onClick={() => { setAudioMenuOpen((open) => open === 'input' ? null : 'input'); setVoiceSettingsOpen(false); }} />
-        {audioMenuOpen === 'input' && <div className="absolute bottom-full left-0 z-[70] mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+        <AnchoredPopover open={audioMenuOpen === 'input'} anchorRef={inputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
           <h3 className="px-1 text-sm font-semibold">Dispositivo de entrada</h3>
           <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
             {inputDevices.length ? inputDevices.map((device) => <AudioOption key={device.deviceId} label={device.label} selected={device.deviceId === selectedInputDeviceId} onClick={() => onSelectInputDevice(device.deviceId)} />) : <p className="px-2 py-2 text-xs text-white/50">Nenhum microfone encontrado</p>}
@@ -156,10 +159,10 @@ export default function Controls({
             <input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={inputVolume} onChange={(event) => onInputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
           </label>
           <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
-        </div>}
+        </AnchoredPopover>
       </div>
 
-      <div className="relative flex items-center gap-1.5">
+      <div ref={outputAnchorRef} className="relative flex items-center gap-1.5">
         <ControlButton
           active={!deafened}
           activeLabel="Ensurdecer"
@@ -170,7 +173,7 @@ export default function Controls({
           {deafened ? <VolumeX className="h-5 w-5"/> : <Volume2 className="h-5 w-5"/>}
         </ControlButton>
         <AudioArrowButton label="Opções de saída de áudio" open={audioMenuOpen === 'output'} onClick={() => { setAudioMenuOpen((open) => open === 'output' ? null : 'output'); setVoiceSettingsOpen(false); }} />
-        {audioMenuOpen === 'output' && <div className="absolute bottom-full left-0 z-[70] mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+        <AnchoredPopover open={audioMenuOpen === 'output'} anchorRef={outputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
           <h3 className="px-1 text-sm font-semibold">Dispositivo de saída</h3>
           {!outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-white/55">Este navegador não permite escolher a saída de áudio. O Sekai continuará usando a saída padrão do sistema.</p> : <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
             <AudioOption label="Padrão do sistema" selected={!selectedOutputDeviceId || selectedOutputDeviceId === 'default'} onClick={() => onSelectOutputDevice('')} />
@@ -180,7 +183,7 @@ export default function Controls({
             <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-white/55">{Math.round(outputVolume * 100)}%</span></span>
             <input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={outputVolume} onChange={(event) => onOutputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
           </label>
-        </div>}
+        </AnchoredPopover>
       </div>
 
       <ControlButton

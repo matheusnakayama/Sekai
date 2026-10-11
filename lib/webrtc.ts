@@ -95,6 +95,7 @@ interface SpeakingWatcher {
   analyser: AnalyserNode;
   raf: number;
   cloned: MediaStreamTrack | null;
+  resumeOnInteraction: () => void;
 }
 
 /**
@@ -249,6 +250,8 @@ export class WebRTCManager {
     const watcher = this.speakingWatchers.get(peerId);
     if (watcher) {
       cancelAnimationFrame(watcher.raf);
+      window.removeEventListener('pointerdown', watcher.resumeOnInteraction);
+      window.removeEventListener('keydown', watcher.resumeOnInteraction);
       watcher.ctx.close().catch(() => {});
       this.speakingWatchers.delete(peerId);
     }
@@ -1604,6 +1607,8 @@ export class WebRTCManager {
     if (previousWatcher) {
       cancelAnimationFrame(previousWatcher.raf);
       previousWatcher.cloned?.stop();
+      window.removeEventListener('pointerdown', previousWatcher.resumeOnInteraction);
+      window.removeEventListener('keydown', previousWatcher.resumeOnInteraction);
       previousWatcher.ctx.close().catch(() => {});
       this.speakingWatchers.delete(id);
     }
@@ -1617,9 +1622,14 @@ export class WebRTCManager {
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.65;
       source.connect(analyser);
+      const resumeOnInteraction = () => {
+        if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+      };
       void ctx.resume().catch(() => {});
+      window.addEventListener('pointerdown', resumeOnInteraction);
+      window.addEventListener('keydown', resumeOnInteraction);
       const data = new Uint8Array(analyser.fftSize);
-      const watcher: SpeakingWatcher = { ctx, analyser, raf: 0, cloned };
+      const watcher: SpeakingWatcher = { ctx, analyser, raf: 0, cloned, resumeOnInteraction };
 
       let gate = createVoiceGate();
       const tick = () => {
@@ -1645,6 +1655,8 @@ export class WebRTCManager {
     this.speakingWatchers.forEach((w) => {
       cancelAnimationFrame(w.raf);
       w.cloned?.stop();
+      window.removeEventListener('pointerdown', w.resumeOnInteraction);
+      window.removeEventListener('keydown', w.resumeOnInteraction);
       w.ctx.close().catch(() => {});
     });
     this.speakingWatchers.clear();

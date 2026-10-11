@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Participant } from '@/lib/types';
 import { FocusIcon, MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 
@@ -35,6 +35,22 @@ export default function VideoTile({
   const [showScreenVolume, setShowScreenVolume] = useState(false);
   const [videoLive, setVideoLive] = useState(false);
   const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
+
+  const playAudioElement = useCallback(async (audio: HTMLAudioElement) => {
+    const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void>; sinkId?: string };
+    const needsSinkChange = outputDeviceId
+      ? sinkAudio.sinkId !== outputDeviceId
+      : Boolean(sinkAudio.sinkId && sinkAudio.sinkId !== 'default');
+    if (typeof sinkAudio.setSinkId === 'function' && needsSinkChange) {
+      try {
+        await sinkAudio.setSinkId(outputDeviceId || 'default');
+      } catch (error) {
+        // A falha ao escolher uma saída específica não deve silenciar a padrão.
+        console.warn('Não foi possível selecionar a saída de áudio:', error);
+      }
+    }
+    await audio.play();
+  }, [outputDeviceId]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -83,16 +99,20 @@ export default function VideoTile({
   }, [participant.camOn, participant.isLocal, participant.isSharingScreen, participant.stream, showVideo]);
 
   useEffect(() => {
-    const elements = [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current].filter((audio): audio is HTMLAudioElement => !!audio);
-    for (const audio of elements) {
-      const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> };
-      if (typeof sinkAudio.setSinkId === 'function') {
-        void sinkAudio.setSinkId(outputDeviceId).catch((error) => {
-          console.warn('Não foi possível selecionar a saída de áudio:', error);
-        });
+    const retryPlayback = () => {
+      const audios = [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current];
+      for (const audio of audios) {
+        if (!audio?.srcObject || audio.muted) continue;
+        void playAudioElement(audio).then(() => setPlaybackBlocked(false)).catch(() => setPlaybackBlocked(true));
       }
-    }
-  }, [outputDeviceId]);
+    };
+    window.addEventListener('pointerdown', retryPlayback);
+    window.addEventListener('keydown', retryPlayback);
+    return () => {
+      window.removeEventListener('pointerdown', retryPlayback);
+      window.removeEventListener('keydown', retryPlayback);
+    };
+  }, [outputDeviceId, playAudioElement]);
 
   useEffect(() => {
     const audio = voiceAudioRef.current;
@@ -106,7 +126,8 @@ export default function VideoTile({
 
     audio.srcObject = new MediaStream(tracks);
     const start = () => {
-      void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+      if (audio.muted) return;
+      void playAudioElement(audio).then(() => setPlaybackBlocked(false)).catch(() => {
         if (!audio.muted) setPlaybackBlocked(true);
       });
     };
@@ -117,7 +138,7 @@ export default function VideoTile({
       audio.pause();
       audio.srcObject = null;
     };
-  }, [muteRemoteAudio, participant.isLocal, voiceTrackKey]);
+  }, [muteRemoteAudio, outputDeviceId, participant.isLocal, participant.stream, playAudioElement, voiceTrackKey]);
 
   useEffect(() => {
     const audio = voiceAudioRef.current;
@@ -139,14 +160,14 @@ export default function VideoTile({
     }
 
     audio.srcObject = new MediaStream([participant.soundboardTrack]);
-    void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+    if (!audio.muted) void playAudioElement(audio).then(() => setPlaybackBlocked(false)).catch(() => {
       if (!participant.isLocal && !muteRemoteAudio && !soundEffectsMuted) setPlaybackBlocked(true);
     });
     return () => {
       audio.pause();
       audio.srcObject = null;
     };
-  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, participant.soundboardTrack, soundEffectsMuted, volume]);
+  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.soundboardTrack, playAudioElement, soundEffectsMuted, volume]);
 
   useEffect(() => {
     const audio = screenAudioRef.current;
@@ -159,21 +180,21 @@ export default function VideoTile({
     }
 
     audio.srcObject = new MediaStream([participant.screenAudioTrack]);
-    void audio.play().then(() => setPlaybackBlocked(false)).catch(() => {
+    if (!audio.muted) void playAudioElement(audio).then(() => setPlaybackBlocked(false)).catch(() => {
       if (!participant.isLocal && !muteRemoteAudio) setPlaybackBlocked(true);
     });
     return () => {
       audio.pause();
       audio.srcObject = null;
     };
-  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, screenVolume]);
+  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.screenAudioTrack, playAudioElement, screenVolume]);
 
   async function enablePlayback() {
     try {
       await videoRef.current?.play();
-      await voiceAudioRef.current?.play();
-      if (participant.soundboardTrack) await soundboardAudioRef.current?.play();
-      if (participant.screenAudioTrack) await screenAudioRef.current?.play();
+      for (const audio of [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current]) {
+        if (audio?.srcObject && !audio.muted) await playAudioElement(audio);
+      }
       setPlaybackBlocked(false);
     } catch {
       setPlaybackBlocked(true);
@@ -249,7 +270,7 @@ export default function VideoTile({
         </div>
       )}
 
-      {participant.stream && playbackBlocked && !participant.isLocal && (
+      {(participant.stream || participant.soundboardTrack || participant.screenAudioTrack) && playbackBlocked && !participant.isLocal && (
         <button
           type="button"
           onClick={enablePlayback}

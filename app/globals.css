@@ -631,18 +631,18 @@ button.bg-theme-gradient {
   /* Indicador estável de fala; a animação fica só na transição, não pisca enquanto fala. */
   .avatar-speaking {
     @apply ring-2 rounded-full;
-    box-shadow: 0 0 0 2px rgb(var(--d-brand)), 0 0 14px color-mix(in srgb, rgb(var(--d-brand)) 58%, transparent);
+    box-shadow: 0 0 0 2px var(--sekai-link, rgb(var(--d-brand))), 0 0 14px color-mix(in srgb, var(--sekai-link, rgb(var(--d-brand))) 58%, transparent);
   }
 
   .voice-speaking-avatar {
     position: relative;
-    box-shadow: 0 0 0 2px rgb(var(--d-brand)), 0 0 14px color-mix(in srgb, rgb(var(--d-brand)) 58%, transparent);
+    box-shadow: 0 0 0 2px var(--sekai-link, rgb(var(--d-brand))), 0 0 14px color-mix(in srgb, var(--sekai-link, rgb(var(--d-brand))) 58%, transparent);
     transition: box-shadow 120ms ease-out;
   }
 
   .voice-speaking-tile {
-    border-color: rgb(var(--d-brand));
-    box-shadow: 0 0 0 2px color-mix(in srgb, rgb(var(--d-brand)) 78%, transparent), 0 0 20px color-mix(in srgb, rgb(var(--d-brand)) 45%, transparent);
+    border-color: var(--sekai-link, rgb(var(--d-brand)));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--sekai-link, rgb(var(--d-brand))) 78%, transparent), 0 0 20px color-mix(in srgb, var(--sekai-link, rgb(var(--d-brand))) 45%, transparent);
   }
 }
 

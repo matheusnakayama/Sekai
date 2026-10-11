@@ -252,7 +252,12 @@ export default function RoomClient({
     analyser.smoothingTimeConstant = 0.65;
     const source = context.createMediaStreamSource(new MediaStream([track]));
     source.connect(analyser);
+    const resumeContext = () => {
+      if (context.state === 'suspended') void context.resume().catch(() => {});
+    };
     void context.resume().catch(() => {});
+    window.addEventListener('pointerdown', resumeContext);
+    window.addEventListener('keydown', resumeContext);
     const samples = new Uint8Array(analyser.fftSize);
     let frame = 0;
     let gate = createVoiceGate();
@@ -270,7 +275,15 @@ export default function RoomClient({
       frame = window.requestAnimationFrame(sample);
     };
     frame = window.requestAnimationFrame(sample);
-    return () => { window.cancelAnimationFrame(frame); source.disconnect(); void context.close(); setLocalSpeaking(false); updateLocalParticipant({ isSpeaking: false }); };
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('pointerdown', resumeContext);
+      window.removeEventListener('keydown', resumeContext);
+      source.disconnect();
+      void context.close();
+      setLocalSpeaking(false);
+      updateLocalParticipant({ isSpeaking: false });
+    };
   }, [activeMicrophoneTrackId, micOn, phase, deafened]);
 
   function updateHost(nextHostId: string) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
@@ -21,6 +21,7 @@ import ThemePicker from "@/components/ThemePicker";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
+import AnchoredPopover from "@/components/AnchoredPopover";
 import type { CustomBadge } from "@/lib/badges";
 import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
@@ -179,6 +180,8 @@ export function ChannelSidebar({
   const [soundboardOpen, setSoundboardOpen] = useState(false);
   const [voiceAudioMenuOpen, setVoiceAudioMenuOpen] = useState<"input" | "output" | null>(null);
   const [voiceSettingsExpanded, setVoiceSettingsExpanded] = useState(false);
+  const inputAudioAnchorRef = useRef<HTMLDivElement>(null);
+  const outputAudioAnchorRef = useRef<HTMLDivElement>(null);
   const [soundboardEffects, setSoundboardEffects] = useState<SoundboardEffect[]>([]);
   const [soundboardLoading, setSoundboardLoading] = useState(false);
   const [soundboardError, setSoundboardError] = useState("");
@@ -439,10 +442,10 @@ export function ChannelSidebar({
               <p className="truncate pl-5 text-xs text-discord-text-muted md:text-[11px]">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
             <div className="flex items-center gap-1">
-            {onToggleMute && <div className="relative flex items-center">
+            {onToggleMute && <div ref={inputAudioAnchorRef} className="relative flex items-center">
               <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5"/> : <Mic className="h-5 w-5"/>}</button>
               <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "input" ? null : "input")} aria-label="Opções do microfone" aria-expanded={voiceAudioMenuOpen === "input"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")}/></button>
-              {voiceAudioMenuOpen === "input" && <div className="absolute bottom-full left-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
+              <AnchoredPopover open={voiceAudioMenuOpen === "input"} anchorRef={inputAudioAnchorRef} width={288} className="rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
                 <p className="px-1 text-xs font-semibold">Dispositivo de entrada</p>
                 <div className="mt-2 max-h-28 space-y-1 overflow-y-auto">{voiceAudioSettings?.inputDevices.length ? voiceAudioSettings.inputDevices.map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceInputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedInputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedInputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>) : <p className="px-2 py-2 text-xs text-discord-text-muted">Carregando microfones…</p>}</div>
                 <div className="my-2 border-t border-white/[0.08]"/>
@@ -450,16 +453,16 @@ export function ChannelSidebar({
                 {voiceSettingsExpanded && <div className="mt-1 space-y-1">{(["standard", "noise-suppression"] as VoiceProfile[]).map((profile) => <button key={profile} type="button" onClick={() => onVoiceProfileChange?.(profile)} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.voiceProfile === profile && "bg-discord-brand/15 text-white")}><span>{profile === "standard" ? "Padrão" : "Supressão de ruído"}</span>{voiceAudioSettings?.voiceProfile === profile && <span className="h-1.5 w-1.5 rounded-full bg-discord-brand"/>}</button>)}</div>}
                 <label className="mt-2 block border-t border-white/[0.08] pt-3"><span className="flex justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-discord-text-muted">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span><input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={voiceAudioSettings?.inputVolume ?? 1} onChange={(event) => onVoiceInputVolumeChange?.(Number(event.target.value))} className="mt-2 w-full" style={{ accentColor: "rgb(var(--d-brand))" }}/></label>
                 <button type="button" onClick={() => setVoiceSettingsExpanded((expanded) => !expanded)} aria-expanded={voiceSettingsExpanded} className="mt-2 flex w-full items-center gap-2 border-t border-white/[0.08] px-2 pt-3 text-left text-xs font-semibold hover:text-white"><Settings className="h-4 w-4"/>Configurações de voz</button>
-              </div>}
+              </AnchoredPopover>
             </div>}
-            {onToggleDeafen && <div className="relative flex items-center">
+            {onToggleDeafen && <div ref={outputAudioAnchorRef} className="relative flex items-center">
               <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-5 w-5"/></button>
               <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "output" ? null : "output")} aria-label="Opções da saída de áudio" aria-expanded={voiceAudioMenuOpen === "output"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "output" && "rotate-180")}/></button>
-              {voiceAudioMenuOpen === "output" && <div className="absolute bottom-full left-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
+              <AnchoredPopover open={voiceAudioMenuOpen === "output"} anchorRef={outputAudioAnchorRef} width={288} className="rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
                 <p className="px-1 text-xs font-semibold">Dispositivo de saída</p>
                 {!voiceAudioSettings?.outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-discord-text-muted">Este navegador usa a saída padrão do sistema e não permite escolhê-la pelo Sekai.</p> : <div className="mt-2 max-h-28 space-y-1 overflow-y-auto"><button type="button" onClick={() => onSelectVoiceOutputDevice?.("")} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", !voiceAudioSettings?.selectedOutputDeviceId && "bg-discord-brand/15 text-white")}>Padrão do sistema{!voiceAudioSettings?.selectedOutputDeviceId && <span className="h-1.5 w-1.5 rounded-full bg-discord-brand"/>}</button>{(voiceAudioSettings?.outputDevices ?? []).filter((device) => device.deviceId !== "default").map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceOutputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>)}</div>}
                 <label className="mt-2 block border-t border-white/[0.08] pt-3"><span className="flex justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-discord-text-muted">{Math.round((voiceAudioSettings?.outputVolume ?? 1) * 100)}%</span></span><input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={voiceAudioSettings?.outputVolume ?? 1} onChange={(event) => onVoiceOutputVolumeChange?.(Number(event.target.value))} className="mt-2 w-full" style={{ accentColor: "rgb(var(--d-brand))" }}/></label>
-              </div>}
+              </AnchoredPopover>
             </div>}
             <button
               onClick={onDisconnectVoice}

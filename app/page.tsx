@@ -270,6 +270,7 @@ export default function Home() {
   const [callExpanded, setCallExpanded] = useState(false);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [pendingVoiceJoin, setPendingVoiceJoin] = useState<{ channelId: string; startedAt: number } | null>(null);
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
   const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
   const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
@@ -1494,24 +1495,31 @@ export default function Home() {
   async function joinVoiceChannel(channel: Channel) {
     setVoiceError("");
     setVoiceConnecting(true);
-    const { data, error } = await supabase.auth.getSession();
-    setVoiceConnecting(false);
+    const startedAt = Date.now();
+    setPendingVoiceJoin({ channelId: channel.id, startedAt });
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session?.access_token) {
+        setVoiceError("Sua sessão expirou. Saia e entre novamente no Sekai.");
+        return;
+      }
 
-    if (error || !data.session?.access_token) {
-      setVoiceError("Sua sessão expirou. Saia e entre novamente no Sekai.");
-      return;
+      // O `key` do RoomClient muda com o canal: trocar de canal encerra a chamada anterior.
+      setVoiceSession({
+        channelId: channel.id,
+        channelName: channel.name,
+        accessToken: data.session.access_token,
+        startedAt,
+        kind: "server",
+        serverId: activeServerId,
+      });
+      setCallExpanded(true);
+    } catch {
+      setVoiceError("Não foi possível iniciar a chamada. Tente novamente.");
+    } finally {
+      setVoiceConnecting(false);
+      setPendingVoiceJoin(null);
     }
-
-    // O `key` do RoomClient muda com o canal: trocar de canal encerra a chamada anterior.
-    setVoiceSession({
-      channelId: channel.id,
-      channelName: channel.name,
-      accessToken: data.session.access_token,
-      startedAt: Date.now(),
-      kind: "server",
-      serverId: activeServerId,
-    });
-    setCallExpanded(true);
   }
 
   async function handleJoinDirectCall(peerId: string, peerName: string, sendInvite: boolean) {
@@ -1567,6 +1575,7 @@ export default function Home() {
 
   function disconnectVoice() {
     setVoiceSession(null);
+    setPendingVoiceJoin(null);
     setCallExpanded(false);
     setVoiceParticipants([]);
     voiceControlsRef.current = null;
@@ -1866,9 +1875,36 @@ export default function Home() {
   );
   const connectedHere = !!voiceSession && voiceSession.channelId === activeChannelId;
   const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, joinedAt: participant.joinedAt, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking, isMuted: !participant.micOn, isDeafened: participant.isDeafened === true }));
-  const visibleVoiceMembersByChannel = voiceSession
-    ? { ...voiceMembersByChannel, [voiceSession.channelId]: liveVoiceMembers }
-    : voiceMembersByChannel;
+  const voiceChannelIdsToPreview = new Set([
+    ...(voiceSession?.kind === "server" ? [voiceSession.channelId] : []),
+    ...(pendingVoiceJoin ? [pendingVoiceJoin.channelId] : []),
+  ]);
+  const visibleVoiceMembersByChannel = { ...voiceMembersByChannel };
+  for (const channelId of voiceChannelIdsToPreview) {
+    const liveMembers = channelId === voiceSession?.channelId ? liveVoiceMembers : [];
+    const members = new Map((visibleVoiceMembersByChannel[channelId] ?? []).map((member) => [member.id, member] as const));
+    for (const member of liveMembers) {
+      const previous = members.get(member.id);
+      members.set(member.id, { ...previous, ...member, joinedAt: member.joinedAt ?? previous?.joinedAt, avatarUrl: member.avatarUrl ?? previous?.avatarUrl });
+    }
+    const selfJoinedAt = pendingVoiceJoin?.channelId === channelId
+      ? pendingVoiceJoin.startedAt
+      : voiceSession?.channelId === channelId ? voiceSession.startedAt : undefined;
+    if (currentUserId && selfJoinedAt && !members.has(currentUserId)) {
+      members.set(currentUserId, {
+        id: currentUserId,
+        name: currentMember?.displayName ?? myProfile?.displayName ?? "Você",
+        joinedAt: selfJoinedAt,
+        avatarUrl: currentMember?.avatarUrl ?? myProfile?.avatarUrl ?? null,
+        isMuted: !voiceControlState.micOn,
+        isDeafened: voiceControlState.deafened,
+      });
+    }
+    visibleVoiceMembersByChannel[channelId] = Array.from(members.values());
+  }
+  const connectedVoiceMembers = voiceSession?.kind === "server"
+    ? visibleVoiceMembersByChannel[voiceSession.channelId] ?? liveVoiceMembers
+    : liveVoiceMembers;
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
@@ -1919,7 +1955,7 @@ export default function Home() {
         connectedVoiceChannelName={voiceSession?.channelName}
         connectedVoiceStartedAt={voiceSession?.startedAt}
         connectedVoiceServerId={voiceSession?.kind === "server" ? voiceSession.serverId : undefined}
-        connectedVoiceMembers={liveVoiceMembers}
+        connectedVoiceMembers={connectedVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}
         onPresentScreen={voiceSession?.kind === "server" ? () => { void voiceControlsRef.current?.toggleScreenShare(); } : undefined}
         onPlaySoundEffect={(effect) => playServerSoundEffect(activeServerId, effect)}
