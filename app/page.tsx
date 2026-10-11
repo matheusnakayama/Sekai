@@ -30,10 +30,21 @@ import { SpotifyActivityPublisher } from "@/components/SpotifyActivityPublisher"
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { getServerTemplate } from "@/lib/serverTemplates";
-import type { SoundboardEffect } from "@/components/Controls";
+import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-type VoiceControlHandle = { toggleMic: () => void; toggleDeafen: () => void; toggleScreenShare: () => Promise<void>; playSoundEffect: (effect: SoundboardEffect) => Promise<boolean> };
+type VoiceControlHandle = {
+  toggleMic: () => void;
+  toggleDeafen: () => void;
+  toggleScreenShare: () => Promise<void>;
+  playSoundEffect: (effect: SoundboardEffect) => Promise<boolean>;
+  audioSettings: VoiceAudioSettings;
+  selectInputDevice: (deviceId: string) => void;
+  selectOutputDevice: (deviceId: string) => void;
+  setInputVolume: (volume: number) => void;
+  setOutputVolume: (volume: number) => void;
+  setVoiceProfile: (profile: VoiceProfile) => void;
+};
 type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; blockInviteLinks?: boolean; slowmodeSeconds?: number };
 
 function channelCacheKey(userId: string, serverId: string) {
@@ -251,6 +262,7 @@ export default function Home() {
     channelId: string;
     channelName: string;
     accessToken: string;
+    startedAt: number;
     kind: "server" | "dm";
     serverId?: string;
     peerUserId?: string;
@@ -261,6 +273,7 @@ export default function Home() {
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
   const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
   const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
+  const [voiceAudioSettings, setVoiceAudioSettings] = useState<VoiceAudioSettings | null>(null);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [mutedSoundEffectUserIds, setMutedSoundEffectUserIds] = useState<string[]>(() => {
@@ -1246,6 +1259,13 @@ export default function Home() {
 
   const handleVoiceControlsReady = useCallback((controls: VoiceControlHandle | null) => {
     voiceControlsRef.current = controls;
+    const next = controls?.audioSettings ?? null;
+    setVoiceAudioSettings((current) => current && next &&
+      current.inputDevices === next.inputDevices && current.outputDevices === next.outputDevices &&
+      current.selectedInputDeviceId === next.selectedInputDeviceId && current.selectedOutputDeviceId === next.selectedOutputDeviceId &&
+      current.inputVolume === next.inputVolume && current.outputVolume === next.outputVolume &&
+      current.voiceProfile === next.voiceProfile && current.outputDeviceSelectionSupported === next.outputDeviceSelectionSupported
+      ? current : next);
   }, []);
 
   const handleVoiceControlStateChange = useCallback((state: { micOn: boolean; deafened: boolean; isSpeaking: boolean }) => {
@@ -1479,6 +1499,7 @@ export default function Home() {
       channelId: channel.id,
       channelName: channel.name,
       accessToken: data.session.access_token,
+      startedAt: Date.now(),
       kind: "server",
       serverId: activeServerId,
     });
@@ -1522,6 +1543,7 @@ export default function Home() {
         channelId: roomId,
         channelName: `Ligação com ${peerName}`,
         accessToken: data.session.access_token,
+        startedAt: Date.now(),
         kind: "dm",
         peerUserId: peerId,
       });
@@ -1835,7 +1857,7 @@ export default function Home() {
     voiceSession.kind === "dm" || (activeChannelType === "voice" && activeChannelId === voiceSession.channelId)
   );
   const connectedHere = !!voiceSession && voiceSession.channelId === activeChannelId;
-  const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking }));
+  const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, joinedAt: participant.joinedAt, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking }));
   const visibleVoiceMembersByChannel = voiceSession
     ? { ...voiceMembersByChannel, [voiceSession.channelId]: liveVoiceMembers }
     : voiceMembersByChannel;
@@ -1878,8 +1900,15 @@ export default function Home() {
         onOpenSettings={() => setShowUserSettings(true)}
         onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
         onToggleDeafen={voiceSession ? () => voiceControlsRef.current?.toggleDeafen() : undefined}
+        voiceAudioSettings={voiceAudioSettings}
+        onSelectVoiceInputDevice={(deviceId) => voiceControlsRef.current?.selectInputDevice(deviceId)}
+        onSelectVoiceOutputDevice={(deviceId) => voiceControlsRef.current?.selectOutputDevice(deviceId)}
+        onVoiceInputVolumeChange={(volume) => voiceControlsRef.current?.setInputVolume(volume)}
+        onVoiceOutputVolumeChange={(volume) => voiceControlsRef.current?.setOutputVolume(volume)}
+        onVoiceProfileChange={(profile) => voiceControlsRef.current?.setVoiceProfile(profile)}
         connectedVoiceChannelId={voiceSession?.channelId ?? null}
         connectedVoiceChannelName={voiceSession?.channelName}
+        connectedVoiceStartedAt={voiceSession?.startedAt}
         connectedVoiceServerId={voiceSession?.kind === "server" ? voiceSession.serverId : undefined}
         connectedVoiceMembers={liveVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}

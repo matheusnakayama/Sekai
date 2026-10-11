@@ -6,6 +6,8 @@ import VideoTile from './VideoTile';
 export default function ParticipantsGrid({
   participants,
   muteRemoteAudio = false,
+  outputDeviceId = '',
+  masterOutputVolume = 1,
   mutedSoundEffectUserIds = [],
   focusedParticipantId = null,
   onFocusPresentation,
@@ -13,6 +15,8 @@ export default function ParticipantsGrid({
 }: {
   participants: Participant[];
   muteRemoteAudio?: boolean;
+  outputDeviceId?: string;
+  masterOutputVolume?: number;
   mutedSoundEffectUserIds?: string[];
   focusedParticipantId?: string | null;
   onFocusPresentation?: (participantId: string) => void;
@@ -25,6 +29,8 @@ export default function ParticipantsGrid({
         <VideoTile
           participant={focusedParticipant}
           muteRemoteAudio={muteRemoteAudio}
+          outputDeviceId={outputDeviceId}
+          masterOutputVolume={masterOutputVolume}
           soundEffectsMuted={mutedSoundEffectUserIds.includes(focusedParticipant.id)}
           focused
           onExitPresentationFocus={onExitPresentationFocus}
@@ -43,6 +49,8 @@ export default function ParticipantsGrid({
           key={p.id}
           participant={p}
           muteRemoteAudio={muteRemoteAudio}
+          outputDeviceId={outputDeviceId}
+          masterOutputVolume={masterOutputVolume}
           soundEffectsMuted={mutedSoundEffectUserIds.includes(p.id)}
           onFocusPresentation={() => onFocusPresentation?.(p.id)}
         />

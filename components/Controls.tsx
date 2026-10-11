@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Music, Music2, Play, Square, Volume2, VolumeX } from 'lucide-react';
+import { ChevronDown, Music, Music2, Play, Settings, Square, Volume2, VolumeX } from 'lucide-react';
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon } from './icons';
 
 export interface SoundboardEffect {
@@ -15,6 +15,24 @@ export type ScreenFrameRate = 30 | 60 | 90 | 120;
 export interface ScreenShareSettings {
   height: ScreenResolution;
   frameRate: ScreenFrameRate;
+}
+
+export interface AudioDeviceOption {
+  deviceId: string;
+  label: string;
+}
+
+export type VoiceProfile = 'standard' | 'noise-suppression';
+
+export interface VoiceAudioSettings {
+  inputDevices: AudioDeviceOption[];
+  outputDevices: AudioDeviceOption[];
+  selectedInputDeviceId: string;
+  selectedOutputDeviceId: string;
+  inputVolume: number;
+  outputVolume: number;
+  voiceProfile: VoiceProfile;
+  outputDeviceSelectionSupported: boolean;
 }
 
 export default function Controls({
@@ -34,6 +52,19 @@ export default function Controls({
   onStopCallMusic,
   onToggleMic,
   onToggleDeafen,
+  inputDevices,
+  outputDevices,
+  selectedInputDeviceId,
+  selectedOutputDeviceId,
+  onSelectInputDevice,
+  onSelectOutputDevice,
+  inputVolume,
+  outputVolume,
+  onInputVolumeChange,
+  onOutputVolumeChange,
+  voiceProfile,
+  onVoiceProfileChange,
+  outputDeviceSelectionSupported,
   onToggleCam,
   onToggleScreenShare,
   onLeave,
@@ -58,6 +89,19 @@ export default function Controls({
   onStopCallMusic: () => void;
   onToggleMic: () => void;
   onToggleDeafen: () => void;
+  inputDevices: AudioDeviceOption[];
+  outputDevices: AudioDeviceOption[];
+  selectedInputDeviceId: string;
+  selectedOutputDeviceId: string;
+  onSelectInputDevice: (deviceId: string) => void;
+  onSelectOutputDevice: (deviceId: string) => void;
+  inputVolume: number;
+  outputVolume: number;
+  onInputVolumeChange: (volume: number) => void;
+  onOutputVolumeChange: (volume: number) => void;
+  voiceProfile: VoiceProfile;
+  onVoiceProfileChange: (profile: VoiceProfile) => void;
+  outputDeviceSelectionSupported: boolean;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
   onLeave: () => void;
@@ -69,6 +113,8 @@ export default function Controls({
   const [copied, setCopied] = useState(false);
   const [soundboardOpen, setSoundboardOpen] = useState(false);
   const [musicOpen, setMusicOpen] = useState(false);
+  const [audioMenuOpen, setAudioMenuOpen] = useState<'input' | 'output' | null>(null);
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
   const musicFileRef = useRef<HTMLInputElement>(null);
 
   function handleCopy() {
@@ -79,27 +125,63 @@ export default function Controls({
 
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-3">
-      <ControlButton
-        active={micOn}
-        activeLabel="Silenciar microfone"
-        inactiveLabel="Ativar microfone"
-        onClick={onToggleMic}
-        danger={!micOn}
-        disabled={micLockedByHost}
-        title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : undefined}
-      >
-        <MicIcon off={!micOn} />
-      </ControlButton>
+      <div className="relative flex items-center gap-1">
+        <ControlButton
+          active={micOn}
+          activeLabel="Silenciar microfone"
+          inactiveLabel="Ativar microfone"
+          onClick={onToggleMic}
+          danger={!micOn}
+          disabled={micLockedByHost}
+          title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : undefined}
+        >
+          <MicIcon off={!micOn} />
+        </ControlButton>
+        <AudioArrowButton label="Opções do microfone" open={audioMenuOpen === 'input'} onClick={() => { setAudioMenuOpen((open) => open === 'input' ? null : 'input'); setVoiceSettingsOpen(false); }} />
+        {audioMenuOpen === 'input' && <div className="absolute bottom-full left-0 z-[70] mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+          <h3 className="px-1 text-sm font-semibold">Dispositivo de entrada</h3>
+          <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+            {inputDevices.length ? inputDevices.map((device) => <AudioOption key={device.deviceId} label={device.label} selected={device.deviceId === selectedInputDeviceId} onClick={() => onSelectInputDevice(device.deviceId)} />) : <p className="px-2 py-2 text-xs text-white/50">Nenhum microfone encontrado</p>}
+          </div>
+          <div className="my-3 border-t border-white/10" />
+          <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} aria-expanded={voiceSettingsOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-white/[0.06]">
+            <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceProfile === 'standard' ? 'Padrão' : 'Supressão de ruído'}</span></span><Settings className="h-4 w-4 text-white/55" />
+          </button>
+          {voiceSettingsOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1">
+            <AudioOption label="Padrão" selected={voiceProfile === 'standard'} onClick={() => onVoiceProfileChange('standard')} />
+            <AudioOption label="Supressão de ruído" selected={voiceProfile === 'noise-suppression'} onClick={() => onVoiceProfileChange('noise-suppression')} />
+          </div>}
+          <label className="mt-3 block border-t border-white/10 pt-3">
+            <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round(inputVolume * 100)}%</span></span>
+            <input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={inputVolume} onChange={(event) => onInputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
+          </label>
+          <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
+        </div>}
+      </div>
 
-      <ControlButton
-        active={!deafened}
-        activeLabel="Ensurdecer"
-        inactiveLabel="Reativar áudio"
-        onClick={onToggleDeafen}
-        danger={deafened}
-      >
-        {deafened ? <VolumeX className="h-5 w-5"/> : <Volume2 className="h-5 w-5"/>}
-      </ControlButton>
+      <div className="relative flex items-center gap-1">
+        <ControlButton
+          active={!deafened}
+          activeLabel="Ensurdecer"
+          inactiveLabel="Reativar áudio"
+          onClick={onToggleDeafen}
+          danger={deafened}
+        >
+          {deafened ? <VolumeX className="h-5 w-5"/> : <Volume2 className="h-5 w-5"/>}
+        </ControlButton>
+        <AudioArrowButton label="Opções de saída de áudio" open={audioMenuOpen === 'output'} onClick={() => { setAudioMenuOpen((open) => open === 'output' ? null : 'output'); setVoiceSettingsOpen(false); }} />
+        {audioMenuOpen === 'output' && <div className="absolute bottom-full left-0 z-[70] mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+          <h3 className="px-1 text-sm font-semibold">Dispositivo de saída</h3>
+          {!outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-white/55">Este navegador não permite escolher a saída de áudio. O Sekai continuará usando a saída padrão do sistema.</p> : <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+            <AudioOption label="Padrão do sistema" selected={!selectedOutputDeviceId || selectedOutputDeviceId === 'default'} onClick={() => onSelectOutputDevice('')} />
+            {outputDevices.filter((device) => device.deviceId !== 'default').map((device) => <AudioOption key={device.deviceId} label={device.label} selected={device.deviceId === selectedOutputDeviceId} onClick={() => onSelectOutputDevice(device.deviceId)} />)}
+          </div>}
+          <label className="mt-3 block border-t border-white/10 pt-3">
+            <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-white/55">{Math.round(outputVolume * 100)}%</span></span>
+            <input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={outputVolume} onChange={(event) => onOutputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
+          </label>
+        </div>}
+      </div>
 
       <ControlButton
         active={camOn}
@@ -301,4 +383,16 @@ function ControlButton({
       {children}
     </button>
   );
+}
+
+function AudioArrowButton({ label, open, onClick }: { label: string; open: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} aria-label={label} aria-expanded={open} title={label} className="grid h-9 w-8 place-items-center rounded-lg border border-surface-border bg-surface-card text-white/65 transition hover:bg-surface-border hover:text-white">
+    <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+  </button>;
+}
+
+function AudioOption({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={`flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-xs transition ${selected ? 'bg-brand-500/20 text-white' : 'text-white/75 hover:bg-white/[0.06] hover:text-white'}`}>
+    <span className="truncate">{label}</span>{selected && <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />}
+  </button>;
 }

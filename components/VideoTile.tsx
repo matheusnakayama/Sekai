@@ -7,6 +7,8 @@ import { FocusIcon, MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 export default function VideoTile({
   participant,
   muteRemoteAudio = false,
+  outputDeviceId = '',
+  masterOutputVolume = 1,
   soundEffectsMuted = false,
   focused = false,
   onFocusPresentation,
@@ -14,6 +16,8 @@ export default function VideoTile({
 }: {
   participant: Participant;
   muteRemoteAudio?: boolean;
+  outputDeviceId?: string;
+  masterOutputVolume?: number;
   soundEffectsMuted?: boolean;
   focused?: boolean;
   onFocusPresentation?: () => void;
@@ -79,6 +83,18 @@ export default function VideoTile({
   }, [participant.camOn, participant.isLocal, participant.isSharingScreen, participant.stream, showVideo]);
 
   useEffect(() => {
+    const elements = [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current].filter((audio): audio is HTMLAudioElement => !!audio);
+    for (const audio of elements) {
+      const sinkAudio = audio as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> };
+      if (typeof sinkAudio.setSinkId === 'function') {
+        void sinkAudio.setSinkId(outputDeviceId).catch((error) => {
+          console.warn('Não foi possível selecionar a saída de áudio:', error);
+        });
+      }
+    }
+  }, [outputDeviceId]);
+
+  useEffect(() => {
     const audio = voiceAudioRef.current;
     if (!audio) return;
     const tracks = (participant.stream?.getAudioTracks() ?? []).filter((track) => track.readyState !== 'ended');
@@ -106,16 +122,16 @@ export default function VideoTile({
   useEffect(() => {
     const audio = voiceAudioRef.current;
     if (!audio) return;
-    audio.volume = volume;
+    audio.volume = Math.max(0, Math.min(1, volume * masterOutputVolume));
     if (participant.isLocal || muteRemoteAudio) audio.muted = true;
     else if (volume === 0) audio.muted = true;
     else if (audio.srcObject) audio.muted = false;
-  }, [muteRemoteAudio, participant.isLocal, volume]);
+  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, volume]);
 
   useEffect(() => {
     const audio = soundboardAudioRef.current;
     if (!audio) return;
-    audio.volume = volume;
+    audio.volume = Math.max(0, Math.min(1, volume * masterOutputVolume));
     audio.muted = participant.isLocal || volume === 0 || muteRemoteAudio || soundEffectsMuted;
     if (!participant.soundboardTrack) {
       audio.srcObject = null;
@@ -130,12 +146,12 @@ export default function VideoTile({
       audio.pause();
       audio.srcObject = null;
     };
-  }, [muteRemoteAudio, participant.isLocal, participant.soundboardTrack, soundEffectsMuted, volume]);
+  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, participant.soundboardTrack, soundEffectsMuted, volume]);
 
   useEffect(() => {
     const audio = screenAudioRef.current;
     if (!audio) return;
-    audio.volume = screenVolume;
+    audio.volume = Math.max(0, Math.min(1, screenVolume * masterOutputVolume));
     audio.muted = participant.isLocal || screenVolume === 0 || muteRemoteAudio;
     if (!participant.screenAudioTrack) {
       audio.srcObject = null;
@@ -150,7 +166,7 @@ export default function VideoTile({
       audio.pause();
       audio.srcObject = null;
     };
-  }, [muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, screenVolume]);
+  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, screenVolume]);
 
   async function enablePlayback() {
     try {

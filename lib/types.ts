@@ -22,6 +22,7 @@ export interface PresenceMemberInfo {
 export interface Participant {
   id: string; // pusher connection/member id
   name: string;
+  joinedAt?: number;
   avatarUrl?: string | null;
   stream?: MediaStream;
   soundboardTrack?: MediaStreamTrack;

@@ -9,10 +9,21 @@ type VoiceConstraints = MediaTrackConstraints & { voiceIsolation?: boolean };
 
 const MAKEUP_GAIN = 2.6;
 const sourceDeviceIds = new WeakMap<MediaStreamTrack, string>();
+const voiceInputGains = new WeakMap<MediaStreamTrack, GainNode>();
 
 export function voiceDeviceId(track: MediaStreamTrack | undefined): string | undefined {
   if (!track) return undefined;
   return sourceDeviceIds.get(track) || track.getSettings().deviceId || undefined;
+}
+
+/** Ajusta o volume enviado pelo microfone sem interromper a chamada. */
+export function setVoiceInputVolume(track: MediaStreamTrack | undefined, volume: number): boolean {
+  if (!track) return false;
+  const gain = voiceInputGains.get(track);
+  if (!gain) return false;
+  const normalized = Math.max(0, Math.min(2, volume));
+  gain.gain.setTargetAtTime(MAKEUP_GAIN * normalized, gain.context.currentTime, 0.025);
+  return true;
 }
 
 export function createVoiceGate(): VoiceGate {
@@ -44,12 +55,12 @@ export function advanceVoiceGate(gate: VoiceGate, rms: number, now: number): Voi
   return { speaking: next, aboveSince, belowSince, noiseFloor };
 }
 
-export function voiceInputConstraints(deviceId?: string): VoiceConstraints {
+export function voiceInputConstraints(deviceId?: string, noiseSuppression = false): VoiceConstraints {
   return {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     echoCancellation: true,
     // O supressor do navegador descartava a fala que não estivesse colada no microfone.
-    noiseSuppression: false,
+    noiseSuppression,
     autoGainControl: true,
     voiceIsolation: false,
     channelCount: 1,
@@ -142,6 +153,7 @@ export async function amplifyMicrophone(track: MediaStreamTrack): Promise<{ trac
     await context.close().catch(() => undefined);
     return { track, stop() {}, amplified: false };
   }
+  voiceInputGains.set(amplified, gain);
   amplified.contentHint = "speech";
 
   let stopped = false;
@@ -162,8 +174,8 @@ export async function amplifyMicrophone(track: MediaStreamTrack): Promise<{ trac
 }
 
 /** Abre câmera e microfone. Se a câmera falhar, devolve só o microfone. */
-export async function openCallInput(options: { video: boolean; audioDeviceId?: string } = { video: false }): Promise<MediaStream> {
-  const audio = voiceInputConstraints(options.audioDeviceId);
+export async function openCallInput(options: { video: boolean; audioDeviceId?: string; noiseSuppression?: boolean } = { video: false }): Promise<MediaStream> {
+  const audio = voiceInputConstraints(options.audioDeviceId, options.noiseSuppression);
   let raw: MediaStream;
   try {
     raw = await requestUserMedia(audio, options.video);
@@ -175,7 +187,7 @@ export async function openCallInput(options: { video: boolean; audioDeviceId?: s
   if (!microphone) return raw;
   microphone.contentHint = "speech";
   try {
-    await microphone.applyConstraints(voiceInputConstraints());
+    await microphone.applyConstraints(voiceInputConstraints(options.audioDeviceId, options.noiseSuppression));
   } catch {
     // O navegador ficou com o melhor ajuste que aceitou na abertura.
   }
