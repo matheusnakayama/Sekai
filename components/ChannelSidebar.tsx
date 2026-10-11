@@ -358,8 +358,8 @@ export function ChannelSidebar({
                                   ) : member.name[0]?.toUpperCase()}
                                 </div>
                                 <span className="min-w-0 flex-1 truncate text-xs text-discord-text-normal md:text-[11px]">{member.name}</span>
-                                {member.isMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Microfone mutado" title="Microfone mutado" />}
-                                {member.isDeafened && <Headphones className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Ensurdecido" title="Ensurdecido" />}
+                                {member.isMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Microfone mutado" />}
+                                {member.isDeafened && <Headphones className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Ensurdecido" />}
                                 {member.joinedAt && <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}>{formatVoiceDuration(clockNow - member.joinedAt)}</span>}
                               </div>
                             ))}
