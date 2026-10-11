@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Play, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { ChatDisplayPreferences } from "@/lib/chatPreferences";
 import { medalClipId, medalSocialVideoUrl } from "@/lib/medal";
@@ -15,87 +15,48 @@ type Preview = { url: string; title: string; description: string; image: string;
 const previewCache = new Map<string, Preview | null>();
 
 function TikTokVideoPlayer({ videoId }: { videoId: string }) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const playerReady = useRef(false);
-  const wantsPlayback = useRef(false);
-  const wantsMute = useRef(false);
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-
-  useEffect(() => {
-    function receivePlayerMessage(event: MessageEvent) {
-      if (event.origin !== "https://www.tiktok.com" || event.source !== frameRef.current?.contentWindow) return;
-      const data = event.data as { "x-tiktok-player"?: boolean; type?: string; value?: number | boolean } | null;
-      if (!data || data["x-tiktok-player"] !== true) return;
-      if (data.type === "onPlayerReady") {
-        playerReady.current = true;
-        if (wantsPlayback.current) sendPlayerMessage("play");
-        if (wantsMute.current) sendPlayerMessage("mute");
-      } else if (data.type === "onStateChange") {
-        const nextPlaying = data.value === 1 || data.value === 3;
-        wantsPlayback.current = nextPlaying;
-        setPlaying(nextPlaying);
-      } else if (data.type === "onMute" && typeof data.value === "boolean") {
-        wantsMute.current = data.value;
-        setMuted(data.value);
-      }
-    }
-
-    function sendPlayerMessage(type: "play" | "pause" | "mute" | "unMute") {
-      frameRef.current?.contentWindow?.postMessage({ type, "x-tiktok-player": true }, "https://www.tiktok.com");
-    }
-
-    window.addEventListener("message", receivePlayerMessage);
-    return () => window.removeEventListener("message", receivePlayerMessage);
-  }, []);
-
-  function sendPlayerMessage(type: "play" | "pause" | "mute" | "unMute") {
-    frameRef.current?.contentWindow?.postMessage({ type, "x-tiktok-player": true }, "https://www.tiktok.com");
-  }
-
-  function togglePlayback() {
-    const nextPlaying = !playing;
-    wantsPlayback.current = nextPlaying;
-    setPlaying(nextPlaying);
-    if (playerReady.current) sendPlayerMessage(nextPlaying ? "play" : "pause");
-  }
-
-  function toggleMute(event: React.MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    const nextMuted = !muted;
-    wantsMute.current = nextMuted;
-    setMuted(nextMuted);
-    if (playerReady.current) sendPlayerMessage(nextMuted ? "mute" : "unMute");
-  }
-
   return (
-    <div className="group relative aspect-[9/16] w-full max-w-[320px] overflow-hidden rounded-xl bg-black max-h-[min(568px,68dvh)]">
+    <div className="relative mt-2 h-[min(460px,58dvh)] w-full max-w-[280px] overflow-hidden rounded-xl bg-black">
       <iframe
-        ref={frameRef}
-        src={`https://www.tiktok.com/player/v1/${encodeURIComponent(videoId)}?controls=0&play_button=0&volume_control=0&fullscreen_button=0&timestamp=0&progress_bar=0&music_info=0&description=0&rel=0&native_context_menu=0`}
+        src={`https://www.tiktok.com/player/v1/${encodeURIComponent(videoId)}?controls=1&play_button=1&volume_control=1&fullscreen_button=0&timestamp=0&progress_bar=1&music_info=0&description=0&rel=0&native_context_menu=0&loop=1`}
         title="Vídeo do TikTok"
         loading="lazy"
-        allow="encrypted-media; picture-in-picture; web-share"
+        allow="autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
-        className="pointer-events-none h-full w-full border-0"
+        className="absolute inset-0 h-full w-full border-0"
       />
-      <button
-        type="button"
-        onClick={togglePlayback}
-        aria-label={playing ? "Pausar vídeo do TikTok" : "Reproduzir vídeo do TikTok"}
-        aria-pressed={playing}
-        className="absolute inset-0 z-10 grid cursor-pointer place-items-center bg-transparent text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand"
-      >
-        {!playing && <span className="grid h-12 w-12 place-items-center rounded-full bg-black/60 shadow-lg"><Play size={22} fill="currentColor" /></span>}
-      </button>
-      <div className="absolute inset-x-2 bottom-2 z-20 flex items-center justify-between rounded-lg bg-black/65 p-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-        <button type="button" onClick={(event) => { event.stopPropagation(); togglePlayback(); }} aria-label={playing ? "Pausar vídeo" : "Reproduzir vídeo"} className="grid h-8 w-8 place-items-center rounded-md text-white hover:bg-white/15">
-          {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
-        </button>
-        <button type="button" onClick={toggleMute} aria-label={muted ? "Ativar áudio" : "Silenciar vídeo"} aria-pressed={muted} className="grid h-8 w-8 place-items-center rounded-md text-white hover:bg-white/15">
-          {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
-        </button>
+      <div aria-hidden="true" className="pointer-events-auto absolute inset-x-0 top-0 z-10 h-10 bg-transparent" />
+      <div aria-hidden="true" className="pointer-events-auto absolute right-0 top-10 z-10 h-[calc(100%-7.5rem)] w-11 bg-transparent" />
+    </div>
+  );
+}
+
+function InstagramReelPlayer({ videoId }: { videoId: string }) {
+  const [playbackKey, setPlaybackKey] = useState(0);
+  const playerUrl = `https://www.instagram.com/reel/${encodeURIComponent(videoId)}/embed/?hidecaption=true`;
+
+  return (
+    <div className="mt-2 w-full">
+      <div className="relative h-[min(460px,58dvh)] w-full max-w-[280px] overflow-hidden rounded-xl bg-black">
+        <iframe
+          key={playbackKey}
+          src={playerUrl}
+          title="Reel do Instagram"
+          loading="lazy"
+          allow="autoplay; encrypted-media; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="absolute left-1/2 top-[-3.5rem] h-[calc(100%_+_3.5rem)] w-[326px] max-w-none -translate-x-1/2 border-0"
+          scrolling="no"
+        />
+        <button
+          type="button"
+          onClick={() => setPlaybackKey((key) => key + 1)}
+          aria-label="Rever vídeo do Instagram"
+          title="Rever vídeo"
+          className="absolute bottom-2 right-2 z-10 grid h-8 w-8 place-items-center rounded-full bg-black/75 text-white shadow transition hover:bg-black"
+        ><RotateCcw size={15} /></button>
       </div>
     </div>
   );
@@ -163,21 +124,7 @@ function MediaEmbed({ url }: { url: string }) {
       </div>;
     }
     if (provider === "tiktok") return <TikTokVideoPlayer videoId={id} />;
-    const playerUrl = `https://www.instagram.com/reel/${encodeURIComponent(id)}/embed/`;
-    return <div className="mt-2 w-full">
-      <div className="h-[min(460px,58dvh)] w-full max-w-[280px] overflow-hidden rounded-xl bg-black">
-        <iframe
-          src={playerUrl}
-          title="Reel do Instagram"
-          loading="lazy"
-          allow="autoplay; encrypted-media; picture-in-picture; web-share"
-          allowFullScreen
-          referrerPolicy="strict-origin-when-cross-origin"
-          className="h-full w-full border-0"
-        />
-      </div>
-      <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-discord-brand hover:underline">Abrir no Instagram</a>
-    </div>;
+    return <InstagramReelPlayer videoId={id} />;
   }
   if (isVideoUrl(url)) {
     return (
