@@ -80,23 +80,32 @@ export function spotifySyncIssueMessage(error: unknown) {
   const rawMessage = error instanceof Error ? error.message : String(details.message || "");
   const normalized = `${code} ${rawMessage}`.toLowerCase();
 
-  if (code === "invalid_grant" || normalized.includes("invalid_grant")) {
-    return "A autorização do Spotify expirou. Conecte sua conta do Spotify novamente.";
-  }
-  if (status === 403) {
-    return "O Spotify recusou o acesso desta conta (403). Se o app estiver em Development Mode, adicione este usuário em Spotify Developer Dashboard → Settings → Users Management; o modo atual permite até 5 usuários autorizados.";
-  }
-  if (status === 401) {
-    return "A autorização do Spotify expirou ou foi revogada. Desconecte e conecte sua conta novamente.";
-  }
-  if (status === 429) {
-    return "O Spotify limitou temporariamente as consultas. A sincronização tentará novamente em instantes.";
+  if (error instanceof SpotifyApiError) {
+    if (code === "invalid_grant" || normalized.includes("invalid_grant")) {
+      return "A autorização do Spotify expirou. Conecte sua conta do Spotify novamente.";
+    }
+    if (status === 403) {
+      return "A API do Spotify recusou esta conta (403). Em Development Mode, confira se a conta está autorizada em Spotify Developer Dashboard → Settings → Users Management; cada conta precisa ser adicionada, mesmo que ainda haja vagas no limite.";
+    }
+    if (status === 401) {
+      return "A autorização do Spotify expirou ou foi revogada. Desconecte e conecte sua conta novamente.";
+    }
+    if (status === 429) {
+      return "O Spotify limitou temporariamente as consultas. A sincronização tentará novamente em instantes.";
+    }
+    return `A API do Spotify não conseguiu ler a faixa${status ? ` (HTTP ${status})` : ""}. Confira se há uma música tocando e tente reconectar.`;
   }
   if (normalized.includes("user_now_playing") && (normalized.includes("does not exist") || normalized.includes("schema cache") || normalized.includes("relation"))) {
     return "A tabela de atividade do Spotify não foi encontrada no Supabase. Aplique db/spotify_now_playing_migration.sql no SQL Editor.";
   }
   if (normalized.includes("row-level security") || normalized.includes("rls") || code === "42501") {
     return "O Supabase bloqueou a gravação da atividade. Confira as políticas RLS de user_now_playing no Supabase.";
+  }
+  if (status === 401 || status === 403) {
+    return `O Supabase recusou a gravação da atividade (HTTP ${status}). Confira a sessão e as políticas RLS de user_now_playing.`;
+  }
+  if (status === 429) {
+    return "O Supabase limitou temporariamente a gravação da atividade. A sincronização tentará novamente em instantes.";
   }
   return "Não foi possível sincronizar sua atividade do Spotify. Confira a conexão e tente reconectar; se continuar, abra o console do navegador para ver o erro.";
 }
