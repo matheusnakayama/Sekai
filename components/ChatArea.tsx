@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Hash, MoreHorizontal, Pin, Plus, Smile, SendHorizontal, Star, X, Check, Image as ImageIcon } from "lucide-react";
+import { Hash, MoreHorizontal, Pin, Plus, Smile, SendHorizontal, Star, X, Check, FileText, MessageSquarePlus, BarChart3, Sparkles, Music2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
@@ -20,6 +20,9 @@ import { useDialogs } from "@/components/DialogProvider";
 import { MessageContextMenu } from "@/components/MessageContextMenu";
 import { forwardedContent, messageLink, QUICK_REACTIONS, quoteDraft, reminderLabel, STANDARD_EMOJIS } from "@/lib/messageMenu";
 import { readSaved, rememberReport, toggleSaved, type SavedChatMessage } from "@/lib/savedMessages";
+import { ChatTopicCard, ChatTopicThreadDialog } from "@/components/ChatTopic";
+import { ChatPollCard } from "@/components/ChatPollCard";
+import { beginSpotifyConnect, ensureSpotifyToken, fetchCurrentlyPlaying } from "@/lib/spotify";
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
 
@@ -46,6 +49,10 @@ export interface ChatMessage {
   content: string;
   systemType?: "member_joined" | "member_left" | "member_kicked" | "member_banned";
   attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentMimeType?: string | null;
+  topicId?: string | null;
+  pollId?: string | null;
   createdAt: string; // ISO
   reactions?: { emoji: string; count: number; reactedByMe?: boolean }[];
 }
@@ -63,7 +70,7 @@ interface ChatAreaProps {
   messages: ChatMessage[];
   loading?: boolean;
   slashCommands: SlashCommand[];
-  onSendMessage: (content: string, attachmentUrl?: string | null) => void;
+  onSendMessage: (content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) => void;
   onUploadFile?: (file: File) => Promise<string>;
   onToggleReaction?: (messageId: string, emoji: string) => void;
   currentUserId?: string;
@@ -84,7 +91,7 @@ interface ChatAreaProps {
   onToggleMemberRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
   viewerNames?: string[];
   textChannels?: { id: string; name: string }[];
-  onForwardMessage?: (channelId: string, content: string, attachmentUrl?: string | null) => Promise<void>;
+  onForwardMessage?: (channelId: string, content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) => Promise<void>;
   onMarkUnread?: (message: ChatMessage) => void;
   onRemindMessage?: (message: ChatMessage, at: number) => void;
   focusMessageId?: string | null;
@@ -149,8 +156,9 @@ export function ChatArea({
   const [mentionSelection, setMentionSelection] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
-  const imageInput = useRef<HTMLInputElement>(null);
+  const attachmentInput = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const composerToolsRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [serverEmojis, setServerEmojis] = useState<ServerEmoji[]>([]);
@@ -160,6 +168,14 @@ export function ChatArea({
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [hoveredAuthorMessageId, setHoveredAuthorMessageId] = useState<string | null>(null);
   const [prankOpen, setPrankOpen] = useState(false);
+  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [topicDraft, setTopicDraft] = useState<{ title: string; content: string } | null>(null);
+  const [topicBusy, setTopicBusy] = useState(false);
+  const [activeTopic, setActiveTopic] = useState<{ id: string; title: string } | null>(null);
+  const [pollDraft, setPollDraft] = useState<{ question: string; options: string[] } | null>(null);
+  const [pollBusy, setPollBusy] = useState(false);
+  const [composerActionError, setComposerActionError] = useState("");
   const memberById = useMemo(() => new Map<string, MemberItem>(members.map((member) => [member.id, member] as const)), [members]);
   const mentionNames = useMemo(() => buildMentionNames([
     ...viewerNames.map((label) => ({ id: currentUserId ?? undefined, displayName: label })),
@@ -190,6 +206,22 @@ export function ChatArea({
   const quotePrefix = useRef("");
   const pinnedIds = useMemo(() => new Set(pins.map((item) => item.id)), [pins]);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.id)), [favorites]);
+
+  useEffect(() => {
+    if (!composerToolsOpen) return;
+    function closeOutside(event: PointerEvent) {
+      if (!composerToolsRef.current?.contains(event.target as Node)) {
+        setComposerToolsOpen(false);
+        setAppsOpen(false);
+      }
+    }
+    function closeEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") { setComposerToolsOpen(false); setAppsOpen(false); }
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => { document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeEscape); };
+  }, [composerToolsOpen]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -491,17 +523,96 @@ export function ChatArea({
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }
 
-  async function uploadImage(file?: File) {
-    if (!file || !file.type.startsWith("image/") || !onUploadFile) return;
-    if (file.size > 5 * 1024 * 1024) { window.alert("A imagem deve ter até 5 MB."); return; }
+  function startTopicFromMessage(message: ChatMessage) {
+    const initial = message.content.trim();
+    setTopicDraft({
+      title: initial ? initial.replace(/\s+/g, " ").slice(0, 96) : "Novo tópico",
+      content: initial,
+    });
+    setComposerActionError("");
+  }
+
+  async function uploadAttachment(file?: File) {
+    if (!file || !onUploadFile) return;
+    if (file.size > 10 * 1024 * 1024) { await dialogs.notify({ title: "Arquivo muito grande", message: "O limite para anexos é de 10 MB." }); return; }
     setUploading(true);
     try {
       const url = await onUploadFile(file);
-      onSendMessage("", url);
+      await onSendMessage("", url, { name: file.name.slice(0, 180) || "arquivo", mimeType: file.type || "application/octet-stream" });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Não foi possível enviar a imagem.");
+      await dialogs.notify({ title: "Falha ao enviar arquivo", message: error instanceof Error ? error.message : "Não foi possível enviar o arquivo." });
     } finally {
       setUploading(false);
+    }
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const image = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/"));
+    const file = image?.getAsFile();
+    if (!file) return;
+    event.preventDefault();
+    void uploadAttachment(file);
+  }
+
+  async function createTopic(event: React.FormEvent) {
+    event.preventDefault();
+    if (!topicDraft || !currentUserId || topicBusy) return;
+    const title = topicDraft.title.trim();
+    if (!title) { setComposerActionError("Dê um título ao tópico."); return; }
+    setTopicBusy(true);
+    setComposerActionError("");
+    const { data, error } = await supabase.rpc("create_channel_topic", {
+      p_channel_id: channelId,
+      p_title: title,
+      p_content: topicDraft.content.trim() || null,
+    });
+    setTopicBusy(false);
+    if (error) {
+      setComposerActionError(error.message.includes("create_channel_topic") ? "Execute db/chat_composer_features_migration.sql no Supabase para ativar tópicos." : error.message);
+      return;
+    }
+    const created = Array.isArray(data) ? data[0] : data;
+    if (!created?.topic_id) { setComposerActionError("O Supabase não confirmou a criação do tópico."); return; }
+    setTopicDraft(null);
+    setComposerToolsOpen(false);
+    setActiveTopic({ id: created.topic_id, title });
+  }
+
+  async function createPoll(event: React.FormEvent) {
+    event.preventDefault();
+    if (!pollDraft || !currentUserId || pollBusy) return;
+    const question = pollDraft.question.trim();
+    const options = pollDraft.options.map((option) => option.trim()).filter(Boolean);
+    if (!question) { setComposerActionError("Escreva a pergunta da enquete."); return; }
+    if (options.length < 2) { setComposerActionError("Adicione pelo menos duas opções."); return; }
+    setPollBusy(true);
+    setComposerActionError("");
+    const { error } = await supabase.rpc("create_channel_poll", { p_channel_id: channelId, p_question: question, p_options: options });
+    setPollBusy(false);
+    if (error) {
+      setComposerActionError(error.message.includes("create_channel_poll") ? "Execute db/chat_composer_features_migration.sql no Supabase para ativar enquetes." : error.message);
+      return;
+    }
+    setPollDraft(null);
+    setComposerToolsOpen(false);
+  }
+
+  async function shareSpotifyTrack() {
+    if (!currentUserId) return;
+    try {
+      const session = await ensureSpotifyToken(currentUserId);
+      if (!session) {
+        await beginSpotifyConnect();
+        return;
+      }
+      const current = await fetchCurrentlyPlaying(session.accessToken);
+      if (!current?.trackUrl) { await dialogs.notify({ title: "Nenhuma música tocando", message: "Abra uma faixa no Spotify e tente compartilhar novamente." }); return; }
+      setDraft(`${current.track} — ${current.artist}\n${current.trackUrl}`);
+      setAppsOpen(false);
+      setComposerToolsOpen(false);
+      window.requestAnimationFrame(() => composerRef.current?.focus());
+    } catch (error) {
+      await dialogs.notify({ title: "Spotify indisponível", message: error instanceof Error ? error.message : "Não foi possível buscar a música atual." });
     }
   }
 
@@ -606,6 +717,8 @@ export function ChatArea({
               </div>
 
               {editing?.id === message.id ? <div className="mt-1 flex gap-2"><input autoFocus value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="min-w-0 flex-1 rounded-lg bg-discord-bg-dark px-3 py-2 text-sm text-discord-text-normal outline-none ring-1 ring-brand-500"/><button title="Salvar" onClick={async () => { await onEditMessage?.(message.id, editing.content); setEditing(null); }} className="rounded-lg bg-discord-brand p-2 text-white"><Check size={16}/></button><button title="Cancelar" onClick={() => setEditing(null)} className="rounded-lg bg-discord-bg-secondary p-2"><X size={16}/></button></div> : (() => {
+                if (message.topicId) return <ChatTopicCard topicId={message.topicId} title={message.content || "Novo tópico"} currentUserId={currentUserId}/>;
+                if (message.pollId) return <ChatPollCard pollId={message.pollId} fallbackQuestion={message.content || "Enquete"} currentUserId={currentUserId}/>;
                 const prank = message.content.match(/^\[sekai-troll:([^\]]+)\]$/);
                 if (prank) return currentUserId === prank[1] ? (
                   <div className="mt-2 flex max-w-md items-center justify-between gap-4 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 p-4">
@@ -616,12 +729,17 @@ export function ChatArea({
                 return <ChatMessageBody content={message.content} preferences={chatDisplay} emojiImages={emojiImages} mentionNames={mentionNames} />;
               })()}
 
-              {chatDisplay.showUploads && message.attachmentUrl && (
+              {chatDisplay.showUploads && message.attachmentUrl && (message.attachmentMimeType?.startsWith("image/") || (!message.attachmentMimeType && !message.attachmentName)) && (
                 <HoverGifImage
                   src={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl}
-                  alt="anexo"
+                  alt={message.attachmentName || "Imagem enviada"}
                   className="mt-2 max-h-80 rounded-lg border border-black/20"
                 />
+              )}
+              {chatDisplay.showUploads && message.attachmentUrl && message.attachmentMimeType && !message.attachmentMimeType.startsWith("image/") && (
+                <a href={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl} download={message.attachmentName || true} target="_blank" rel="noreferrer" className="mt-2 flex w-fit max-w-full items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-secondary/80 px-3 py-2.5 text-discord-text-normal transition hover:bg-white/10">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-discord-brand/15 text-discord-brand"><FileText size={18}/></span><span className="min-w-0"><span className="block max-w-[min(60vw,320px)] truncate text-sm font-medium">{message.attachmentName || "Arquivo anexado"}</span><span className="block text-[10px] text-discord-text-muted">{message.attachmentMimeType}</span></span>
+                </a>
               )}
 
               {chatDisplay.showReactions && message.reactions && message.reactions.length > 0 && (
@@ -679,13 +797,20 @@ export function ChatArea({
         onClose={() => setMenu(null)}
         onReact={(emoji) => onToggleReaction?.(menu.message.id, emoji)}
         onReply={() => beginQuote(menu.message, false)}
-        onTopic={() => beginQuote(menu.message, true)}
+        onTopic={() => startTopicFromMessage(menu.message)}
         onForward={(targetChannelId) => {
           const message = menu.message;
           const channel = textChannels.find((item) => item.id === targetChannelId);
           void (async () => {
             try {
-              await onForwardMessage?.(targetChannelId, forwardedContent(message), message.attachmentUrl);
+              await onForwardMessage?.(
+                targetChannelId,
+                forwardedContent(message),
+                message.attachmentUrl,
+                message.attachmentName && message.attachmentMimeType
+                  ? { name: message.attachmentName, mimeType: message.attachmentMimeType }
+                  : undefined,
+              );
               if (targetChannelId !== channelId) await dialogs.notify({ title: "Mensagem encaminhada", message: `Ela foi enviada para #${channel?.name ?? "canal"}.` });
             } catch (error) {
               await dialogs.notify({ title: "Não foi possível encaminhar", message: error instanceof Error ? error.message : "Tente de novo." });
@@ -774,12 +899,29 @@ export function ChatArea({
 
         <form
           onSubmit={handleSubmit}
-          className="flex min-h-12 items-end gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
+          className="flex min-h-12 items-center gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
         >
-          <button type="button" onClick={() => imageInput.current?.click()} aria-label="Adicionar anexo" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
-            <Plus className="h-5 w-5" />
-          </button>
-          <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+          <div ref={composerToolsRef} className="relative shrink-0">
+            <button type="button" onClick={() => { setComposerToolsOpen((open) => !open); setAppsOpen(false); }} aria-label="Abrir opções do chat" aria-haspopup="menu" aria-expanded={composerToolsOpen} className="grid h-9 w-9 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-discord-header-primary">
+              <Plus className="h-5 w-5" />
+            </button>
+            {composerToolsOpen && <div role="menu" aria-label="Opções do chat" className="absolute bottom-[calc(100%+12px)] left-0 z-[100] w-[min(300px,calc(100vw-28px))] overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl">
+              {appsOpen ? <>
+                <button type="button" role="menuitem" onClick={() => setAppsOpen(false)} className="mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-discord-text-muted hover:bg-white/5 hover:text-white"><span aria-hidden="true">←</span> Todos os apps</button>
+                <div className="border-t border-white/[0.08] pt-1">
+                  <button type="button" role="menuitem" onClick={() => { setEmojiPickerOpen(true); setAppsOpen(false); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-discord-brand/15 text-discord-brand"><Smile size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Emojis do servidor</span><span className="block text-[11px] text-discord-text-muted">Emojis personalizados disponíveis</span></span></button>
+                  <button type="button" role="menuitem" onClick={() => { setComposerToolsOpen(false); setAppsOpen(false); onSendMessage("!bankai"); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-fuchsia-400/15 text-fuchsia-200"><Sparkles size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Bankai</span><span className="block text-[11px] text-discord-text-muted">Ative o sorteio de Bankai</span></span></button>
+                  <button type="button" role="menuitem" onClick={() => void shareSpotifyTrack()} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1DB954]/15 text-[#1DB954]"><Music2 size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Compartilhar Spotify</span><span className="block text-[11px] text-discord-text-muted">Inserir a faixa que está tocando</span></span></button>
+                </div>
+              </> : <>
+                <button type="button" role="menuitem" disabled={uploading || !onUploadFile} onClick={() => { attachmentInput.current?.click(); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06] disabled:opacity-40"><FileText size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Enviar um arquivo</span></button>
+                <button type="button" role="menuitem" onClick={() => { setTopicDraft({ title: "", content: "" }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><MessageSquarePlus size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar tópico</span></button>
+                <button type="button" role="menuitem" onClick={() => { setPollDraft({ question: "", options: ["", ""] }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><BarChart3 size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar enquete</span></button>
+                <button type="button" role="menuitem" onClick={() => setAppsOpen(true)} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><Sparkles size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Use apps</span><span className="ml-auto text-xs text-discord-text-muted">›</span></button>
+              </>}
+            </div>}
+          </div>
+          <input ref={attachmentInput} type="file" accept="*/*" className="hidden" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
           <textarea
             ref={composerRef}
@@ -789,6 +931,7 @@ export function ChatArea({
             onKeyDown={onComposerKeyDown}
             onKeyUp={(e) => { if (!["Escape", "ArrowDown", "ArrowUp", "Enter"].includes(e.key)) refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart); }}
             onClick={(e) => refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onPaste={handlePaste}
             onBlur={() => setMentionSearch(null)}
             placeholder={`Conversar em #${channelName}`}
             className="max-h-40 min-h-6 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
@@ -815,13 +958,32 @@ export function ChatArea({
             </button>
           </div>
 
-          <button type="button" title="Enviar imagem" aria-label="Enviar imagem" onClick={() => imageInput.current?.click()} disabled={uploading} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-discord-text-normal disabled:opacity-50 sm:h-auto sm:w-auto sm:rounded-none"><ImageIcon className="h-5 w-5" /></button>
-
           <button type="submit" aria-label="Enviar mensagem" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 sm:h-auto sm:w-auto sm:bg-transparent sm:text-discord-text-muted sm:hover:bg-transparent sm:hover:text-discord-brand">
             <SendHorizontal className="h-5 w-5" />
           </button>
         </form>
       </div>
+      {topicDraft && <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !topicBusy) setTopicDraft(null); }}>
+        <form role="dialog" aria-modal="true" aria-label="Criar tópico" onSubmit={(event) => void createTopic(event)} className="w-full max-w-lg rounded-2xl border border-white/10 bg-discord-bg-floating p-4 shadow-2xl sm:p-5">
+          <div className="mb-4 flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-discord-brand/15 text-discord-brand"><MessageSquarePlus size={19}/></span><div className="min-w-0 flex-1"><h2 className="text-lg font-bold text-discord-header-primary">Criar tópico</h2><p className="mt-1 text-xs text-discord-text-muted">Abra uma conversa paralela em #{channelName}.</p></div><button type="button" disabled={topicBusy} onClick={() => setTopicDraft(null)} aria-label="Fechar" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/10 hover:text-white"><X size={17}/></button></div>
+          <label className="mb-3 block"><span className="mb-1.5 block text-xs font-semibold text-discord-text-normal">Nome do tópico</span><input autoFocus maxLength={100} value={topicDraft.title} onChange={(event) => setTopicDraft({ ...topicDraft, title: event.target.value })} placeholder="Ex.: Planejar a próxima partida" className="w-full rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/></label>
+          <label className="block"><span className="mb-1.5 block text-xs font-semibold text-discord-text-normal">Mensagem inicial <span className="font-normal text-discord-text-muted">(opcional)</span></span><textarea maxLength={4000} rows={3} value={topicDraft.content} onChange={(event) => setTopicDraft({ ...topicDraft, content: event.target.value })} placeholder="Dê contexto para a conversa…" className="w-full resize-y rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/></label>
+          {composerActionError && <p role="alert" className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{composerActionError}</p>}
+          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={topicBusy} onClick={() => setTopicDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={topicBusy || !topicDraft.title.trim()} className="rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{topicBusy ? "Criando…" : "Criar tópico"}</button></div>
+        </form>
+      </div>}
+      {pollDraft && <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !pollBusy) setPollDraft(null); }}>
+        <form role="dialog" aria-modal="true" aria-label="Criar enquete" onSubmit={(event) => void createPoll(event)} className="w-full max-w-lg rounded-2xl border border-white/10 bg-discord-bg-floating p-4 shadow-2xl sm:p-5">
+          <div className="mb-4 flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-discord-brand/15 text-discord-brand"><BarChart3 size={19}/></span><div className="min-w-0 flex-1"><h2 className="text-lg font-bold text-discord-header-primary">Criar enquete</h2><p className="mt-1 text-xs text-discord-text-muted">Os membros do canal podem escolher uma opção.</p></div><button type="button" disabled={pollBusy} onClick={() => setPollDraft(null)} aria-label="Fechar" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/10 hover:text-white"><X size={17}/></button></div>
+          <label className="mb-4 block"><span className="mb-1.5 block text-xs font-semibold text-discord-text-normal">Pergunta</span><input autoFocus maxLength={200} value={pollDraft.question} onChange={(event) => setPollDraft({ ...pollDraft, question: event.target.value })} placeholder="O que você quer perguntar?" className="w-full rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/></label>
+          <div className="space-y-2"><span className="block text-xs font-semibold text-discord-text-normal">Opções</span>{pollDraft.options.map((option, index) => <div key={index} className="flex items-center gap-2"><input maxLength={100} value={option} onChange={(event) => setPollDraft({ ...pollDraft, options: pollDraft.options.map((current, itemIndex) => itemIndex === index ? event.target.value : current) })} placeholder={`Opção ${index + 1}`} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/>{pollDraft.options.length > 2 && <button type="button" onClick={() => setPollDraft({ ...pollDraft, options: pollDraft.options.filter((_, itemIndex) => itemIndex !== index) })} aria-label={`Remover opção ${index + 1}`} className="rounded-lg p-2 text-discord-text-muted hover:bg-white/10 hover:text-white"><X size={15}/></button>}</div>)}
+            {pollDraft.options.length < 10 && <button type="button" onClick={() => setPollDraft({ ...pollDraft, options: [...pollDraft.options, ""] })} className="rounded-lg px-2 py-1.5 text-xs font-semibold text-discord-brand hover:bg-discord-brand/10">+ Adicionar opção</button>}
+          </div>
+          {composerActionError && <p role="alert" className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{composerActionError}</p>}
+          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={pollBusy} onClick={() => setPollDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={pollBusy || !pollDraft.question.trim() || pollDraft.options.filter((item) => item.trim()).length < 2} className="rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{pollBusy ? "Publicando…" : "Publicar enquete"}</button></div>
+        </form>
+      </div>}
+      {activeTopic && <ChatTopicThreadDialog topicId={activeTopic.id} initialTitle={activeTopic.title} currentUserId={currentUserId} onClose={() => setActiveTopic(null)}/>}
     </div>
   );
 }

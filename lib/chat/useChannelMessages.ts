@@ -10,6 +10,10 @@ interface RawMessageRow {
   author_id: string;
   content: string;
   attachment_url: string | null;
+  attachment_name?: string | null;
+  attachment_mime_type?: string | null;
+  topic_id?: string | null;
+  poll_id?: string | null;
   created_at: string;
   profiles?: { display_name: string | null; username: string; avatar_url: string | null };
 }
@@ -42,6 +46,10 @@ export function useChannelMessages(
       content: row.content,
       systemType: row.content.match(/^\[sekai-system:(member_joined|member_left|member_kicked|member_banned)\]$/)?.[1] as ChatMessage["systemType"],
       attachmentUrl: row.attachment_url,
+      attachmentName: row.attachment_name,
+      attachmentMimeType: row.attachment_mime_type,
+      topicId: row.topic_id,
+      pollId: row.poll_id,
       createdAt: row.created_at,
       reactions: [],
     }),
@@ -66,7 +74,7 @@ export function useChannelMessages(
 
       const { data: rows } = await supabase
         .from("messages")
-        .select("id, channel_id, author_id, content, attachment_url, created_at, profiles(display_name, username, avatar_url)")
+        .select("id, channel_id, author_id, content, attachment_url, attachment_name, attachment_mime_type, topic_id, poll_id, created_at, profiles(display_name, username, avatar_url)")
         .eq("channel_id", channelId)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -201,7 +209,7 @@ export function useChannelMessages(
   }, [channelId, currentUserId, currentUserName, currentUserAvatarUrl, supabase, mapRow]);
 
   const sendMessage = useCallback(
-    async (content: string, attachmentUrl?: string | null) => {
+    async (content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) => {
       // A policy "messages_insert_own" garante author_id = auth.uid(),
       // send_messages = true e que o usuário não está mutado.
       const pendingId = `pending:${crypto.randomUUID()}`;
@@ -212,6 +220,8 @@ export function useChannelMessages(
         authorAvatarUrl: currentUserAvatarUrl,
         content,
         attachmentUrl: attachmentUrl ?? null,
+        attachmentName: attachment?.name ?? null,
+        attachmentMimeType: attachment?.mimeType ?? null,
         createdAt: new Date().toISOString(),
         reactions: [],
       };
@@ -225,12 +235,14 @@ export function useChannelMessages(
           author_id: currentUserId,
           content,
           attachment_url: attachmentUrl ?? null,
-        }).select("id, channel_id, author_id, content, attachment_url, created_at").single();
+          attachment_name: attachment?.name ?? null,
+          attachment_mime_type: attachment?.mimeType ?? null,
+        }).select("id, channel_id, author_id, content, attachment_url, attachment_name, attachment_mime_type, topic_id, poll_id, created_at").single();
         if (error) throw error;
         if (!data) throw new Error("O servidor não confirmou o envio da mensagem.");
         if (activeChannelIdRef.current !== channelId) return;
 
-        const confirmed: ChatMessage = { ...optimistic, id: data.id, createdAt: data.created_at };
+        const confirmed: ChatMessage = { ...optimistic, id: data.id, createdAt: data.created_at, topicId: data.topic_id, pollId: data.poll_id };
         setMessages((previous) => {
           if (previous.some((message) => message.id === data.id)) {
             return previous.filter((message) => message.id !== pendingId);

@@ -1754,7 +1754,7 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
-  async function handleSend(content: string, attachmentUrl?: string | null) {
+  async function handleSend(content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) {
     const isBankai = /^!bankai$/i.test(content.trim());
     if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content) || isBankai) {
       const result = await executeSlashCommand(content, {
@@ -1810,17 +1810,18 @@ export default function Home() {
           }
         }
       }
-      await sendMessage(content, attachmentUrl);
+      await sendMessage(content, attachmentUrl, attachment);
     } catch (error) {
       await dialogs.notify({ title: "Não foi possível enviar", message: error instanceof Error ? error.message : "A mensagem foi recusada pelas regras do servidor." });
     }
   }
 
-  async function uploadChannelImage(file: File): Promise<string> {
-    if (!currentUserId || !activeChannelId) throw new Error("Selecione um canal de texto antes de enviar uma imagem.");
-    const extension = file.name.split(".").pop()?.toLowerCase() || "png";
-    const path = `channels/${activeChannelId}/${currentUserId}/${crypto.randomUUID()}.${extension}`;
-    const { error } = await supabase.storage.from("chat-images").upload(path, file, { contentType: file.type, upsert: false });
+  async function uploadChannelAttachment(file: File): Promise<string> {
+    if (!currentUserId || !activeChannelId) throw new Error("Selecione um canal de texto antes de enviar um arquivo.");
+    if (file.size > 10 * 1024 * 1024) throw new Error("O limite para anexos é de 10 MB.");
+    const safeName = file.name.normalize("NFKD").replace(/[^\w.-]+/g, "_").replace(/^\.+/, "").slice(-140) || "arquivo";
+    const path = `channels/${activeChannelId}/${currentUserId}/${crypto.randomUUID()}-${safeName}`;
+    const { error } = await supabase.storage.from("chat-images").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (error) throw new Error(`Falha ao enviar a imagem: ${error.message}`);
     return supabase.storage.from("chat-images").getPublicUrl(path).data.publicUrl;
   }
@@ -2109,7 +2110,7 @@ export default function Home() {
           loading={isChannelLoading}
           slashCommands={SLASH_COMMANDS}
           onSendMessage={handleSend}
-          onUploadFile={uploadChannelImage}
+          onUploadFile={uploadChannelAttachment}
           onToggleReaction={toggleReaction}
           currentUserId={currentUserId}
           onEditMessage={editMessage}
@@ -2129,10 +2130,10 @@ export default function Home() {
           onToggleMemberRole={handleToggleMemberRole}
           viewerNames={selfNames}
           textChannels={channels.filter((channel) => channel.type === "text").map((channel) => ({ id: channel.id, name: channel.name }))}
-          onForwardMessage={async (channelId, content, attachmentUrl) => {
+          onForwardMessage={async (channelId, content, attachmentUrl, attachment) => {
             if (!currentUserId) throw new Error("Entre novamente para encaminhar.");
             if (channelId === activeChannelId && activeChannelType === "text") {
-              await sendMessage(content, attachmentUrl);
+              await sendMessage(content, attachmentUrl, attachment);
               return;
             }
             const { error } = await supabase.from("messages").insert({
@@ -2140,6 +2141,8 @@ export default function Home() {
               author_id: currentUserId,
               content,
               attachment_url: attachmentUrl ?? null,
+              attachment_name: attachment?.name ?? null,
+              attachment_mime_type: attachment?.mimeType ?? null,
             });
             if (error) throw new Error(error.message);
           }}

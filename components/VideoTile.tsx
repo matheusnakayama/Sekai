@@ -27,6 +27,8 @@ export default function VideoTile({
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
+  const [screenVolume, setScreenVolume] = useState(1);
+  const [showScreenVolume, setShowScreenVolume] = useState(false);
   const [videoLive, setVideoLive] = useState(false);
   const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
 
@@ -133,8 +135,8 @@ export default function VideoTile({
   useEffect(() => {
     const audio = screenAudioRef.current;
     if (!audio) return;
-    audio.volume = volume;
-    audio.muted = participant.isLocal || volume === 0 || muteRemoteAudio;
+    audio.volume = screenVolume;
+    audio.muted = participant.isLocal || screenVolume === 0 || muteRemoteAudio;
     if (!participant.screenAudioTrack) {
       audio.srcObject = null;
       return;
@@ -148,7 +150,7 @@ export default function VideoTile({
       audio.pause();
       audio.srcObject = null;
     };
-  }, [muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, volume]);
+  }, [muteRemoteAudio, participant.isLocal, participant.screenAudioTrack, screenVolume]);
 
   async function enablePlayback() {
     try {
@@ -200,6 +202,35 @@ export default function VideoTile({
           <FocusIcon />
           {focused ? 'Sair do foco' : 'Tela cheia'}
         </button>
+      )}
+
+      {participant.screenAudioTrack && !participant.isLocal && (
+        <div className="absolute right-3 top-[4.5rem] z-20 flex flex-col items-center gap-1">
+          {showScreenVolume && <div className="flex h-36 items-center justify-center rounded-full border border-white/15 bg-black/75 px-3 py-2 shadow-xl backdrop-blur">
+            <input
+              aria-label={`Volume da apresentação de ${participant.name}`}
+              title={`Volume da apresentação de ${participant.name}`}
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={screenVolume}
+              onChange={(event) => setScreenVolume(Number(event.target.value))}
+              className="h-28 w-2 cursor-pointer"
+              style={{ writingMode: 'vertical-lr', direction: 'rtl', accentColor: 'rgb(var(--d-brand))', touchAction: 'none' }}
+            />
+          </div>}
+          <button
+            type="button"
+            onClick={() => setShowScreenVolume((shown) => !shown)}
+            aria-label={`Ajustar volume da apresentação de ${participant.name}`}
+            aria-expanded={showScreenVolume}
+            title="Volume da apresentação"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-discord-brand/40 bg-discord-bg-secondary/95 text-discord-header-primary shadow-lg transition hover:bg-discord-brand/20"
+          >
+            <VolumeIcon muted={screenVolume === 0} />
+          </button>
+        </div>
       )}
 
       {participant.stream && playbackBlocked && !participant.isLocal && (

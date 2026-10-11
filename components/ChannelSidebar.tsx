@@ -433,31 +433,6 @@ export function ChannelSidebar({
         </button>
 
         <div className="profile-footer-actions flex items-center gap-0.5">
-          {onToggleMute && (
-            <button
-              onClick={onToggleMute}
-              title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"}
-              aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"}
-              className="rounded-md p-1.5 text-discord-text-muted transition-colors hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"
-            >
-              {currentUser.isMuted ? <MicOff className="h-[18px] w-[18px]" /> : <Mic className="h-[18px] w-[18px]" />}
-            </button>
-          )}
-
-          {onToggleDeafen && (
-            <button
-              onClick={onToggleDeafen}
-              title={currentUser.isDeafened ? "Ativar áudio" : "Desativar áudio"}
-              aria-label={currentUser.isDeafened ? "Ativar áudio" : "Desativar áudio"}
-              className={cn(
-                "rounded-md p-1.5 transition-colors hover:bg-discord-bg-modifier-hover",
-                currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-discord-text-normal"
-              )}
-            >
-              <Headphones className="h-[18px] w-[18px]" />
-            </button>
-          )}
-
           <ThemePicker placement="up" align="left" />
 
           <button
