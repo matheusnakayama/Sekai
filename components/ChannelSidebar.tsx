@@ -7,6 +7,8 @@ import {
   Hash,
   Music2,
   Volume2,
+  MicOff,
+  Headphones,
   Settings,
   UserPlus,
   Plus,
