@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
 export type StoredReminder = {
   id: string;
@@ -68,7 +69,7 @@ export function useMessageReminders(userId: string | null, onFire: (reminder: St
       onFireRef.current(reminder);
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
-          new Notification("Lembrete do Sekai", { body: reminderBody(reminder), icon: "/sekai-symbol.jpg" });
+          new Notification("Lembrete do Sekai", { body: reminderBody(reminder), icon: SEKAI_LOGO_RED });
         } catch {
           // O aviso na página já cobre o lembrete.
         }

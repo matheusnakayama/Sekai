@@ -7,6 +7,7 @@ import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
 import { accentVariables, colorsForMode } from "@/lib/colorMode";
 import { complementaryLinkColor } from "@/lib/linkColor";
 import { STYLESHEET_THEME_IDS, THEMES } from "@/lib/themes";
+import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
 const linkColors = Object.fromEntries(THEMES.map((theme) => [theme.id, complementaryLinkColor(theme.stops)]));
 const stylesheetThemes = new Set<string>(STYLESHEET_THEME_IDS);
@@ -20,9 +21,9 @@ export const metadata: Metadata = {
   title: "Sekai",
   description: "Comunicação em tempo real para você e seus amigos",
   icons: {
-    icon: "/sekai-symbol.jpg",
-    shortcut: "/sekai-symbol.jpg",
-    apple: "/sekai-symbol.jpg",
+    icon: SEKAI_LOGO_RED,
+    shortcut: SEKAI_LOGO_RED,
+    apple: SEKAI_LOGO_RED,
   },
 };
 

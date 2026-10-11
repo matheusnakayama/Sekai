@@ -4,6 +4,7 @@ const http = require('http');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
 const LOCAL_PORT = Number(process.env.SEKAI_PORT || 4791);
 const HOSTED_URL = 'https://murasakidev.com.br';
 
@@ -101,7 +102,7 @@ function createWindow(targetUrl) {
     title: 'Sekai',
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
-    icon: path.join(ROOT, 'public', 'sekai-symbol.jpg'),
+    icon: SEKAI_LOGO_RED,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

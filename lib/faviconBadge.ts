@@ -1,4 +1,6 @@
-const ICON_SRC = "/sekai-symbol.jpg";
+import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
+
+const ICON_SRC = SEKAI_LOGO_RED;
 const BADGE_COLOR = "#ed4245";
 
 let iconImage: HTMLImageElement | null = null;
@@ -50,7 +52,10 @@ function drawBadge(image: HTMLImageElement | null, count: number) {
   if (!ctx) return null;
   ctx.clearRect(0, 0, size, size);
   if (image) {
-    ctx.drawImage(image, 0, 0, size, size);
+    const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
   } else {
     ctx.fillStyle = "#1e1f22";
     ctx.fillRect(0, 0, size, size);
@@ -81,7 +86,7 @@ export async function applyFaviconBadge(count: number) {
   const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
   document.title = safeCount > 0 ? `(${badgeLabel(safeCount)}) Sekai` : "Sekai";
   if (safeCount <= 0) {
-    setIcons(ICON_SRC, "image/jpeg");
+    setIcons(ICON_SRC, "image/png");
     return;
   }
   const image = await loadIcon();

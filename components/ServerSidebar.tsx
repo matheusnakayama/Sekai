@@ -3,6 +3,7 @@
 import { Plus, Compass } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
+import { SEKAI_LOGO_MONOCHROME } from "@/lib/brandAssets";
 import { cn } from "@/lib/utils";
 
 export interface ServerItem {
@@ -155,7 +156,8 @@ export function ServerSidebar({
     <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
       {/* Botão "Início" (DM) */}
       <ServerIcon active={!activeServerId} onClick={() => { onSelectServer(""); onOpenHome?.(); }} label="Mensagens diretas">
-        <span className="text-lg font-bold">S</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={SEKAI_LOGO_MONOCHROME} alt="" aria-hidden="true" className="h-8 w-9 object-contain brightness-0 invert" />
       </ServerIcon>
 
       <div className="mx-auto my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
