@@ -350,8 +350,6 @@ export function UserProfileCard({
         positionX={profile.bannerPositionX}
         positionY={profile.bannerPositionY}
         zoom={profile.bannerZoom}
-        fadeImageToBackground
-        style={{ background: profilePalette.background }}
         className="h-24"
       >
         <div className="absolute right-3 top-3 flex items-center gap-2">
