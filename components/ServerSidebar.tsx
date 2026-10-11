@@ -2,7 +2,7 @@
 
 import { Plus, Compass } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface ServerItem {
@@ -14,6 +14,7 @@ export interface ServerItem {
 }
 
 interface ServerSidebarProps {
+  currentUserId: string;
   servers: ServerItem[];
   activeServerId?: string;
   onSelectServer: (serverId: string) => void;
@@ -95,6 +96,7 @@ function ServerIcon({
 }
 
 export function ServerSidebar({
+  currentUserId,
   servers,
   activeServerId,
   onSelectServer,
@@ -103,6 +105,52 @@ export function ServerSidebar({
   onOpenHome,
   onServerContext,
 }: ServerSidebarProps) {
+  const [serverOrder, setServerOrder] = useState<string[]>([]);
+  const [draggedServerId, setDraggedServerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setServerOrder([]);
+      return;
+    }
+    try {
+      const savedOrder = JSON.parse(localStorage.getItem(`sekai-server-order:${currentUserId}`) ?? "[]");
+      setServerOrder(Array.isArray(savedOrder) ? savedOrder.filter((id): id is string => typeof id === "string") : []);
+    } catch {
+      setServerOrder([]);
+    }
+  }, [currentUserId]);
+
+  const orderedServers = useMemo(() => {
+    const byId = new Map(servers.map((server) => [server.id, server]));
+    const saved = serverOrder.flatMap((id) => {
+      const server = byId.get(id);
+      return server ? [server] : [];
+    });
+    const savedIds = new Set(saved.map((server) => server.id));
+    return [...saved, ...servers.filter((server) => !savedIds.has(server.id))];
+  }, [servers, serverOrder]);
+
+  function reorderServer(targetId: string, event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData("text/plain") || draggedServerId;
+    if (!sourceId || sourceId === targetId || !orderedServers.some((server) => server.id === sourceId)) return;
+
+    const next = orderedServers.map((server) => server.id).filter((id) => id !== sourceId);
+    const targetIndex = next.indexOf(targetId);
+    if (targetIndex < 0) return;
+    const targetBounds = event.currentTarget.getBoundingClientRect();
+    const insertAfter = event.clientY > targetBounds.top + targetBounds.height / 2;
+    next.splice(targetIndex + (insertAfter ? 1 : 0), 0, sourceId);
+    setServerOrder(next);
+    try {
+      localStorage.setItem(`sekai-server-order:${currentUserId}`, JSON.stringify(next));
+    } catch {
+      // Keep the in-memory order if browser storage is unavailable.
+    }
+    setDraggedServerId(null);
+  }
+
   return (
     <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
       {/* Botão "Início" (DM) */}
@@ -113,8 +161,17 @@ export function ServerSidebar({
       <div className="mx-auto my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
 
       <div className="flex w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto">
-        {servers.map((server) => (
-          <div key={server.id} className="w-full" onContextMenu={(event) => { event.preventDefault(); onServerContext?.(server.id); }}>
+        {orderedServers.map((server) => (
+          <div
+            key={server.id}
+            draggable
+            onDragStart={(event) => { setDraggedServerId(server.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", server.id); }}
+            onDragEnd={() => setDraggedServerId(null)}
+            onDragOver={(event) => { if (draggedServerId) event.preventDefault(); }}
+            onDrop={(event) => reorderServer(server.id, event)}
+            className={cn("w-full cursor-grab active:cursor-grabbing", draggedServerId === server.id && "opacity-40")}
+            onContextMenu={(event) => { event.preventDefault(); onServerContext?.(server.id); }}
+          >
           <ServerIcon
             active={server.id === activeServerId}
             hasUnread={server.hasUnread}

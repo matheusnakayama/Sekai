@@ -1879,6 +1879,7 @@ export default function Home() {
       {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
       <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
       <ServerSidebar
+        currentUserId={currentUserId ?? ""}
         servers={railServers}
         activeServerId={activeServerId}
         onSelectServer={(serverId) => { handleSelectServer(serverId); setMobileNavigationOpen(false); setMobileMembersOpen(false); }}
