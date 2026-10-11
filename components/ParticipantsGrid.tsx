@@ -12,8 +12,8 @@ export default function ParticipantsGrid({
   focusedParticipantId = null,
   revealedScreenShareIds,
   onRevealScreenShare,
-  onFocusPresentation,
-  onExitPresentationFocus,
+  onSelectParticipant,
+  onExitParticipantFocus,
 }: {
   participants: Participant[];
   muteRemoteAudio?: boolean;
@@ -23,24 +23,45 @@ export default function ParticipantsGrid({
   focusedParticipantId?: string | null;
   revealedScreenShareIds: ReadonlySet<string>;
   onRevealScreenShare: (participantId: string) => void;
-  onFocusPresentation?: (participantId: string) => void;
-  onExitPresentationFocus?: () => void;
+  onSelectParticipant?: (participantId: string) => void;
+  onExitParticipantFocus?: () => void;
 }) {
-  const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId && participant.isSharingScreen);
+  const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId);
   if (focusedParticipant) {
     return (
-      <div className="h-full min-h-0 w-full">
-        <VideoTile
-          participant={focusedParticipant}
-          muteRemoteAudio={muteRemoteAudio}
-          outputDeviceId={outputDeviceId}
-          masterOutputVolume={masterOutputVolume}
-          soundEffectsMuted={mutedSoundEffectUserIds.includes(focusedParticipant.id)}
-          screenShareRevealed={focusedParticipant.isLocal || revealedScreenShareIds.has(focusedParticipant.id)}
-          onRevealScreenShare={onRevealScreenShare}
-          focused
-          onExitPresentationFocus={onExitPresentationFocus}
-        />
+      <div className="flex h-full min-h-0 w-full flex-col gap-3">
+        <div className="min-h-0 flex-1">
+          <VideoTile
+            participant={focusedParticipant}
+            muteRemoteAudio={muteRemoteAudio}
+            outputDeviceId={outputDeviceId}
+            masterOutputVolume={masterOutputVolume}
+            soundEffectsMuted={mutedSoundEffectUserIds.includes(focusedParticipant.id)}
+            screenShareRevealed={focusedParticipant.isLocal || revealedScreenShareIds.has(focusedParticipant.id)}
+            onRevealScreenShare={onRevealScreenShare}
+            focused
+            onFocusParticipant={onSelectParticipant ? () => onSelectParticipant(focusedParticipant.id) : undefined}
+            onExitPresentationFocus={onExitParticipantFocus}
+          />
+        </div>
+        {participants.length > 1 && (
+          <div className="flex shrink-0 gap-3 overflow-x-auto pb-1" aria-label="Outros participantes da chamada">
+            {participants.filter((participant) => participant.id !== focusedParticipant.id).map((participant) => (
+              <div key={participant.id} className="w-36 shrink-0 sm:w-48">
+                <VideoTile
+                  participant={participant}
+                  muteRemoteAudio={muteRemoteAudio}
+                  outputDeviceId={outputDeviceId}
+                  masterOutputVolume={masterOutputVolume}
+                  soundEffectsMuted={mutedSoundEffectUserIds.includes(participant.id)}
+                  screenShareRevealed={participant.isLocal || revealedScreenShareIds.has(participant.id)}
+                  onRevealScreenShare={onRevealScreenShare}
+                  onFocusParticipant={() => onSelectParticipant?.(participant.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -60,7 +81,7 @@ export default function ParticipantsGrid({
           soundEffectsMuted={mutedSoundEffectUserIds.includes(p.id)}
           screenShareRevealed={p.isLocal || revealedScreenShareIds.has(p.id)}
           onRevealScreenShare={onRevealScreenShare}
-          onFocusPresentation={() => onFocusPresentation?.(p.id)}
+          onFocusParticipant={() => onSelectParticipant?.(p.id)}
         />
       ))}
     </div>

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { ChevronDown, Music, Music2, Play, Settings, Square, Volume2, VolumeX } from 'lucide-react';
-import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon } from './icons';
+import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon, StopWatchingIcon } from './icons';
 import AnchoredPopover from './AnchoredPopover';
 
 export interface SoundboardEffect {
@@ -41,6 +41,7 @@ export default function Controls({
   deafened,
   camOn,
   sharingScreen,
+  watchingPresentation,
   participantCount,
   chatUnreadCount,
   isHost,
@@ -69,6 +70,7 @@ export default function Controls({
   onToggleCam,
   onToggleScreenShare,
   onLeave,
+  onStopWatching,
   onCopyLink,
   onToggleParticipants,
   onToggleChat,
@@ -78,6 +80,7 @@ export default function Controls({
   deafened: boolean;
   camOn: boolean;
   sharingScreen: boolean;
+  watchingPresentation: boolean;
   participantCount: number;
   chatUnreadCount: number;
   isHost: boolean;
@@ -106,6 +109,7 @@ export default function Controls({
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
   onLeave: () => void;
+  onStopWatching: () => void;
   onCopyLink: () => void;
   onToggleParticipants: () => void;
   onToggleChat: () => void;
@@ -327,14 +331,26 @@ export default function Controls({
         {copied ? 'Copiado' : 'Convidar'}
       </button>
 
-      <button
-        onClick={onLeave}
-        aria-label="Sair da chamada"
-        className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
-      >
-        <HangupIcon />
-        <span className="hidden sm:inline">Sair</span>
-      </button>
+      {watchingPresentation ? (
+        <button
+          onClick={onStopWatching}
+          aria-label="Parar de assistir à apresentação"
+          title="Parar de assistir"
+          className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
+        >
+          <StopWatchingIcon />
+          <span className="hidden sm:inline">Parar de assistir</span>
+        </button>
+      ) : (
+        <button
+          onClick={onLeave}
+          aria-label="Sair da chamada"
+          className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
+        >
+          <HangupIcon />
+          <span className="hidden sm:inline">Sair</span>
+        </button>
+      )}
 
       {callMusicName && (
         <div className="flex basis-full items-center justify-center gap-2 pt-1 text-xs text-white/75">

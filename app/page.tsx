@@ -2154,6 +2154,17 @@ export default function Home() {
             onAddFriend={handleAddFriend}
             onClose={disconnectVoice}
             onMinimize={() => setCallExpanded(false)}
+            onRestoreCall={() => {
+              setCallExpanded(true);
+              if (voiceSession.kind === "server" && voiceSession.serverId) {
+                setActiveServerId(voiceSession.serverId);
+                setActiveChannelId(voiceSession.channelId);
+              } else if (voiceSession.kind === "dm") {
+                setActiveServerId("");
+                setActiveChannelId("");
+              }
+            }}
+            callVisible={callOpenHere}
           />
         </div>
       )}
