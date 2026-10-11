@@ -41,6 +41,15 @@ export function ScreenShareIcon({ active }: { active?: boolean }) {
   );
 }
 
+export function StopWatchingIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="4.5" width="18" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 20h6M12 16.5V20M9 8.5l6 5.5M15 8.5l-6 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function HangupIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -13,7 +13,7 @@ export default function VideoTile({
   focused = false,
   screenShareRevealed = false,
   onRevealScreenShare,
-  onFocusPresentation,
+  onFocusParticipant,
   onExitPresentationFocus,
 }: {
   participant: Participant;
@@ -24,7 +24,7 @@ export default function VideoTile({
   focused?: boolean;
   screenShareRevealed?: boolean;
   onRevealScreenShare: (participantId: string) => void;
-  onFocusPresentation?: () => void;
+  onFocusParticipant?: () => void;
   onExitPresentationFocus?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -234,6 +234,16 @@ export default function VideoTile({
         )}
       </div>
 
+      {onFocusParticipant && (
+        <button
+          type="button"
+          onClick={onFocusParticipant}
+          aria-label={focused ? `Voltar à grade de participantes` : `Destacar ${participant.name}`}
+          aria-pressed={focused}
+          className="absolute inset-0 z-[5] cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white/80"
+        />
+      )}
+
       {isScreenSharePreview && (
         <div className="absolute inset-0 z-[6] flex items-center justify-center bg-black/20 px-3" role="group" aria-label={`Prévia da apresentação de ${participant.name}`}>
           <div className="flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border border-white/15 bg-black/65 px-3 py-3 text-center text-white shadow-2xl backdrop-blur-sm sm:flex-row sm:gap-3 sm:text-left">
@@ -256,15 +266,15 @@ export default function VideoTile({
         </div>
       )}
 
-      {participant.isSharingScreen && !isScreenSharePreview && (focused ? onExitPresentationFocus : onFocusPresentation) && (
+      {participant.isSharingScreen && !isScreenSharePreview && (focused ? onExitPresentationFocus : onFocusParticipant) && (
         <button
           type="button"
-          onClick={focused ? onExitPresentationFocus : onFocusPresentation}
-          aria-label={focused ? 'Sair da apresentação em tela cheia' : 'Ampliar apresentação em tela cheia'}
+          onClick={focused ? onExitPresentationFocus : onFocusParticipant}
+          aria-label={focused ? 'Voltar à grade de participantes' : 'Destacar apresentação'}
           className="absolute right-3 top-3 z-10 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/70 px-3 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-black/90"
         >
           <FocusIcon />
-          {focused ? 'Sair do foco' : 'Tela cheia'}
+          {focused ? 'Voltar à grade' : 'Destacar'}
         </button>
       )}
 
@@ -301,13 +311,13 @@ export default function VideoTile({
         <button
           type="button"
           onClick={enablePlayback}
-          className="absolute top-3 right-3 rounded-lg bg-black/75 border border-white/20 px-3 py-2 text-xs font-medium text-white hover:bg-black/90"
+          className="absolute top-3 right-3 z-[11] rounded-lg bg-black/75 border border-white/20 px-3 py-2 text-xs font-medium text-white hover:bg-black/90"
         >
           Clique para ativar áudio
         </button>
       )}
 
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-2 px-2.5 py-2 bg-gradient-to-t from-black/60 to-transparent">
         <span className="text-xs sm:text-sm font-medium text-white truncate flex items-center gap-1.5">
           {participant.isSharingScreen && <ScreenShareIcon active />}
           {participant.name}
@@ -321,7 +331,7 @@ export default function VideoTile({
       </div>
 
       {!participant.isLocal && participant.stream?.getAudioTracks().length ? (
-        <div className="absolute bottom-10 right-2 flex items-center gap-2 rounded-full bg-black/70 px-2 py-1.5 text-white">
+        <div className="absolute bottom-10 right-2 z-20 flex items-center gap-2 rounded-full bg-black/70 px-2 py-1.5 text-white">
           {showVolume && (
             <input
               aria-label={`Volume de ${participant.name}`}
