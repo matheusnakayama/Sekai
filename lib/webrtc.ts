@@ -23,6 +23,7 @@ type SoundboardTrackHandler = (peerId: string, track: MediaStreamTrack) => void;
 type ConnectionStateHandler = (peerId: string, state: RTCPeerConnectionState) => void;
 type SpeakingHandler = (peerId: string, speaking: boolean) => void;
 type ScreenShareHandler = (peerId: string, sharing: boolean) => void;
+type ScreenShareFailureHandler = (peerId: string) => void;
 type MediaStateHandler = (peerId: string, state: { micOn: boolean; camOn: boolean; deafened?: boolean }) => void;
 
 export interface VideoSenderProfile {
@@ -125,6 +126,7 @@ export class WebRTCManager {
   private earlyScreenIce = new Map<string, EarlyScreenIce[]>();
   private screenReplayTimers = new Map<string, number>();
   private screenSendRetries = new Map<string, number>();
+  private screenFailureNotified = new Set<string>();
   private screenRelayPeers = new Set<string>();
   private screenFrameAsks = new Map<string, number>();
   private earlyVoiceIce = new Map<string, RTCIceCandidateInit[]>();
@@ -143,6 +145,7 @@ export class WebRTCManager {
   onConnectionStateChange: ConnectionStateHandler = () => {};
   onSpeakingChange: SpeakingHandler = () => {};
   onScreenShareState: ScreenShareHandler = () => {};
+  onScreenShareFailure: ScreenShareFailureHandler = () => {};
   onMediaState: MediaStateHandler = () => {};
 
   constructor(channel: Channel, localId: string) {
@@ -239,6 +242,7 @@ export class WebRTCManager {
     }
     this.closeOutgoingScreen(peerId);
     this.closeIncomingScreen(peerId);
+    this.screenFailureNotified.delete(peerId);
     this.clearScreenReplay(peerId);
     this.screenRelayPeers.delete(peerId);
     this.screenFrameAsks.delete(peerId);
@@ -298,6 +302,7 @@ export class WebRTCManager {
         this.screenTrack = track;
         this.screenAudioTrack = screenAudio?.readyState === 'live' ? screenAudio : null;
         this.screenProfile = profile;
+        this.screenFailureNotified.clear();
         for (const peer of this.peers.values()) {
           if (peer.connection.signalingState === 'closed') continue;
           await peer.mediaTracksReady;
@@ -316,6 +321,7 @@ export class WebRTCManager {
         this.screenTrack = null;
         this.screenAudioTrack = null;
         this.screenProfile = null;
+        this.screenFailureNotified.clear();
         this.stopOutgoingScreens();
         this.send({ type: 'screen-stop', from: this.localId });
       }
@@ -814,6 +820,7 @@ export class WebRTCManager {
       if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
       const connection = link.connection;
       if (connection.connectionState === 'connected' || connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') return;
+      this.reportScreenShareFailure(peerId);
       this.screenRelayPeers.add(peerId);
       void this.offerScreen(peerId, true).finally(() => {
         if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
@@ -878,10 +885,12 @@ export class WebRTCManager {
       if (this.outgoingScreen.get(peerId) !== link || !this.screenActive) return;
       if (pc.connectionState === 'connected') {
         this.screenSendRetries.delete(peerId);
+        this.screenFailureNotified.delete(peerId);
         void this.configureVideoSender(transceiver.sender, this.profileForScreen());
         return;
       }
       if (pc.connectionState !== 'failed' && pc.iceConnectionState !== 'failed') return;
+      this.reportScreenShareFailure(peerId);
       const tries = this.screenSendRetries.get(peerId) ?? 0;
       this.screenSendRetries.set(peerId, tries + 1);
       this.screenRelayPeers.add(peerId);
@@ -912,8 +921,15 @@ export class WebRTCManager {
       });
     } catch (error) {
       console.warn('Não foi possível abrir a apresentação para um participante:', error);
+      this.reportScreenShareFailure(peerId);
       if (this.outgoingScreen.get(peerId) === link) this.closeOutgoingScreen(peerId);
     }
+  }
+
+  private reportScreenShareFailure(peerId: string) {
+    if (!this.screenActive || this.screenFailureNotified.has(peerId)) return;
+    this.screenFailureNotified.add(peerId);
+    this.onScreenShareFailure(peerId);
   }
 
   private async acceptScreenOffer(from: string, sdp: RTCSessionDescriptionInit, generation: number) {
@@ -1662,3 +1678,4 @@ export class WebRTCManager {
     this.speakingWatchers.clear();
   }
 }
+

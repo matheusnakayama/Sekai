@@ -490,6 +490,15 @@ export default function RoomClient({
         });
       };
 
+      manager.onScreenShareFailure = (peerId) => {
+        const participantName = participantNamesRef.current.get(peerId) || 'um participante';
+        showProblem(
+          `Sua tela foi capturada, mas não chegou para ${participantName}. A conexão de vídeo falhou; isso pode ser causado por bloqueio de rede, firewall ou VPN, ou por uma limitação do navegador ou do PC. A chamada está tentando reconectar.`,
+          false,
+          true,
+        );
+      };
+
       manager.onMediaState = (peerId, state) => {
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
@@ -907,7 +916,11 @@ export default function RoomClient({
 
   async function toggleScreenShare() {
     const manager = managerRef.current;
-    if (!manager || screenShareOperationRef.current) return;
+    if (!manager) {
+      showProblem('Não foi possível iniciar a apresentação porque a conexão com a chamada ainda não está pronta. Aguarde a conexão e tente novamente.', false, true);
+      return;
+    }
+    if (screenShareOperationRef.current) return;
 
     if (currentSharingRef.current) {
       await stopScreenShare();
@@ -918,7 +931,12 @@ export default function RoomClient({
 
   async function confirmGoLive(selection: GoLiveSelection) {
     const manager = managerRef.current;
-    if (!manager || screenShareOperationRef.current) return;
+    if (!manager) {
+      setGoLiveOpen(false);
+      showProblem('Não foi possível iniciar a apresentação porque a conexão com a chamada foi encerrada. Entre novamente na chamada e tente outra vez.', false, true);
+      return;
+    }
+    if (screenShareOperationRef.current) return;
     screenShareOperationRef.current = true;
     setGoLiveBusy(true);
 
@@ -1415,8 +1433,8 @@ export default function RoomClient({
       )}
 
       {banner && (
-        <div className="px-4 pt-3">
-          <div className="max-w-xl mx-auto">
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[130] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2">
+          <div className="pointer-events-auto max-w-xl mx-auto">
             <ErrorBanner
               title={banner.connection ? "Aviso de conexão" : banner.persistent ? "Falha no compartilhamento de tela" : "Aviso"}
               message={banner.message}
@@ -1666,3 +1684,4 @@ function normalizeModerationEvent(payload: unknown): RoomModerationEvent | null 
     targetName: typeof candidate.targetName === 'string' ? candidate.targetName.trim().slice(0, 40) || 'Participante' : 'Participante',
   };
 }
+
