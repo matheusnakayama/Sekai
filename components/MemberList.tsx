@@ -13,7 +13,7 @@ import type { MutualServer, ProfileCardPosition } from "@/components/UserProfile
 import type { CustomBadge } from "@/lib/badges";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { UserPlus } from "lucide-react";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 
 const memberFont = Figtree({
   subsets: ["latin"],
@@ -33,6 +33,10 @@ export interface MemberItem {
   bannerPositionX?: number | null;
   bannerPositionY?: number | null;
   bannerZoom?: number | null;
+  memberListBannerUrl?: string | null;
+  memberListBannerPositionX?: number | null;
+  memberListBannerPositionY?: number | null;
+  memberListBannerZoom?: number | null;
   avatarPositionX?: number | null;
   avatarPositionY?: number | null;
   avatarZoom?: number | null;
@@ -207,15 +211,35 @@ function groupByRole(members: MemberItem[]): { id: string; roleName: string; rol
 
 function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
   const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [bannerStart, setBannerStart] = useState(112);
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const name = nameRef.current;
+    if (!row || !name || !member.memberListBannerUrl) return;
+    const updateStart = () => {
+      const rowBounds = row.getBoundingClientRect();
+      const nameBounds = name.getBoundingClientRect();
+      const visibleNameWidth = Math.min(name.scrollWidth, name.clientWidth);
+      setBannerStart(Math.max(0, Math.min(rowBounds.width, nameBounds.left - rowBounds.left + visibleNameWidth + 8)));
+    };
+    updateStart();
+    const observer = new ResizeObserver(updateStart);
+    observer.observe(row);
+    observer.observe(name);
+    return () => observer.disconnect();
+  }, [member.displayName, member.memberListBannerUrl]);
+
+  const bannerMask = `linear-gradient(90deg, transparent 0, transparent ${bannerStart}px, black ${bannerStart + 34}px, black 100%)`;
 
   return (
-    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.bannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
-      {member.bannerUrl && <>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-70">
-          <CroppedProfileImage src={member.bannerUrl} positionX={member.bannerPositionX} positionY={member.bannerPositionY} zoom={member.bannerZoom} pauseGif={false} />
-        </div>
-        <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-r from-black/35 via-black/50 to-black/30" />
-      </>}
+    <button ref={rowRef} type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+      {member.memberListBannerUrl && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-80" style={{ maskImage: bannerMask, WebkitMaskImage: bannerMask }}>
+        <CroppedProfileImage src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} pauseGif={false} />
+        <span className="absolute inset-0 bg-gradient-to-l from-black/35 via-black/10 to-transparent" />
+      </div>}
       <div className="relative z-10 h-8 w-8 shrink-0">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
@@ -231,7 +255,7 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
 
       <span className="relative z-10 flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1 leading-4">
-          <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
+          <span ref={nameRef} className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
           <CustomBadgeList badges={member.badges} limit={3} />
         </span>
         {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}

@@ -40,6 +40,10 @@ interface UserSettingsModalProps {
     bannerPositionX?: number | null;
     bannerPositionY?: number | null;
     bannerZoom?: number | null;
+    memberListBannerUrl?: string | null;
+    memberListBannerPositionX?: number | null;
+    memberListBannerPositionY?: number | null;
+    memberListBannerZoom?: number | null;
     profileCardColor?: string | null;
     presence?: Presence | null;
   };
@@ -109,21 +113,29 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
   const [removeBanner, setRemoveBanner] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(initial.avatarUrl ?? "");
   const [bannerPreview, setBannerPreview] = useState(initial.bannerUrl ?? "");
+  const [memberListBannerFile, setMemberListBannerFile] = useState<File | null>(null);
+  const [removeMemberListBanner, setRemoveMemberListBanner] = useState(false);
+  const [memberListBannerPreview, setMemberListBannerPreview] = useState(initial.memberListBannerUrl ?? "");
   const [avatarCrop, setAvatarCrop] = useState<ImageCrop>({ x: initial.avatarPositionX ?? 50, y: initial.avatarPositionY ?? 50, zoom: initial.avatarZoom ?? 100 });
   const [bannerCrop, setBannerCrop] = useState<ImageCrop>({ x: initial.bannerPositionX ?? 50, y: initial.bannerPositionY ?? 50, zoom: initial.bannerZoom ?? 100 });
+  const [memberListBannerCrop, setMemberListBannerCrop] = useState<ImageCrop>({ x: initial.memberListBannerPositionX ?? 50, y: initial.memberListBannerPositionY ?? 50, zoom: initial.memberListBannerZoom ?? 100 });
   const [serverDisplayName, setServerDisplayName] = useState(initial.displayName);
   const [serverAvatarFile, setServerAvatarFile] = useState<File | null>(null);
   const [serverBannerFile, setServerBannerFile] = useState<File | null>(null);
+  const [serverMemberListBannerFile, setServerMemberListBannerFile] = useState<File | null>(null);
   const [serverAvatarPreview, setServerAvatarPreview] = useState("");
   const [serverBannerPreview, setServerBannerPreview] = useState("");
+  const [serverMemberListBannerPreview, setServerMemberListBannerPreview] = useState("");
   const [serverAvatarCrop, setServerAvatarCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [serverBannerCrop, setServerBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
+  const [serverMemberListBannerCrop, setServerMemberListBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [imagePicker, setImagePicker] = useState<{ kind: ProfileImageKind; scope: ImageScope } | null>(null);
   const [imageEditor, setImageEditor] = useState<ImageEditorTarget | null>(null);
   const [recentImages, setRecentImages] = useState<string[]>([]);
   const temporaryImageUrls = useRef(new Set<string>());
   const [removeServerAvatar, setRemoveServerAvatar] = useState(false);
   const [removeServerBanner, setRemoveServerBanner] = useState(false);
+  const [removeServerMemberListBanner, setRemoveServerMemberListBanner] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
   const preferencesHydrated = useRef(false);
   const [email, setEmail] = useState("");
@@ -209,13 +221,15 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
 
   useEffect(() => {
     if (!serverId) return;
-    void supabase.from("members").select("nickname,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,banner_url,banner_position_x,banner_position_y,banner_zoom").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data }) => {
+    void supabase.from("members").select("nickname,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,banner_url,banner_position_x,banner_position_y,banner_zoom,member_list_banner_url,member_list_banner_position_x,member_list_banner_position_y,member_list_banner_zoom").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data }) => {
       if (!data) return;
       setServerDisplayName(data.nickname ?? initial.displayName);
       setServerAvatarPreview(data.avatar_url ?? "");
       setServerBannerPreview(data.banner_url ?? "");
+      setServerMemberListBannerPreview(data.member_list_banner_url ?? "");
       setServerAvatarCrop({ x: data.avatar_position_x ?? 50, y: data.avatar_position_y ?? 50, zoom: data.avatar_zoom ?? 100 });
       setServerBannerCrop({ x: data.banner_position_x ?? 50, y: data.banner_position_y ?? 50, zoom: data.banner_zoom ?? 100 });
+      setServerMemberListBannerCrop({ x: data.member_list_banner_position_x ?? 50, y: data.member_list_banner_position_y ?? 50, zoom: data.member_list_banner_zoom ?? 100 });
     });
   }, [initial.displayName, serverId, supabase, userId]);
 
@@ -272,21 +286,23 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
   }
 
   function getImageCrop(kind: ProfileImageKind, scope: ImageScope) {
-    if (scope === "server") return kind === "avatar" ? serverAvatarCrop : serverBannerCrop;
-    return kind === "avatar" ? avatarCrop : bannerCrop;
+    if (scope === "server") return kind === "avatar" ? serverAvatarCrop : kind === "memberListBanner" ? serverMemberListBannerCrop : serverBannerCrop;
+    return kind === "avatar" ? avatarCrop : kind === "memberListBanner" ? memberListBannerCrop : bannerCrop;
   }
 
   function setImageCrop(kind: ProfileImageKind, scope: ImageScope, crop: ImageCrop) {
     if (scope === "server") {
-      if (kind === "avatar") setServerAvatarCrop(crop); else setServerBannerCrop(crop);
-    } else if (kind === "avatar") setAvatarCrop(crop); else setBannerCrop(crop);
+      if (kind === "avatar") setServerAvatarCrop(crop); else if (kind === "memberListBanner") setServerMemberListBannerCrop(crop); else setServerBannerCrop(crop);
+    } else if (kind === "avatar") setAvatarCrop(crop); else if (kind === "memberListBanner") setMemberListBannerCrop(crop); else setBannerCrop(crop);
   }
 
   function setImageSelection(kind: ProfileImageKind, scope: ImageScope, file: File | null, url: string) {
     if (scope === "server") {
       if (kind === "avatar") { setServerAvatarFile(file); setServerAvatarPreview(url); setRemoveServerAvatar(false); }
+      else if (kind === "memberListBanner") { setServerMemberListBannerFile(file); setServerMemberListBannerPreview(url); setRemoveServerMemberListBanner(false); }
       else { setServerBannerFile(file); setServerBannerPreview(url); setRemoveServerBanner(false); }
     } else if (kind === "avatar") { setAvatarFile(file); setAvatarPreview(url); setRemoveAvatar(false); }
+    else if (kind === "memberListBanner") { setMemberListBannerFile(file); setMemberListBannerPreview(url); setRemoveMemberListBanner(false); }
     else { setBannerFile(file); setBannerPreview(url); setRemoveBanner(false); }
   }
 
@@ -305,8 +321,8 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
     if (file) temporaryImageUrls.current.add(src);
     if (!src) return;
     const previousUrl = target.scope === "server"
-      ? target.kind === "avatar" ? serverAvatarPreview : serverBannerPreview
-      : target.kind === "avatar" ? avatarPreview : bannerPreview;
+      ? target.kind === "avatar" ? serverAvatarPreview : target.kind === "memberListBanner" ? serverMemberListBannerPreview : serverBannerPreview
+      : target.kind === "avatar" ? avatarPreview : target.kind === "memberListBanner" ? memberListBannerPreview : bannerPreview;
     const crop = src === previousUrl ? getImageCrop(target.kind, target.scope) : DEFAULT_CROP;
     setImagePicker(null);
     setImageEditor({ ...target, src, file, crop, pending: true });
@@ -314,10 +330,10 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
 
   function openCropEditor(kind: ProfileImageKind, scope: ImageScope) {
     const src = scope === "server"
-      ? kind === "avatar" ? serverAvatarPreview : serverBannerPreview
-      : kind === "avatar" ? avatarPreview : bannerPreview;
+      ? kind === "avatar" ? serverAvatarPreview : kind === "memberListBanner" ? serverMemberListBannerPreview : serverBannerPreview
+      : kind === "avatar" ? avatarPreview : kind === "memberListBanner" ? memberListBannerPreview : bannerPreview;
     if (!src) return;
-    const file = scope === "server" ? kind === "avatar" ? serverAvatarFile : serverBannerFile : kind === "avatar" ? avatarFile : bannerFile;
+    const file = scope === "server" ? kind === "avatar" ? serverAvatarFile : kind === "memberListBanner" ? serverMemberListBannerFile : serverBannerFile : kind === "avatar" ? avatarFile : kind === "memberListBanner" ? memberListBannerFile : bannerFile;
     setImageEditor({ kind, scope, src, file, crop: getImageCrop(kind, scope), pending: false });
   }
 
@@ -363,20 +379,22 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
       setSaving(true); setError(""); setNotice("");
       let avatarUrl = removeServerAvatar ? null : serverAvatarPreview || null;
       let bannerUrl = removeServerBanner ? null : serverBannerPreview || null;
+      let memberListBannerUrl = removeServerMemberListBanner ? null : serverMemberListBannerPreview || null;
       const nextAvatarCrop = removeServerAvatar ? DEFAULT_CROP : serverAvatarCrop;
       const nextBannerCrop = removeServerBanner ? DEFAULT_CROP : serverBannerCrop;
-      for (const item of [{ file: serverAvatarFile, kind: "avatar" as const }, { file: serverBannerFile, kind: "banner" as const }]) {
+      const nextMemberListBannerCrop = removeServerMemberListBanner ? DEFAULT_CROP : serverMemberListBannerCrop;
+      for (const item of [{ file: serverAvatarFile, kind: "avatar" as const }, { file: serverBannerFile, kind: "banner" as const }, { file: serverMemberListBannerFile, kind: "memberListBanner" as const }]) {
         if (!item.file) continue;
         const path = `${userId}/server-profiles/${serverId}/${item.kind}-${Date.now()}.${uploadExtension(item.file)}`;
         const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: true, contentType: item.file.type });
-        if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : "banner"}: ${uploadError.message}`); return; }
+        if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : "banner"}: ${uploadError.message}`); return; }
         const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
-        if (item.kind === "avatar") avatarUrl = url; else bannerUrl = url;
+        if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
       }
-      const { error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, avatar_position_x: nextAvatarCrop.x, avatar_position_y: nextAvatarCrop.y, avatar_zoom: nextAvatarCrop.zoom, banner_url: bannerUrl, banner_position_x: nextBannerCrop.x, banner_position_y: nextBannerCrop.y, banner_zoom: nextBannerCrop.zoom }).eq("server_id", serverId).eq("user_id", userId);
+      const { error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, avatar_position_x: nextAvatarCrop.x, avatar_position_y: nextAvatarCrop.y, avatar_zoom: nextAvatarCrop.zoom, banner_url: bannerUrl, banner_position_x: nextBannerCrop.x, banner_position_y: nextBannerCrop.y, banner_zoom: nextBannerCrop.zoom, member_list_banner_url: memberListBannerUrl, member_list_banner_position_x: nextMemberListBannerCrop.x, member_list_banner_position_y: nextMemberListBannerCrop.y, member_list_banner_zoom: nextMemberListBannerCrop.zoom }).eq("server_id", serverId).eq("user_id", userId);
       setSaving(false);
       if (serverUpdateError) { setError("Falha ao salvar perfil do servidor: " + serverUpdateError.message); return; }
-      rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl);
+      rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
       onSaved(); onClose(); return;
     }
     if (!displayName.trim()) { setError("Informe um nome de exibição."); setSection("perfil"); return; }
@@ -384,14 +402,15 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
     setSaving(true); setError(""); setNotice("");
     let avatarUrl = removeAvatar ? null : (avatarPreview || initial.avatarUrl || null);
     let bannerUrl = removeBanner ? null : (bannerPreview || initial.bannerUrl || null);
+    let memberListBannerUrl = removeMemberListBanner ? null : (memberListBannerPreview || initial.memberListBannerUrl || null);
 
-    for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }]) {
+    for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }, { file: memberListBannerFile, kind: "memberListBanner" as const }]) {
       if (!item.file) continue;
       const path = `${userId}/${item.kind}-${Date.now()}.${uploadExtension(item.file)}`;
       const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: true, contentType: item.file.type });
-      if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : "banner"}: ${uploadError.message}`); return; }
+      if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : "banner"}: ${uploadError.message}`); return; }
       const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
-      if (item.kind === "avatar") avatarUrl = url; else bannerUrl = url;
+      if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
     }
 
     const { error: updateError } = await supabase.from("profiles").update({
@@ -404,11 +423,15 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
       banner_position_x: removeBanner ? 50 : bannerCrop.x,
       banner_position_y: removeBanner ? 50 : bannerCrop.y,
       banner_zoom: removeBanner ? 100 : bannerCrop.zoom,
+      member_list_banner_url: memberListBannerUrl,
+      member_list_banner_position_x: removeMemberListBanner ? 50 : memberListBannerCrop.x,
+      member_list_banner_position_y: removeMemberListBanner ? 50 : memberListBannerCrop.y,
+      member_list_banner_zoom: removeMemberListBanner ? 100 : memberListBannerCrop.zoom,
       status: presence, profile_card_color: profileCardColor,
     }).eq("id", userId);
     setSaving(false);
     if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
-    rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl);
+    rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
     onSaved(); onClose();
   }
 
@@ -546,6 +569,15 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
                     <div className="mb-1 flex shrink-0 gap-2"><button type="button" onClick={() => openImagePicker("avatar")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{avatarPreview ? "Trocar avatar" : "Adicionar avatar"}</button>{avatarPreview && <><button type="button" onClick={() => openCropEditor("avatar", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar</button><button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(""); setAvatarCrop(DEFAULT_CROP); setRemoveAvatar(true); }} aria-label="Remover avatar" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                   </div>
                 </div>
+                <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
+                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Imagem transparente independente. Ela começa depois do seu nome na lista para manter a leitura limpa.</p></div>
+                  <div className="relative mb-3 flex h-12 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
+                    {memberListBannerPreview && <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-80" style={{ maskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)" }}><CroppedProfileImage src={memberListBannerPreview} alt="" positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} pauseGif={false}/></div>}
+                    <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/>
+                    <span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{displayName || "Seu nome"}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{memberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{memberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setMemberListBannerFile(null); setMemberListBannerPreview(""); setMemberListBannerCrop(DEFAULT_CROP); setRemoveMemberListBanner(true); }} aria-label="Remover banner da lista de membros" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
+                </div>
                 <div className="grid gap-x-5 gap-y-1 md:grid-cols-2">
                   <Field label="Nome de exibição" hint={`${displayName.length}/40`}><input value={displayName} maxLength={40} onChange={(e) => setDisplayName(e.target.value)} placeholder="Seu nome" className={inputClass}/></Field>
                   <Field label="Nome de usuário" hint={`@${username.length}/32`}><input value={username} maxLength={32} onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))} placeholder="seu_usuario" className={inputClass}/></Field>
@@ -585,6 +617,14 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
                       </div>
                       <div className="mb-1 flex shrink-0 gap-2"><button type="button" onClick={() => openImagePicker("avatar")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{serverAvatarPreview ? "Trocar avatar" : "Adicionar avatar"}</button>{serverAvatarPreview && <><button type="button" onClick={() => openCropEditor("avatar", "server")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar</button><button type="button" onClick={() => { setServerAvatarFile(null); setServerAvatarPreview(""); setServerAvatarCrop(DEFAULT_CROP); setRemoveServerAvatar(true); }} aria-label="Remover avatar do servidor" className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs text-discord-text-muted hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                     </div>
+                  </div>
+                  <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
+                    <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Personalização independente para este servidor; começa depois do nome na lista.</p></div>
+                    <div className="relative mb-3 flex h-12 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
+                      {serverMemberListBannerPreview && <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-80" style={{ maskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)" }}><CroppedProfileImage src={serverMemberListBannerPreview} alt="" positionX={serverMemberListBannerCrop.x} positionY={serverMemberListBannerCrop.y} zoom={serverMemberListBannerCrop.zoom} pauseGif={false}/></div>}
+                      <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/><span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{serverDisplayName || "Seu nome"}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{serverMemberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{serverMemberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "server")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setServerMemberListBannerFile(null); setServerMemberListBannerPreview(""); setServerMemberListBannerCrop(DEFAULT_CROP); setRemoveServerMemberListBanner(true); }} aria-label="Remover banner da lista deste servidor" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                   </div>
                   <Field label="Nome neste servidor" hint={`${serverDisplayName.length}/32`}><input value={serverDisplayName} maxLength={32} onChange={(e) => setServerDisplayName(e.target.value)} placeholder="Nome de exibição" className={inputClass}/></Field>
                 </div>}

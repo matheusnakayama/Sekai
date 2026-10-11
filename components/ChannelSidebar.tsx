@@ -414,11 +414,12 @@ export function ChannelSidebar({
       {/* Barra de chamada conectada (como no Discord) */}
       {connectedVoiceChannelId && (
         <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-col gap-1.5">
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-sm font-semibold md:text-xs" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}><Volume2 className="h-4 w-4 md:h-3.5 md:w-3.5"/>Voz conectada{connectedVoiceStartedAt && <span className="ml-auto text-[10px] tabular-nums">{formatVoiceDuration(clockNow - connectedVoiceStartedAt)}</span>}</p>
+              <p className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold md:text-xs" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}><Volume2 className="h-4 w-4 shrink-0 md:h-3.5 md:w-3.5"/><span>Voz conectada</span>{connectedVoiceStartedAt && <span className="ml-auto text-[10px] tabular-nums">{formatVoiceDuration(clockNow - connectedVoiceStartedAt)}</span>}</p>
               <p className="truncate pl-5 text-xs text-discord-text-muted md:text-[11px]">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
+            <div className="flex items-center gap-1">
             {onToggleMute && <div className="relative flex items-center">
               <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5"/> : <Mic className="h-5 w-5"/>}</button>
               <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "input" ? null : "input")} aria-label="Opções do microfone" aria-expanded={voiceAudioMenuOpen === "input"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")}/></button>
@@ -449,6 +450,7 @@ export function ChannelSidebar({
             >
               <PhoneOff className="h-[18px] w-[18px]" />
             </button>
+            </div>
           </div>
           {connectedVoiceServerId && (
             <div className="mt-2 flex items-center gap-1.5 border-t border-white/[0.06] pt-2">

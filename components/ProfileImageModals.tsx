@@ -6,7 +6,7 @@ import { Check, Film, ImagePlus, RotateCcw, X } from "lucide-react";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { HoverGifImage } from "@/components/HoverGifImage";
 
-export type ProfileImageKind = "avatar" | "banner";
+export type ProfileImageKind = "avatar" | "banner" | "memberListBanner";
 export type ImageCrop = { x: number; y: number; zoom: number };
 export type SelectedProfileMedia = { file: File | null; url: string };
 
@@ -24,8 +24,8 @@ export function ProfileImagePickerModal({
   const [mounted, setMounted] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const gifInput = useRef<HTMLInputElement>(null);
-  const heading = kind === "avatar" ? "Selecionar avatar" : "Selecionar banner";
-  const recentHeading = kind === "avatar" ? "Avatares recentes" : "Banners recentes";
+  const heading = kind === "avatar" ? "Selecionar avatar" : kind === "memberListBanner" ? "Selecionar banner da lista" : "Selecionar banner do perfil";
+  const recentHeading = kind === "avatar" ? "Avatares recentes" : kind === "memberListBanner" ? "Banners da lista recentes" : "Banners do perfil recentes";
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -52,7 +52,7 @@ export function ProfileImagePickerModal({
 
         <div className="grid grid-cols-2 gap-3 px-6 pt-5">
           <button type="button" onClick={() => photoInput.current?.click()} className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-[#303036] px-4 text-center transition hover:border-white/20 hover:bg-[#38383f]">
-            <ImagePlus size={24} className="text-white/75"/><span className="text-sm font-semibold">Enviar foto</span><span className="text-[11px] text-white/45">{kind === "banner" ? "PNG/WebP transparente, JPG" : "PNG, JPG ou WebP"}</span>
+            <ImagePlus size={24} className="text-white/75"/><span className="text-sm font-semibold">Enviar foto</span><span className="text-[11px] text-white/45">{kind !== "avatar" ? "PNG/WebP transparente, JPG" : "PNG, JPG ou WebP"}</span>
           </button>
           <button type="button" onClick={() => gifInput.current?.click()} className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-[#303036] px-4 text-center transition hover:border-white/20 hover:bg-[#38383f]">
             <Film size={24} className="text-white/75"/><span className="text-sm font-semibold">Escolher GIF</span><span className="text-[11px] text-white/45">GIF animado do seu dispositivo</span>
@@ -66,7 +66,7 @@ export function ProfileImagePickerModal({
           {recentImages.length ? (
             <div className="flex flex-wrap gap-2.5">
               {recentImages.slice(0, 6).map((url, index) => (
-                <button key={`${url}-${index}`} type="button" onClick={() => onSelect({ file: null, url })} title={`Usar ${recentHeading.toLowerCase().replace(/s$/, "") } recente`} className={`group relative overflow-hidden border-2 border-transparent bg-[#17171a] transition hover:border-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${kind === "avatar" ? "h-14 w-14 rounded-full" : "h-14 w-24 rounded-lg"}`}>
+                <button key={`${url}-${index}`} type="button" onClick={() => onSelect({ file: null, url })} title={`Usar ${recentHeading.toLowerCase().replace(/s$/, "") } recente`} className={`group relative overflow-hidden border-2 border-transparent bg-[#17171a] transition hover:border-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${kind === "avatar" ? "h-14 w-14 rounded-full" : kind === "memberListBanner" ? "h-14 w-28 rounded-lg" : "h-14 w-24 rounded-lg"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <HoverGifImage src={url} alt="" className="h-full w-full object-cover"/>
                   <span className="absolute inset-0 grid place-items-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100"><Check size={18}/></span>
@@ -100,6 +100,8 @@ export function ProfileImageCropModal({
   const frameRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
   const isAvatar = kind === "avatar";
+  const isMemberListBanner = kind === "memberListBanner";
+  const imageLabel = isAvatar ? "avatar" : isMemberListBanner ? "banner da lista de membros" : "banner do perfil";
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -136,8 +138,8 @@ export function ProfileImageCropModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[230] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-label={`Editar ${isAvatar ? "avatar" : "banner"}`} className="w-full max-w-[500px] overflow-hidden rounded-2xl border border-white/10 bg-[#232329] text-white shadow-[0_28px_90px_rgba(0,0,0,.7)]">
-        <header className="flex items-center justify-between px-6 py-5"><div><h2 className="text-lg font-bold">Editar {isAvatar ? "avatar" : "banner"}</h2><p className="mt-1 text-xs text-white/50">Arraste para reposicionar e ajuste o zoom.</p></div><button type="button" onClick={onClose} aria-label="Fechar editor" className="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"><X size={20}/></button></header>
+      <section role="dialog" aria-modal="true" aria-label={`Editar ${imageLabel}`} className="w-full max-w-[500px] overflow-hidden rounded-2xl border border-white/10 bg-[#232329] text-white shadow-[0_28px_90px_rgba(0,0,0,.7)]">
+        <header className="flex items-center justify-between px-6 py-5"><div><h2 className="text-lg font-bold">Editar {imageLabel}</h2><p className="mt-1 text-xs text-white/50">Arraste para reposicionar e ajuste o zoom.</p></div><button type="button" onClick={onClose} aria-label="Fechar editor" className="rounded-lg p-2 text-white/50 transition hover:bg-white/10 hover:text-white"><X size={20}/></button></header>
         <div className="mx-6 overflow-hidden rounded-xl bg-[#19191d] p-3">
           <div
             ref={frameRef}
@@ -145,7 +147,7 @@ export function ProfileImageCropModal({
             onPointerMove={moveImage}
             onPointerUp={() => { dragStart.current = null; }}
             onPointerCancel={() => { dragStart.current = null; }}
-            className={`relative mx-auto overflow-hidden touch-none bg-[#34343a] cursor-grab active:cursor-grabbing ${isAvatar ? "aspect-square w-56 rounded-xl" : "aspect-[3.125/1] w-full rounded-lg"}`}
+            className={`relative mx-auto overflow-hidden touch-none bg-[#34343a] cursor-grab active:cursor-grabbing ${isAvatar ? "aspect-square w-56 rounded-xl" : isMemberListBanner ? "aspect-[4.5/1] w-full rounded-lg" : "aspect-[3.125/1] w-full rounded-lg"}`}
           >
             <CroppedProfileImage
               src={src}
