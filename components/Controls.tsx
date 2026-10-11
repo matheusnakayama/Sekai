@@ -125,7 +125,7 @@ export default function Controls({
 
   return (
     <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-3">
-      <div className="relative flex items-center gap-1">
+      <div className="relative flex items-center gap-1.5">
         <ControlButton
           active={micOn}
           activeLabel="Silenciar microfone"
@@ -159,7 +159,7 @@ export default function Controls({
         </div>}
       </div>
 
-      <div className="relative flex items-center gap-1">
+      <div className="relative flex items-center gap-1.5">
         <ControlButton
           active={!deafened}
           activeLabel="Ensurdecer"
@@ -210,7 +210,7 @@ export default function Controls({
           aria-label="Abrir efeitos sonoros do servidor"
           aria-expanded={soundboardOpen}
           title="Efeitos sonoros"
-          className={`h-12 w-12 rounded-full border flex items-center justify-center transition-colors ${soundboardOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
+          className={`h-14 w-14 rounded-full border flex items-center justify-center transition-colors ${soundboardOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
         >
           <Music2 className="h-5 w-5" />
         </button>
@@ -261,7 +261,7 @@ export default function Controls({
           aria-label="Tocar uma música na call"
           aria-expanded={musicOpen}
           title="Tocar música na call"
-          className={`h-12 w-12 rounded-full border flex items-center justify-center transition-colors ${callMusicName || musicOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
+          className={`h-14 w-14 rounded-full border flex items-center justify-center transition-colors ${callMusicName || musicOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
         >
           <Music className="h-5 w-5" />
         </button>
@@ -293,10 +293,10 @@ export default function Controls({
       <button
         onClick={onToggleParticipants}
         aria-label="Ver participantes"
-        className="relative h-12 w-12 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
+        className="relative h-14 w-14 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
       >
         <PeopleIcon />
-        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-brand-500 text-[11px] font-semibold flex items-center justify-center">
+        <span className="absolute -top-2 -right-2 z-10 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-[#111214] bg-brand-500 px-1 text-[11px] font-semibold leading-none">
           {participantCount}
         </span>
       </button>
@@ -305,11 +305,11 @@ export default function Controls({
         onClick={onToggleChat}
         aria-label={chatUnreadCount ? `Abrir chat, ${chatUnreadCount} mensagens não lidas` : 'Abrir chat da chamada'}
         title="Chat da chamada"
-        className="relative h-12 w-12 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
+        className="relative h-14 w-14 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
       >
         <ChatIcon />
         {chatUnreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full bg-theme-gradient px-1 text-[10px] font-semibold flex items-center justify-center">
+          <span className="absolute -top-2 -right-2 z-10 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-[#111214] bg-theme-gradient px-1 text-[10px] font-semibold leading-none">
             {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
           </span>
         )}
@@ -318,7 +318,7 @@ export default function Controls({
       <button
         onClick={handleCopy}
         aria-label="Copiar link de convite"
-        className="h-12 px-4 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center gap-2 text-white text-sm font-medium transition-colors"
+        className="h-14 px-5 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center gap-2 text-white text-sm font-medium transition-colors"
       >
         {copied ? <CheckIcon /> : <LinkIcon />}
         {copied ? 'Copiado' : 'Convidar'}
@@ -327,7 +327,7 @@ export default function Controls({
       <button
         onClick={onLeave}
         aria-label="Sair da chamada"
-        className="h-12 w-12 sm:w-auto sm:px-5 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
+        className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
       >
         <HangupIcon />
         <span className="hidden sm:inline">Sair</span>
@@ -372,7 +372,7 @@ function ControlButton({
       title={title}
       aria-label={active ? activeLabel : inactiveLabel}
       aria-pressed={!active}
-      className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors border disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`h-14 w-14 rounded-full flex items-center justify-center transition-colors border disabled:cursor-not-allowed disabled:opacity-50 ${
         danger
           ? 'bg-danger hover:bg-red-600 border-transparent text-white'
           : highlight
@@ -386,8 +386,8 @@ function ControlButton({
 }
 
 function AudioArrowButton({ label, open, onClick }: { label: string; open: boolean; onClick: () => void }) {
-  return <button type="button" onClick={onClick} aria-label={label} aria-expanded={open} title={label} className="grid h-9 w-8 place-items-center rounded-lg border border-surface-border bg-surface-card text-white/65 transition hover:bg-surface-border hover:text-white">
-    <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+  return <button type="button" onClick={onClick} aria-label={label} aria-expanded={open} title={label} className="grid h-14 w-11 place-items-center rounded-xl border border-surface-border bg-surface-card text-white/65 transition hover:bg-surface-border hover:text-white">
+    <ChevronDown className={`h-5 w-5 transition-transform ${open ? 'rotate-180' : ''}`} />
   </button>;
 }
 

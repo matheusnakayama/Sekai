@@ -49,6 +49,8 @@ export interface VoiceMemberPreview {
   joinedAt?: number;
   avatarUrl?: string | null;
   isSpeaking?: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
 }
 
 interface ChannelSidebarProps {
@@ -294,7 +296,17 @@ export function ChannelSidebar({
                 <div className="mt-1 space-y-[2px]">
                   {categoryChannels.map((channel) => {
                     const active = channel.id === activeChannelId;
-                    const voiceMembers = voiceMembersByChannel[channel.id] ?? (channel.id === connectedVoiceChannelId ? connectedVoiceMembers : []);
+                    const savedVoiceMembers = voiceMembersByChannel[channel.id] ?? [];
+                    const channelLiveMembers = channel.id === connectedVoiceChannelId ? connectedVoiceMembers : [];
+                    const liveMembersById = new Map(channelLiveMembers.map((member) => [member.id, member] as const));
+                    const savedMemberIds = new Set(savedVoiceMembers.map((member) => member.id));
+                    const voiceMembers = [
+                      ...savedVoiceMembers.map((member) => {
+                        const liveMember = liveMembersById.get(member.id);
+                        return liveMember ? { ...member, ...liveMember, joinedAt: liveMember.joinedAt ?? member.joinedAt, avatarUrl: liveMember.avatarUrl ?? member.avatarUrl } : member;
+                      }),
+                      ...channelLiveMembers.filter((member) => !savedMemberIds.has(member.id)),
+                    ];
                     const hasVoiceMembers = channel.type === "voice" && (voiceMembers.length > 0 || channel.id === connectedVoiceChannelId);
                     return (
                       <div
@@ -336,16 +348,18 @@ export function ChannelSidebar({
                           </div>}
                         </div>
                         {channel.type === "voice" && voiceMembers.length > 0 && (
-                          <div className="ml-8 mt-0.5 max-w-[calc(100%-2rem)] space-y-1 border-l border-white/10 py-1 pl-2">
+                          <div className="ml-5 mt-0.5 min-w-0 space-y-0.5 py-1 pl-2">
                             {voiceMembers.map((member) => (
-                              <div key={member.id} className="flex min-h-9 min-w-0 items-center gap-2 md:min-h-0">
-                                <div className={`h-6 w-6 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-xs leading-6 text-white md:h-5 md:w-5 md:text-[10px] md:leading-5 ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
+                              <div key={member.id} className="flex min-h-8 min-w-0 items-center gap-1.5 md:min-h-7">
+                                <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
                                   {member.avatarUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
                                   ) : member.name[0]?.toUpperCase()}
                                 </div>
-                                <span className="min-w-0 flex-1 truncate text-sm text-discord-text-normal md:text-[11px]">{member.name}</span>
+                                <span className="min-w-0 flex-1 truncate text-xs text-discord-text-normal md:text-[11px]">{member.name}</span>
+                                {member.isMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Microfone mutado" title="Microfone mutado" />}
+                                {member.isDeafened && <Headphones className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Ensurdecido" title="Ensurdecido" />}
                                 {member.joinedAt && <span className="shrink-0 text-[10px] tabular-nums" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}>{formatVoiceDuration(clockNow - member.joinedAt)}</span>}
                               </div>
                             ))}
@@ -406,9 +420,9 @@ export function ChannelSidebar({
               <p className="truncate pl-5 text-xs text-discord-text-muted md:text-[11px]">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
             {onToggleMute && <div className="relative flex items-center">
-              <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-10 w-9 place-items-center rounded-l-lg transition hover:bg-discord-bg-modifier-hover md:h-auto md:w-auto md:rounded-md md:p-1.5", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5 md:h-4 md:w-4"/> : <Mic className="h-5 w-5 md:h-4 md:w-4"/>}</button>
-              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "input" ? null : "input")} aria-label="Opções do microfone" aria-expanded={voiceAudioMenuOpen === "input"} className="grid h-8 w-6 place-items-center rounded-r-lg text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")}/></button>
-              {voiceAudioMenuOpen === "input" && <div className="absolute bottom-full right-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
+              <button onClick={onToggleMute} title={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-label={currentUser.isMuted ? "Ativar microfone" : "Mutar microfone"} aria-pressed={currentUser.isMuted} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isMuted ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}>{currentUser.isMuted ? <MicOff className="h-5 w-5"/> : <Mic className="h-5 w-5"/>}</button>
+              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "input" ? null : "input")} aria-label="Opções do microfone" aria-expanded={voiceAudioMenuOpen === "input"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "input" && "rotate-180")}/></button>
+              {voiceAudioMenuOpen === "input" && <div className="absolute bottom-full left-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
                 <p className="px-1 text-xs font-semibold">Dispositivo de entrada</p>
                 <div className="mt-2 max-h-28 space-y-1 overflow-y-auto">{voiceAudioSettings?.inputDevices.length ? voiceAudioSettings.inputDevices.map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceInputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedInputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedInputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>) : <p className="px-2 py-2 text-xs text-discord-text-muted">Carregando microfones…</p>}</div>
                 <div className="my-2 border-t border-white/[0.08]"/>
@@ -419,9 +433,9 @@ export function ChannelSidebar({
               </div>}
             </div>}
             {onToggleDeafen && <div className="relative flex items-center">
-              <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-10 w-9 place-items-center rounded-l-lg transition hover:bg-discord-bg-modifier-hover md:h-auto md:w-auto md:rounded-md md:p-1.5", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-5 w-5 md:h-4 md:w-4"/></button>
-              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "output" ? null : "output")} aria-label="Opções da saída de áudio" aria-expanded={voiceAudioMenuOpen === "output"} className="grid h-8 w-6 place-items-center rounded-r-lg text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", voiceAudioMenuOpen === "output" && "rotate-180")}/></button>
-              {voiceAudioMenuOpen === "output" && <div className="absolute bottom-full right-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
+              <button onClick={onToggleDeafen} title={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-label={currentUser.isDeafened ? "Reativar áudio" : "Ensurdecer"} aria-pressed={currentUser.isDeafened} className={cn("grid h-11 w-10 place-items-center rounded-l-xl transition hover:bg-discord-bg-modifier-hover md:h-10 md:w-10 md:rounded-l-lg", currentUser.isDeafened ? "text-discord-danger" : "text-discord-text-muted hover:text-white")}><Headphones className="h-5 w-5"/></button>
+              <button type="button" onClick={() => setVoiceAudioMenuOpen((open) => open === "output" ? null : "output")} aria-label="Opções da saída de áudio" aria-expanded={voiceAudioMenuOpen === "output"} className="grid h-11 w-10 place-items-center rounded-r-xl text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white md:h-10 md:w-9 md:rounded-r-lg"><ChevronDown className={cn("h-4 w-4 transition-transform", voiceAudioMenuOpen === "output" && "rotate-180")}/></button>
+              {voiceAudioMenuOpen === "output" && <div className="absolute bottom-full left-0 z-[100] mb-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-discord-text-normal shadow-2xl">
                 <p className="px-1 text-xs font-semibold">Dispositivo de saída</p>
                 {!voiceAudioSettings?.outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-discord-text-muted">Este navegador usa a saída padrão do sistema e não permite escolhê-la pelo Sekai.</p> : <div className="mt-2 max-h-28 space-y-1 overflow-y-auto"><button type="button" onClick={() => onSelectVoiceOutputDevice?.("")} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", !voiceAudioSettings?.selectedOutputDeviceId && "bg-discord-brand/15 text-white")}>Padrão do sistema{!voiceAudioSettings?.selectedOutputDeviceId && <span className="h-1.5 w-1.5 rounded-full bg-discord-brand"/>}</button>{(voiceAudioSettings?.outputDevices ?? []).filter((device) => device.deviceId !== "default").map((device) => <button key={device.deviceId} type="button" onClick={() => onSelectVoiceOutputDevice?.(device.deviceId)} className={cn("flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-discord-bg-modifier-hover", voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && "bg-discord-brand/15 text-white")}><span className="truncate">{device.label}</span>{voiceAudioSettings?.selectedOutputDeviceId === device.deviceId && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-discord-brand"/>}</button>)}</div>}
                 <label className="mt-2 block border-t border-white/[0.08] pt-3"><span className="flex justify-between text-xs font-semibold"><span>Volume de saída</span><span className="text-discord-text-muted">{Math.round((voiceAudioSettings?.outputVolume ?? 1) * 100)}%</span></span><input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={voiceAudioSettings?.outputVolume ?? 1} onChange={(event) => onVoiceOutputVolumeChange?.(Number(event.target.value))} className="mt-2 w-full" style={{ accentColor: "rgb(var(--d-brand))" }}/></label>

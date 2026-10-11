@@ -361,6 +361,7 @@ export default function RoomClient({
           avatarUrl,
           stream: opts.stream ?? undefined,
           micOn: opts.micOn,
+          isDeafened: deafened,
           camOn: opts.camOn,
           isSpeaking: false,
           isSharingScreen: false,
@@ -479,7 +480,7 @@ export default function RoomClient({
       manager.onMediaState = (peerId, state) => {
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
-          return { ...prev, [peerId]: { ...participant, micOn: state.micOn, camOn: state.camOn } };
+          return { ...prev, [peerId]: { ...participant, micOn: state.micOn, camOn: state.camOn, isDeafened: state.deafened ?? participant.isDeafened ?? false } };
         });
       };
 
@@ -547,7 +548,7 @@ export default function RoomClient({
           });
         }
         // Avisa o recém-chegado sobre nosso estado atual (ele só recebe eventos futuros).
-        manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: currentCamRef.current });
+        manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: currentCamRef.current, deafened: currentDeafenedRef.current });
         if (currentSharingRef.current) {
           manager.broadcastScreenShareState(true);
           void manager.offerScreenTo(member.id);
@@ -596,6 +597,8 @@ export default function RoomClient({
 
   // Refs auxiliares para ler o estado atual dentro de callbacks de eventos do Pusher
   const currentMicRef = useRef(micOn);
+  const currentDeafenedRef = useRef(deafened);
+  currentDeafenedRef.current = deafened;
   const currentCamRef = useRef(camOn);
   const currentSharingRef = useRef(sharingScreen);
   useEffect(() => {
@@ -669,7 +672,7 @@ export default function RoomClient({
     }
 
     if (microphoneTracks.length > 0 || muted) rememberCallAudio({ micOn: nextMicOn });
-    manager?.broadcastMediaState({ micOn: nextMicOn, camOn: currentCamRef.current });
+    manager?.broadcastMediaState({ micOn: nextMicOn, camOn: currentCamRef.current, deafened: currentDeafenedRef.current });
     if (!muted && !microphoneTracks.length) {
       showProblem('O anfitrião liberou seu microfone, mas não há microfone disponível neste dispositivo.');
     }
@@ -810,15 +813,18 @@ export default function RoomClient({
     setMicOn(next);
     tracks.forEach((t) => (t.enabled = next));
     updateLocalParticipant({ micOn: next });
-    managerRef.current?.broadcastMediaState({ micOn: next, camOn });
+    managerRef.current?.broadcastMediaState({ micOn: next, camOn, deafened: currentDeafenedRef.current });
   }, [micOn, camOn]);
 
   const toggleDeafen = useCallback(() => {
     const next = !deafened;
     rememberCallAudio({ deafened: next, micOn: next ? false : micOn });
+    currentDeafenedRef.current = next;
     setDeafened(next);
+    updateLocalParticipant({ isDeafened: next });
     if (next && micOn) toggleMic();
-  }, [deafened, micOn, toggleMic]);
+    else managerRef.current?.broadcastMediaState({ micOn, camOn, deafened: next });
+  }, [deafened, micOn, camOn, toggleMic]);
 
   useEffect(() => {
     onControlsReady?.({
@@ -844,7 +850,7 @@ export default function RoomClient({
     setCamOn(next);
     cameraStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = next));
     updateLocalParticipant({ camOn: next });
-    managerRef.current?.broadcastMediaState({ micOn, camOn: next });
+    managerRef.current?.broadcastMediaState({ micOn, camOn: next, deafened: currentDeafenedRef.current });
   }
 
   async function stopScreenShare() {
@@ -880,7 +886,7 @@ export default function RoomClient({
       camOn: restoreCam,
     });
     managerRef.current?.broadcastScreenShareState(false);
-    managerRef.current?.broadcastMediaState({ micOn: currentMicRef.current, camOn: restoreCam });
+    managerRef.current?.broadcastMediaState({ micOn: currentMicRef.current, camOn: restoreCam, deafened: currentDeafenedRef.current });
     setScreenCaptureInfo('');
     setMuteRemoteAudioDuringShare(false);
     screenShareOperationRef.current = false;
@@ -971,7 +977,7 @@ export default function RoomClient({
       manager.broadcastScreenShareState(true);
       // `camOn` também controla se o vídeo remoto é exibido. Durante a
       // apresentação, avise que há vídeo mesmo se a câmera estava desligada.
-      manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: true });
+      manager.broadcastMediaState({ micOn: currentMicRef.current, camOn: true, deafened: currentDeafenedRef.current });
 
       screenTrack.addEventListener('ended', () => {
         // Use a rotina de parada diretamente para não depender do estado React
@@ -1577,6 +1583,7 @@ function createRemoteParticipant(id: string, name = 'Convidado', avatarUrl?: str
     joinedAt,
     avatarUrl,
     micOn: true,
+    isDeafened: false,
     camOn: true,
     isSpeaking: false,
     isSharingScreen: false,

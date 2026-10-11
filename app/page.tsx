@@ -1857,7 +1857,7 @@ export default function Home() {
     voiceSession.kind === "dm" || (activeChannelType === "voice" && activeChannelId === voiceSession.channelId)
   );
   const connectedHere = !!voiceSession && voiceSession.channelId === activeChannelId;
-  const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, joinedAt: participant.joinedAt, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking }));
+  const liveVoiceMembers = voiceParticipants.map((participant) => ({ id: participant.id, name: participant.name, joinedAt: participant.joinedAt, avatarUrl: participant.avatarUrl, isSpeaking: participant.isSpeaking, isMuted: !participant.micOn, isDeafened: participant.isDeafened === true }));
   const visibleVoiceMembersByChannel = voiceSession
     ? { ...voiceMembersByChannel, [voiceSession.channelId]: liveVoiceMembers }
     : voiceMembersByChannel;

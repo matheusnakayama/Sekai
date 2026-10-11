@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Hash, MoreHorizontal, Pin, Plus, Smile, SendHorizontal, Star, X, Check, FileText, MessageSquarePlus, BarChart3, Sparkles, Music2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
 import { useChatDisplay } from "@/lib/chatPreferences";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
@@ -152,6 +153,8 @@ export function ChatArea({
   const supabase = createClient();
   const dialogs = useDialogs();
   const [draft, setDraft] = useState("");
+  const [pendingPastedImage, setPendingPastedImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const [mentionSearch, setMentionSearch] = useState<MentionSearch | null>(null);
   const [mentionSelection, setMentionSelection] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
@@ -160,6 +163,7 @@ export function ChatArea({
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const composerToolsRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadInProgressRef = useRef(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [serverEmojis, setServerEmojis] = useState<ServerEmoji[]>([]);
   const [signedAttachmentUrls, setSignedAttachmentUrls] = useState<Record<string, string>>({});
@@ -206,6 +210,11 @@ export function ChatArea({
   const quotePrefix = useRef("");
   const pinnedIds = useMemo(() => new Set(pins.map((item) => item.id)), [pins]);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.id)), [favorites]);
+
+  useEffect(() => {
+    const previewUrl = pendingPastedImage?.previewUrl;
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [pendingPastedImage?.previewUrl]);
 
   useEffect(() => {
     if (!composerToolsOpen) return;
@@ -469,6 +478,10 @@ export function ChatArea({
   }
 
   function submitComposer() {
+    if (pendingPastedImage) {
+      void sendPendingPastedImage();
+      return;
+    }
     const trimmed = draft.trim();
     if (!trimmed) return;
     onSendMessage(trimmed);
@@ -532,18 +545,33 @@ export function ChatArea({
     setComposerActionError("");
   }
 
-  async function uploadAttachment(file?: File) {
-    if (!file || !onUploadFile) return;
-    if (file.size > 10 * 1024 * 1024) { await dialogs.notify({ title: "Arquivo muito grande", message: "O limite para anexos é de 10 MB." }); return; }
+  async function uploadAttachment(file?: File, content = ""): Promise<boolean> {
+    if (!file || !onUploadFile || uploadInProgressRef.current) return false;
+    if (file.size > 10 * 1024 * 1024) { await dialogs.notify({ title: "Arquivo muito grande", message: "O limite para anexos é de 10 MB." }); return false; }
+    uploadInProgressRef.current = true;
     setUploading(true);
     try {
       const url = await onUploadFile(file);
-      await onSendMessage("", url, { name: file.name.slice(0, 180) || "arquivo", mimeType: file.type || "application/octet-stream" });
+      onSendMessage(content, url, { name: file.name.slice(0, 180) || (file.type.startsWith("image/") ? "imagem.png" : "arquivo"), mimeType: file.type || "application/octet-stream" });
+      return true;
     } catch (error) {
       await dialogs.notify({ title: "Falha ao enviar arquivo", message: error instanceof Error ? error.message : "Não foi possível enviar o arquivo." });
+      return false;
     } finally {
+      uploadInProgressRef.current = false;
       setUploading(false);
     }
+  }
+
+  async function sendPendingPastedImage() {
+    if (!pendingPastedImage || uploading) return;
+    const sent = await uploadAttachment(pendingPastedImage.file, draft.trim());
+    if (!sent) return;
+    setPendingPastedImage(null);
+    setDraft("");
+    setMentionSearch(null);
+    setComposerNote(null);
+    quotePrefix.current = "";
   }
 
   function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -551,7 +579,8 @@ export function ChatArea({
     const file = image?.getAsFile();
     if (!file) return;
     event.preventDefault();
-    void uploadAttachment(file);
+    if (uploading) return;
+    setPendingPastedImage({ file, previewUrl: URL.createObjectURL(file) });
   }
 
   async function createTopic(event: React.FormEvent) {
@@ -730,11 +759,13 @@ export function ChatArea({
               })()}
 
               {chatDisplay.showUploads && message.attachmentUrl && (message.attachmentMimeType?.startsWith("image/") || (!message.attachmentMimeType && !message.attachmentName)) && (
-                <HoverGifImage
-                  src={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl}
-                  alt={message.attachmentName || "Imagem enviada"}
-                  className="mt-2 max-h-80 rounded-lg border border-black/20"
-                />
+                <button type="button" onClick={() => setLightboxImage({ src: signedAttachmentUrls[message.attachmentUrl!] ?? signedAttachmentCache.current.get(message.attachmentUrl!) ?? message.attachmentUrl!, alt: message.attachmentName || "Imagem enviada" })} aria-label="Ampliar imagem enviada" className="mt-2 block max-w-full cursor-zoom-in rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-discord-brand">
+                  <HoverGifImage
+                    src={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl}
+                    alt={message.attachmentName || "Imagem enviada"}
+                    className="max-h-80 max-w-full rounded-lg border border-black/20"
+                  />
+                </button>
               )}
               {chatDisplay.showUploads && message.attachmentUrl && message.attachmentMimeType && !message.attachmentMimeType.startsWith("image/") && (
                 <a href={signedAttachmentUrls[message.attachmentUrl] ?? signedAttachmentCache.current.get(message.attachmentUrl) ?? message.attachmentUrl} download={message.attachmentName || true} target="_blank" rel="noreferrer" className="mt-2 flex w-fit max-w-full items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-secondary/80 px-3 py-2.5 text-discord-text-normal transition hover:bg-white/10">
@@ -897,6 +928,16 @@ export function ChatArea({
 
         {composerNote && <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-discord-text-muted"><span className="min-w-0 flex-1 truncate">{composerNote}</span><button type="button" aria-label="Cancelar resposta" onClick={cancelQuote} className="rounded p-1 hover:bg-white/10 hover:text-white"><X size={14}/></button></div>}
 
+        {pendingPastedImage && <div className="mb-2 flex items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-secondary p-2.5">
+          <button type="button" onClick={() => setLightboxImage({ src: pendingPastedImage.previewUrl, alt: pendingPastedImage.file.name || "Imagem colada" })} aria-label="Ampliar imagem que será enviada" className="shrink-0 cursor-zoom-in rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-discord-brand">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={pendingPastedImage.previewUrl} alt="Prévia da imagem" className="h-16 w-16 rounded-lg object-cover" />
+          </button>
+          <div className="min-w-0 flex-1"><p className="text-sm font-medium text-discord-header-primary">Imagem pronta para enviar</p><p className="truncate text-xs text-discord-text-muted">{pendingPastedImage.file.name || "Imagem colada"}</p></div>
+          <button type="button" disabled={uploading} onClick={() => setPendingPastedImage(null)} className="rounded-lg px-3 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/10 hover:text-white disabled:opacity-50">Cancelar</button>
+          <button type="button" disabled={uploading || !onUploadFile} onClick={() => void sendPendingPastedImage()} className="rounded-lg bg-discord-brand px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50">{uploading ? "Enviando…" : "Enviar"}</button>
+        </div>}
+
         <form
           onSubmit={handleSubmit}
           className="flex min-h-12 items-center gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
@@ -958,7 +999,7 @@ export function ChatArea({
             </button>
           </div>
 
-          <button type="submit" aria-label="Enviar mensagem" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 sm:h-auto sm:w-auto sm:bg-transparent sm:text-discord-text-muted sm:hover:bg-transparent sm:hover:text-discord-brand">
+          <button type="submit" disabled={uploading} aria-label={pendingPastedImage ? "Enviar imagem" : "Enviar mensagem"} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50 sm:h-auto sm:w-auto sm:bg-transparent sm:text-discord-text-muted sm:hover:bg-transparent sm:hover:text-discord-brand">
             <SendHorizontal className="h-5 w-5" />
           </button>
         </form>
@@ -984,6 +1025,7 @@ export function ChatArea({
         </form>
       </div>}
       {activeTopic && <ChatTopicThreadDialog topicId={activeTopic.id} initialTitle={activeTopic.title} currentUserId={currentUserId} onClose={() => setActiveTopic(null)}/>}
+      {lightboxImage && <ImageLightbox src={lightboxImage.src} alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} />}
     </div>
   );
 }

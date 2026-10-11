@@ -4,7 +4,7 @@ export type SignalPayload =
   | { type: 'ice-candidate'; from: string; to: string; candidate: RTCIceCandidateInit; generation?: number }
   | { type: 'ice-candidates'; from: string; to: string; candidates: RTCIceCandidateInit[]; generation?: number }
   | { type: 'screen-share-state'; from: string; sharing: boolean }
-  | { type: 'media-state'; from: string; micOn: boolean; camOn: boolean }
+  | { type: 'media-state'; from: string; micOn: boolean; camOn: boolean; deafened?: boolean }
   | { type: 'peer-reset'; from: string; to: string; generation?: number; relay?: boolean; request?: boolean }
   | { type: 'screen-offer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation: number }
   | { type: 'screen-answer'; from: string; to: string; sdp: RTCSessionDescriptionInit; generation: number }
@@ -28,6 +28,7 @@ export interface Participant {
   soundboardTrack?: MediaStreamTrack;
   screenAudioTrack?: MediaStreamTrack;
   micOn: boolean;
+  isDeafened?: boolean;
   camOn: boolean;
   isSpeaking: boolean;
   isSharingScreen: boolean;

@@ -23,7 +23,7 @@ type SoundboardTrackHandler = (peerId: string, track: MediaStreamTrack) => void;
 type ConnectionStateHandler = (peerId: string, state: RTCPeerConnectionState) => void;
 type SpeakingHandler = (peerId: string, speaking: boolean) => void;
 type ScreenShareHandler = (peerId: string, sharing: boolean) => void;
-type MediaStateHandler = (peerId: string, state: { micOn: boolean; camOn: boolean }) => void;
+type MediaStateHandler = (peerId: string, state: { micOn: boolean; camOn: boolean; deafened?: boolean }) => void;
 
 export interface VideoSenderProfile {
   maxBitrate: number;
@@ -372,7 +372,7 @@ export class WebRTCManager {
     this.send({ type: 'screen-share-state', from: this.localId, sharing });
   }
 
-  broadcastMediaState(state: { micOn: boolean; camOn: boolean }) {
+  broadcastMediaState(state: { micOn: boolean; camOn: boolean; deafened?: boolean }) {
     this.send({ type: 'media-state', from: this.localId, ...state });
   }
 
@@ -1266,7 +1266,7 @@ export class WebRTCManager {
       return;
     }
     if (payload.type === 'media-state') {
-      this.onMediaState(payload.from, { micOn: payload.micOn, camOn: payload.camOn });
+      this.onMediaState(payload.from, { micOn: payload.micOn, camOn: payload.camOn, deafened: payload.deafened });
       return;
     }
 
