@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { COLOR_MODE_STORAGE_KEY, DEFAULT_COLOR_MODE, accentVariables, colorsForMode, type ColorMode } from "@/lib/colorMode";
-import { complementaryLinkColor } from "@/lib/linkColor";
+import { complementaryLinkColor, complementaryLogoColor } from "@/lib/linkColor";
 import { DEFAULT_THEME, STYLESHEET_THEME_IDS, THEMES, THEME_STORAGE_KEY, type ThemeOption } from "@/lib/themes";
 
 const THEME_EVENT = "sekai-theme-change";
@@ -107,9 +107,11 @@ function applyTheme(id: string, mode: ColorMode) {
   ].forEach((name) => root.style.removeProperty(name));
   if (!selected) {
     root.style.removeProperty("--sekai-link");
+    root.style.removeProperty("--sekai-logo-accent");
     return;
   }
   root.style.setProperty("--sekai-link", complementaryLinkColor(selected.stops));
+  root.style.setProperty("--sekai-logo-accent", complementaryLogoColor(selected.stops));
   const shaded = colorsForMode(selected.stops, mode);
   const background = colorsForMode(selected.backgroundStops ?? [selected.stops[0], selected.stops[6]], mode) as [string, string];
   if (STYLESHEET_THEMES.has(id) && mode === "light") {

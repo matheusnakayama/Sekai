@@ -121,3 +121,21 @@ export function complementaryLinkColor(stops: readonly string[]) {
   }
   return color;
 }
+
+/** Cor da marca Sekai para cada tema, separada do tom do tema para dar contraste. */
+export function complementaryLogoColor(stops: readonly string[]) {
+  const source = primaryStop(stops);
+  const [red, green, blue] = hexToRgb(source);
+  const [hue, saturation] = rgbToHsl(red, green, blue);
+  const sourceChroma = chromaOf(source);
+
+  // A marca deve ficar amarela nos temas verdes e roxa nos temas amarelos,
+  // conforme o contraste visual escolhido para o Sekai.
+  let logoHue: number;
+  if (sourceChroma < 10) logoHue = 52;
+  else if (hue >= 80 && hue <= 165) logoHue = 52;
+  else if (hue >= 15 && hue < 80) logoHue = 270;
+  else logoHue = (hue + 180) % 360;
+
+  return hslToHex(logoHue, Math.min(0.96, Math.max(0.82, saturation)), 0.68);
+}

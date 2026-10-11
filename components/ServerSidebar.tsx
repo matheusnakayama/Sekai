@@ -156,8 +156,20 @@ export function ServerSidebar({
     <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
       {/* Botão "Início" (DM) */}
       <ServerIcon active={!activeServerId} onClick={() => { onSelectServer(""); onOpenHome?.(); }} label="Mensagens diretas">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={SEKAI_LOGO_MONOCHROME} alt="" aria-hidden="true" className="h-8 w-9 object-contain brightness-0 invert" />
+        <span
+          aria-hidden="true"
+          className="h-8 w-9 bg-[var(--sekai-logo-accent)]"
+          style={{
+            maskImage: `url("${SEKAI_LOGO_MONOCHROME}")`,
+            WebkitMaskImage: `url("${SEKAI_LOGO_MONOCHROME}")`,
+            maskRepeat: "no-repeat",
+            WebkitMaskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskPosition: "center",
+            maskSize: "contain",
+            WebkitMaskSize: "contain",
+          }}
+        />
       </ServerIcon>
 
       <div className="mx-auto my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />

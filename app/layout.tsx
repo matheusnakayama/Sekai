@@ -5,11 +5,12 @@ import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
 import { accentVariables, colorsForMode } from "@/lib/colorMode";
-import { complementaryLinkColor } from "@/lib/linkColor";
+import { complementaryLinkColor, complementaryLogoColor } from "@/lib/linkColor";
 import { STYLESHEET_THEME_IDS, THEMES } from "@/lib/themes";
 import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
 const linkColors = Object.fromEntries(THEMES.map((theme) => [theme.id, complementaryLinkColor(theme.stops)]));
+const logoColors = Object.fromEntries(THEMES.map((theme) => [theme.id, complementaryLogoColor(theme.stops)]));
 const stylesheetThemes = new Set<string>(STYLESHEET_THEME_IDS);
 const darkAccents = Object.fromEntries(THEMES.map((theme) => {
   const stops = colorsForMode(theme.stops, "dark");
@@ -45,7 +46,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              `try{var m=${JSON.stringify(linkColors)};var d=${JSON.stringify(darkAccents)};var t=localStorage.getItem('sekai-theme');var mode=localStorage.getItem('sekai-color-mode');var root=document.documentElement;if(t){root.setAttribute('data-theme',t);if(m[t])root.style.setProperty('--sekai-link',m[t])}if(mode==='dark'){root.setAttribute('data-color-mode','dark');var pack=d[t];if(pack){for(var k in pack)root.style.setProperty(k,pack[k])}}else{root.setAttribute('data-color-mode','light')}}catch(e){}`,
+              `try{var m=${JSON.stringify(linkColors)};var l=${JSON.stringify(logoColors)};var d=${JSON.stringify(darkAccents)};var t=localStorage.getItem('sekai-theme');var mode=localStorage.getItem('sekai-color-mode');var root=document.documentElement;if(t){root.setAttribute('data-theme',t);if(m[t])root.style.setProperty('--sekai-link',m[t]);if(l[t])root.style.setProperty('--sekai-logo-accent',l[t])}if(mode==='dark'){root.setAttribute('data-color-mode','dark');var pack=d[t];if(pack){for(var k in pack)root.style.setProperty(k,pack[k])}}else{root.setAttribute('data-color-mode','light')}}catch(e){}`,
           }}
         />
       </head>

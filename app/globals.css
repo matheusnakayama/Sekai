@@ -43,6 +43,7 @@
   --gw6: rgb(56 64 184 / 0.30);
   --gw7: rgb(42 49 111 / 0.30);
   --sekai-link: #f2e455;
+  --sekai-logo-accent: #f2e455;
 }
 
 html[data-theme="roxo"] {
