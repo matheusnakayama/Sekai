@@ -120,9 +120,9 @@ export function ProfileBanner({
   children?: ReactNode;
 }) {
   return (
-    <header className={cn("relative isolate overflow-hidden bg-theme-gradient", className)} style={style}>
-      {src && <div className="pointer-events-none absolute inset-0" style={fadeImageToBackground ? { maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 10px), transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 10px), transparent 100%)" } : undefined}><CroppedProfileImage src={src} alt="" positionX={positionX} positionY={positionY} zoom={zoom} pauseGif={false} /></div>}
-      <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-b", fadeImageToBackground ? "from-black/5 via-black/5 to-transparent" : "from-black/5 via-black/10 to-black/30")} />
+    <header className={cn("relative isolate bg-theme-gradient", !fadeImageToBackground && "overflow-hidden", className)} style={style}>
+      {src && <div className="pointer-events-none absolute overflow-hidden" style={fadeImageToBackground ? { left: -1, right: -1, top: 0, bottom: -20, maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 20px), transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 20px), transparent 100%)" } : { inset: 0 }}><CroppedProfileImage src={src} alt="" positionX={positionX} positionY={positionY} zoom={zoom} pauseGif={false} /></div>}
+      {!fadeImageToBackground && <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 via-black/10 to-black/30" />}
       <div className="relative z-10 h-full">{children}</div>
     </header>
   );

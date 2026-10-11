@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   Hash,
@@ -383,7 +384,26 @@ export function ChannelSidebar({
         )}
       </div>
 
-      {contextMenu && <><button aria-label="Fechar opções do canal" className="fixed inset-0 z-40 cursor-default" onClick={() => setContextMenu(null)} /><div style={{ left: Math.min(contextMenu.x, window.innerWidth - 205), top: Math.min(contextMenu.y, window.innerHeight - 130) }} className="fixed z-50 w-48 rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"><p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>{canCreateInvite && <button onClick={() => { onCreateChannelInvite?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Criar convite do canal</button>}{canManageChannels && <><button onClick={() => { onEditChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Configurações do canal</button><button onClick={() => { onDeleteChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10">Excluir canal</button></>}</div></>}
+      {contextMenu && createPortal(
+        <>
+          <button aria-label="Fechar opções do canal" className="fixed inset-0 z-[299] cursor-default" onClick={() => setContextMenu(null)} />
+          <div
+            style={{
+              left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 200)),
+              top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 176)),
+            }}
+            className="fixed z-[300] max-h-[calc(100dvh-16px)] w-[min(192px,calc(100vw-16px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"
+          >
+            <p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>
+            {canCreateInvite && <button onClick={() => { onCreateChannelInvite?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Criar convite do canal</button>}
+            {canManageChannels && <>
+              <button onClick={() => { onEditChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Configurações do canal</button>
+              <button onClick={() => { onDeleteChannel?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10">Excluir canal</button>
+            </>}
+          </div>
+        </>,
+        document.body,
+      )}
 
       {/* Acesso ao soundboard sempre disponível, com ou sem chamada. */}
       <div className="relative border-t border-white/[0.06] bg-discord-bg-darkest px-3 py-2">
