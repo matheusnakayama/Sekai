@@ -3,18 +3,30 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { SpotifyMark } from "@/components/NowPlayingCard";
-import { beginSpotifyConnect, clearConnection, clearNowPlaying, readSpotifySession, SPOTIFY_CLIENT_ID, spotifyRedirectUri, writeSpotifySession, type SpotifySession } from "@/lib/spotify";
+import { beginSpotifyConnect, clearConnection, clearNowPlaying, readSpotifySession, readSpotifySyncIssue, SPOTIFY_CLIENT_ID, spotifyRedirectUri, writeSpotifySession, writeSpotifySyncIssue, type SpotifySession } from "@/lib/spotify";
 
 export function SpotifyConnections({ userId }: { userId: string }) {
   const [session, setSession] = useState<SpotifySession | null>(null);
   const [notice, setNotice] = useState("");
+  const [syncIssue, setSyncIssue] = useState<string | null>(null);
   const [schemaReady, setSchemaReady] = useState(true);
 
   useEffect(() => {
-    const load = () => setSession(readSpotifySession(userId));
+    const load = () => {
+      setSession(readSpotifySession(userId));
+      setSyncIssue(readSpotifySyncIssue(userId));
+    };
+    const onSyncIssue = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; message?: string | null }>).detail;
+      if (detail?.userId === userId) setSyncIssue(detail.message ?? null);
+    };
     load();
     window.addEventListener("sekai-spotify-session", load);
-    return () => window.removeEventListener("sekai-spotify-session", load);
+    window.addEventListener("sekai-spotify-sync-issue", onSyncIssue);
+    return () => {
+      window.removeEventListener("sekai-spotify-session", load);
+      window.removeEventListener("sekai-spotify-sync-issue", onSyncIssue);
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -32,6 +44,7 @@ export function SpotifyConnections({ userId }: { userId: string }) {
 
   async function disconnect() {
     writeSpotifySession(userId, null);
+    writeSpotifySyncIssue(userId, null);
     setSession(null);
     await clearNowPlaying(userId).catch(() => undefined);
     await clearConnection(userId).catch(() => undefined);
@@ -65,6 +78,7 @@ export function SpotifyConnections({ userId }: { userId: string }) {
             <Toggle checked={session.showAsStatus} title="Exibir o Spotify como seu status" text="Quem estiver online vê que você está ouvindo esta faixa." onChange={(value) => update({ showAsStatus: value })} />
           </div>
         )}
+        {syncIssue && <p role="alert" className="mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs leading-5 text-amber-100">{syncIssue}</p>}
         {notice && <p role="alert" className="mt-3 text-xs text-rose-200">{notice}</p>}
       </article>
     </section>

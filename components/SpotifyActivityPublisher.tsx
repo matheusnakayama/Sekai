@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { clearNowPlaying, displayMode, ensureSpotifyToken, fetchCurrentlyPlaying, publishConnection, publishNowPlaying, readSpotifySession, spotifyAccount, writeSpotifySession } from "@/lib/spotify";
+import { clearNowPlaying, displayMode, ensureSpotifyToken, fetchCurrentlyPlaying, publishConnection, publishNowPlaying, readSpotifySession, spotifyAccount, spotifySyncIssueMessage, SpotifyApiError, writeSpotifySession, writeSpotifySyncIssue } from "@/lib/spotify";
 
 export function SpotifyActivityPublisher({ userId, presence }: { userId: string; presence?: string | null }) {
   useEffect(() => {
@@ -25,14 +25,21 @@ export function SpotifyActivityPublisher({ userId, presence }: { userId: string;
         const hidden = presence === "offline" || (!account.showOnProfile && !account.showAsStatus);
         if (hidden) {
           await clearNowPlaying(userId).catch(() => undefined);
+          writeSpotifySyncIssue(userId, null);
           return;
         }
         const playing = await fetchCurrentlyPlaying(account.accessToken);
         if (stopped) return;
         if (!playing) await clearNowPlaying(userId);
         else await publishNowPlaying(userId, playing, displayMode(account));
-      } catch {
-        // A próxima rodada tenta de novo. Sem tabela no Supabase, o perfil simplesmente não mostra a faixa.
+        writeSpotifySyncIssue(userId, null);
+      } catch (error) {
+        if (stopped) return;
+        console.warn("Falha ao sincronizar atividade do Spotify:", error);
+        writeSpotifySyncIssue(userId, spotifySyncIssueMessage(error));
+        if (error instanceof SpotifyApiError && (error.status === 401 || error.code === "invalid_grant")) {
+          writeSpotifySession(userId, null);
+        }
       }
     }
     void tick();

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 export const SPOTIFY_CLIENT_ID = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 const SCOPES = "user-read-currently-playing user-read-playback-state";
 const VERIFIER_KEY = "sekai-spotify-verifier";
+const SYNC_ISSUE_EVENT = "sekai-spotify-sync-issue";
 
 export type SpotifySession = {
   accessToken: string;
@@ -31,6 +32,74 @@ export type NowPlaying = {
   display: "profile" | "status" | "both";
   updatedAt: string;
 };
+
+export class SpotifyApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = "SpotifyApiError";
+  }
+}
+
+function syncIssueKey(userId: string) {
+  return `sekai-spotify-sync-issue:${userId}`;
+}
+
+export function readSpotifySyncIssue(userId: string) {
+  try {
+    return localStorage.getItem(syncIssueKey(userId));
+  } catch {
+    return null;
+  }
+}
+
+export function writeSpotifySyncIssue(userId: string, message: string | null) {
+  try {
+    if (message) localStorage.setItem(syncIssueKey(userId), message);
+    else localStorage.removeItem(syncIssueKey(userId));
+  } catch {
+    // The visible settings warning still updates if storage is unavailable.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(SYNC_ISSUE_EVENT, { detail: { userId, message } }));
+  }
+}
+
+function errorDetails(payload: unknown) {
+  if (!payload || typeof payload !== "object") return { code: undefined, message: "" };
+  const record = payload as Record<string, unknown>;
+  return {
+    code: typeof record.error === "string" ? record.error : undefined,
+    message: typeof record.error_description === "string" ? record.error_description : "",
+  };
+}
+
+export function spotifySyncIssueMessage(error: unknown) {
+  const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const status = Number(details.status) || 0;
+  const code = typeof details.code === "string" ? details.code : "";
+  const rawMessage = error instanceof Error ? error.message : String(details.message || "");
+  const normalized = `${code} ${rawMessage}`.toLowerCase();
+
+  if (code === "invalid_grant" || normalized.includes("invalid_grant")) {
+    return "A autorização do Spotify expirou. Conecte sua conta do Spotify novamente.";
+  }
+  if (status === 403) {
+    return "O Spotify recusou o acesso desta conta (403). Se o app estiver em Development Mode, adicione este usuário em Spotify Developer Dashboard → Settings → Users Management; o modo atual permite até 5 usuários autorizados.";
+  }
+  if (status === 401) {
+    return "A autorização do Spotify expirou ou foi revogada. Desconecte e conecte sua conta novamente.";
+  }
+  if (status === 429) {
+    return "O Spotify limitou temporariamente as consultas. A sincronização tentará novamente em instantes.";
+  }
+  if (normalized.includes("user_now_playing") && (normalized.includes("does not exist") || normalized.includes("schema cache") || normalized.includes("relation"))) {
+    return "A tabela de atividade do Spotify não foi encontrada no Supabase. Aplique db/spotify_now_playing_migration.sql no SQL Editor.";
+  }
+  if (normalized.includes("row-level security") || normalized.includes("rls") || code === "42501") {
+    return "O Supabase bloqueou a gravação da atividade. Confira as políticas RLS de user_now_playing no Supabase.";
+  }
+  return "Não foi possível sincronizar sua atividade do Spotify. Confira a conexão e tente reconectar; se continuar, abra o console do navegador para ver o erro.";
+}
 
 function storageKey(userId: string) {
   return `sekai-spotify:${userId}`;
@@ -168,8 +237,11 @@ async function refreshAccessToken(session: SpotifySession) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!response.ok) throw new Error("Não foi possível renovar o Spotify.");
-  const token = await response.json();
+  const token = await response.json().catch(() => null);
+  if (!response.ok) {
+    const details = errorDetails(token);
+    throw new SpotifyApiError(details.message || "Não foi possível renovar o Spotify.", response.status, details.code);
+  }
   return {
     ...session,
     accessToken: token.access_token as string,
@@ -192,7 +264,7 @@ export async function fetchCurrentlyPlaying(accessToken: string) {
     headers: { authorization: `Bearer ${accessToken}` },
   });
   if (response.status === 204 || response.status === 202) return null;
-  if (!response.ok) throw new Error("O Spotify não informou a faixa atual.");
+  if (!response.ok) throw new SpotifyApiError("O Spotify não informou a faixa atual.", response.status);
   const payload = await response.json();
   const track = payload?.item;
   if (!payload?.is_playing || !track?.name) return null;

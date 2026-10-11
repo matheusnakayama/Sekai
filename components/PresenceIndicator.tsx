@@ -40,10 +40,11 @@ export function PresenceIndicator({
   avatarBadge?: boolean;
 }) {
   const maskId = useId().replace(/:/g, "");
-  const indicatorBorderWidth = avatarBadge ? 3 : borderWidth;
-  const badgeSize = "clamp(14px, 28%, 20px)";
-  const iconSize = avatarBadge ? `calc(${badgeSize} - 6px)` : Math.max(0, size - borderWidth * 2);
-  const hollowDnd = hollowSymbols || avatarBadge;
+  const indicatorBorderWidth = avatarBadge ? 2 : borderWidth;
+  const badgeSize = "clamp(14px, 32%, 20px)";
+  const iconSize = avatarBadge ? "100%" : Math.max(0, size - borderWidth * 2);
+  // Keep avatar badges filled. The hollow symbol is only useful at larger sizes.
+  const hollowDnd = hollowSymbols && !avatarBadge;
 
   return (
     <span
@@ -53,8 +54,8 @@ export function PresenceIndicator({
       className={cn("presence-indicator inline-grid shrink-0 place-items-center rounded-full", className)}
       style={{
         position: avatarBadge ? "absolute" : "relative",
-        right: avatarBadge ? 2 : undefined,
-        bottom: avatarBadge ? 2 : undefined,
+        right: avatarBadge ? -2 : undefined,
+        bottom: avatarBadge ? -2 : undefined,
         zIndex: avatarBadge ? 10 : undefined,
         width: avatarBadge ? badgeSize : size,
         height: avatarBadge ? badgeSize : size,
@@ -79,7 +80,7 @@ export function PresenceIndicator({
           <defs><mask id={`${maskId}-dnd`}><rect width="16" height="16" fill="white"/><rect x="4" y="7" width="8" height="2" rx="1" fill="black"/></mask></defs>
           <circle cx="8" cy="8" r="7.5" fill={PRESENCE_COLORS.dnd} mask={`url(#${maskId}-dnd)`}/>
         </svg>
-      ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full" style={{ backgroundColor: dndBarColor }} />)}
+      ) : <span aria-hidden="true" className="h-[2px] w-[55%] rounded-full" style={{ backgroundColor: avatarBadge ? "#ffffff" : dndBarColor }} />)}
       {presence === "offline" && <span aria-hidden="true" className="h-[46%] w-[46%] rounded-full" style={{ backgroundColor: cutoutColor }} />}
     </span>
   );
