@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   MessageCircle,
+  PhoneOff,
   Shield,
   UserMinus,
   UserPlus,
@@ -31,6 +32,8 @@ interface MemberContextMenuProps {
   canTimeout: boolean;
   canKick: boolean;
   canBan: boolean;
+  canDisconnectFromVoice?: boolean;
+  memberInVoice?: boolean;
   onClose: () => void;
   onOpenProfile: () => void;
   onMention: () => void;
@@ -40,6 +43,7 @@ interface MemberContextMenuProps {
   onTimeout?: () => void;
   onKick?: () => void;
   onBan?: () => void;
+  onDisconnectFromVoice?: () => void;
   onToggleRole?: (role: ServerRoleOption, assigned: boolean) => void;
   soundEffectsMuted?: boolean;
   onToggleSoundEffects?: () => void;
@@ -57,6 +61,8 @@ export function MemberContextMenu({
   canTimeout,
   canKick,
   canBan,
+  canDisconnectFromVoice = false,
+  memberInVoice = false,
   onClose,
   onOpenProfile,
   onMention,
@@ -66,6 +72,7 @@ export function MemberContextMenu({
   onTimeout,
   onKick,
   onBan,
+  onDisconnectFromVoice,
   onToggleRole,
   soundEffectsMuted = false,
   onToggleSoundEffects,
@@ -129,6 +136,14 @@ export function MemberContextMenu({
 
         <MenuDivider />
 
+        {memberInVoice && <MenuAction
+          icon={<PhoneOff size={15} />}
+          label="Desconectar da chamada"
+          danger
+          disabled={!canDisconnectFromVoice || isSelf}
+          hint={isSelf ? "Use o botão de sair da chamada" : !canDisconnectFromVoice ? "Requer a permissão Mover membros" : undefined}
+          onClick={run(onDisconnectFromVoice)}
+        />}
         <MenuAction
           icon={<UserRound size={15} />}
           label="Alterar apelido"

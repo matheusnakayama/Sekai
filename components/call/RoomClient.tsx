@@ -129,6 +129,7 @@ export default function RoomClient({
 
   const localIdRef = useRef<string>('');
   const localNameRef = useRef<string>('');
+  const onCloseRef = useRef(onClose);
   const roomSessionRef = useRef('');
   const participantNamesRef = useRef(new Map<string, string>());
   const participantAvatarsRef = useRef(new Map<string, string | null>());
@@ -150,6 +151,7 @@ export default function RoomClient({
   const soundboardSendRef = useRef(Promise.resolve());
   const releaseCallMusicRef = useRef<() => void>(() => {});
   const supabase = createClient();
+  onCloseRef.current = onClose;
 
   const activeMicrophoneTrackId = participants[localIdRef.current]?.stream?.getAudioTracks()[0]?.id ?? '';
 
@@ -202,6 +204,7 @@ export default function RoomClient({
     managerRef.current = null;
     channelRef.current?.unbind('client-chat-message');
     channelRef.current?.unbind('client-moderation');
+    channelRef.current?.unbind('server-moderation');
     channelRef.current = null;
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -218,6 +221,60 @@ export default function RoomClient({
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
+
+  useEffect(() => {
+    if (!serverId || phase !== 'in-call') return;
+    let cancelled = false;
+    let checking = false;
+    let disconnected = false;
+
+    const enforceServerRestrictions = async () => {
+      if (cancelled || checking || disconnected || !localIdRef.current) return;
+      checking = true;
+      try {
+        const { data: membership, error: membershipError } = await supabase.from('members')
+          .select('is_banned, communication_disabled_until')
+          .eq('server_id', serverId)
+          .eq('user_id', localIdRef.current)
+          .maybeSingle();
+        if (cancelled || membershipError) return;
+
+        let durableTimeoutUntil: string | null = null;
+        const { data: timeout, error: timeoutError } = await supabase.from('guild_timeouts')
+          .select('until_at')
+          .eq('server_id', serverId)
+          .eq('user_id', localIdRef.current)
+          .maybeSingle();
+        if (!timeoutError) durableTimeoutUntil = timeout?.until_at ?? null;
+
+        const activeTimeout = Boolean(
+          (membership?.communication_disabled_until && Date.parse(membership.communication_disabled_until) > Date.now()) ||
+          (durableTimeoutUntil && Date.parse(durableTimeoutUntil) > Date.now())
+        );
+        if (!membership || membership.is_banned || activeTimeout) {
+          disconnected = true;
+          cleanup();
+          onCloseRef.current();
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    const channel = supabase.channel(`sekai-member-restrictions:${serverId}:${localIdRef.current}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members', filter: `user_id=eq.${localIdRef.current}` }, () => {
+        void enforceServerRestrictions();
+      })
+      .subscribe();
+    void enforceServerRestrictions();
+    const timer = window.setInterval(() => void enforceServerRestrictions(), 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [cleanup, phase, roomId, serverId, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -377,8 +434,16 @@ export default function RoomClient({
       });
 
       const iceServers = await fetchIceServers();
-      const channel = subscribeToRoom(roomId, joinedName, localIdRef.current, roomSessionRef.current, avatarUrl);
+      const channel = subscribeToRoom(roomId, joinedName, localIdRef.current, roomSessionRef.current, avatarUrl, accessToken);
       channelRef.current = channel;
+      channel.bind('server-moderation', (payload: unknown) => {
+        if (!payload || typeof payload !== 'object') return;
+        const event = payload as { serverId?: unknown; targetId?: unknown };
+        if (event.serverId !== serverId || event.targetId !== localIdRef.current) return;
+        appendSystemChatMessage('Sua participação na chamada foi encerrada por um moderador do servidor.');
+        cleanup();
+        onCloseRef.current();
+      });
       channel.bind('client-chat-message', (payload: unknown, metadata?: unknown) => {
         const senderId = getPusherEventUserId(metadata);
         const message = normalizeChatMessage(payload, senderId, participantNamesRef.current.get(senderId ?? ''));

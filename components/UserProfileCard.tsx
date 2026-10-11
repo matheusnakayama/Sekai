@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Check, MoreHorizontal, MessageCircle, SendHorizontal, UserPlus, UserMinus, Plus, Search, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -57,6 +57,49 @@ const mutualServersCache = new Map<string, { items: MutualServer[]; expiresAt: n
 const mutualServersRequests = new Map<string, Promise<MutualServer[]>>();
 const userServerIdsCache = new Map<string, { ids: Set<string>; expiresAt: number }>();
 const userServerIdsRequests = new Map<string, Promise<Set<string>>>();
+const PROFILE_URL_PATTERN = /https?:\/\/[^\s<>"`]+/gi;
+
+function renderProfileBio(bio: string, color: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let key = 0;
+
+  for (const match of bio.matchAll(PROFILE_URL_PATTERN)) {
+    const rawUrl = match[0];
+    const start = match.index ?? 0;
+    const url = rawUrl.replace(/[.,!?;:)]+$/g, "");
+    const trailing = rawUrl.slice(url.length);
+    if (!url) continue;
+
+    if (start > cursor) parts.push(bio.slice(cursor, start));
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        parts.push(
+          <a
+            key={`profile-link-${key++}`}
+            href={parsed.toString()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all underline decoration-white/30 underline-offset-2 hover:text-white hover:decoration-white focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"
+            style={{ color }}
+          >
+            {url}
+          </a>,
+        );
+      } else {
+        parts.push(url);
+      }
+    } catch {
+      parts.push(url);
+    }
+    if (trailing) parts.push(trailing);
+    cursor = start + rawUrl.length;
+  }
+
+  if (cursor < bio.length) parts.push(bio.slice(cursor));
+  return parts;
+}
 
 function mergeMutualServers(...groups: MutualServer[][]): MutualServer[] {
   const byId = new Map<string, MutualServer>();
@@ -350,6 +393,7 @@ export function UserProfileCard({
         positionX={profile.bannerPositionX}
         positionY={profile.bannerPositionY}
         zoom={profile.bannerZoom}
+        pauseGif
         className="h-24"
       >
         <div className="absolute right-3 top-3 flex items-center gap-2">
@@ -443,9 +487,8 @@ export function UserProfileCard({
           {listening && <NowPlayingCard activity={listening} />}
 
           {profile.bio && (
-            <div className="mt-3 border-t border-white/[0.08] pt-3">
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-[.12em]" style={{ color: profilePalette.muted }}>Sobre mim</p>
-              <p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{profile.bio}</p>
+            <div className="mt-3">
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{renderProfileBio(profile.bio, profilePalette.muted)}</p>
             </div>
           )}
 
@@ -453,9 +496,9 @@ export function UserProfileCard({
 
           {profile.assignedRoles?.length ? (
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Cargos deste membro">
-              <RoleBadgeList roles={profile.assignedRoles} size="medium" layout="profile" />
+              <RoleBadgeList roles={profile.assignedRoles} size="medium" layout="profile" profileIsLight={profilePalette.isLight} />
               {canManageRoles && roles.length > 0 && (
-                <button ref={rolePickerTriggerRef} type="button" onClick={toggleRolePicker} aria-label="Adicionar ou remover cargos" title="Adicionar cargo" className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-white/[0.12] bg-[#202124] text-white/65 transition hover:border-white/25 hover:bg-[#34353a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
+                <button ref={rolePickerTriggerRef} type="button" onClick={toggleRolePicker} aria-label="Adicionar ou remover cargos" title="Adicionar cargo" className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] transition hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand ${profilePalette.isLight ? "border-white/50 bg-white/[0.32] text-[#202124]" : "border-white/[0.22] bg-white/[0.10] text-[#f2f3f5]"}`}>
                   <Plus size={15} />
                 </button>
               )}
@@ -464,7 +507,7 @@ export function UserProfileCard({
 
           {canManageRoles && roles.length > 0 && !profile.assignedRoles?.length && (
             <div className="mt-3">
-              <button ref={rolePickerTriggerRef} type="button" onClick={toggleRolePicker} aria-label="Adicionar cargos" title="Adicionar cargos" className="grid h-6 w-6 place-items-center rounded-full border border-white/[0.12] bg-[#202124] text-white/65 transition hover:border-white/25 hover:bg-[#34353a] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><Plus size={15} /></button>
+              <button ref={rolePickerTriggerRef} type="button" onClick={toggleRolePicker} aria-label="Adicionar cargos" title="Adicionar cargos" className={`grid h-6 w-6 place-items-center rounded-full border backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] transition hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand ${profilePalette.isLight ? "border-white/50 bg-white/[0.32] text-[#202124]" : "border-white/[0.22] bg-white/[0.10] text-[#f2f3f5]"}`}><Plus size={15} /></button>
             </div>
           )}
 

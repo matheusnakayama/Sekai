@@ -1353,6 +1353,22 @@ export default function Home() {
     setMentionRequest({ displayName: member.displayName, nonce: mentionRequestRef.current });
   }
 
+  async function dispatchServerCallModeration(serverId: string, targetId: string, action: "kick" | "ban" | "timeout" | "disconnect") {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return null;
+      const response = await fetch("/api/pusher/moderate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ serverId, targetId, action }),
+      });
+      const payload = await response.json() as { disconnected?: boolean; error?: string };
+      return response.ok ? payload : { error: payload.error || "Não foi possível encerrar a chamada." };
+    } catch {
+      return { error: "Não foi possível conectar ao serviço de chamadas." };
+    }
+  }
+
   async function handleKickMember(member: MemberItem) {
     if (!activeServerId || member.id === currentUserId) return;
     const ok = await dialogs.confirm({ title: "Expulsar membro", message: `Expulsar ${member.displayName} deste servidor? Ele poderá voltar com um convite.`, confirmLabel: "Expulsar", danger: true });
@@ -1364,6 +1380,7 @@ export default function Home() {
       p_reason: null,
     });
     if (error) { await dialogs.notify({ title: "Não foi possível expulsar", message: error.message }); return; }
+    await dispatchServerCallModeration(activeServerId, member.id, "kick");
     await loadChannelsAndMembers();
   }
 
@@ -1386,6 +1403,7 @@ export default function Home() {
       p_reason: reason || null,
     });
     if (error) { await dialogs.notify({ title: "Não foi possível banir", message: error.message }); return; }
+    await dispatchServerCallModeration(activeServerId, member.id, "ban");
     await loadChannelsAndMembers();
   }
 
@@ -1412,7 +1430,20 @@ export default function Home() {
       p_until: new Date(Date.now() + minutes * 60_000).toISOString(),
     });
     if (error) { await dialogs.notify({ title: "Não foi possível aplicar timeout", message: error.message }); return; }
+    await dispatchServerCallModeration(activeServerId, member.id, "timeout");
     await loadChannelsAndMembers();
+  }
+
+  async function handleDisconnectMemberFromVoice(member: MemberItem) {
+    if (!activeServerId || member.id === currentUserId) return;
+    const result = await dispatchServerCallModeration(activeServerId, member.id, "disconnect");
+    if (result?.error) {
+      await dialogs.notify({ title: "Não foi possível desconectar", message: result.error });
+      return;
+    }
+    if (!result?.disconnected) {
+      await dialogs.notify({ title: "Membro fora da chamada", message: `${member.displayName} não está em uma chamada de voz deste servidor.` });
+    }
   }
 
   async function handleChangeMemberNickname(member: MemberItem) {
@@ -1848,7 +1879,11 @@ export default function Home() {
           );
           return found?.id ?? null;
         },
+        dispatchServerCallModeration: async (targetId, action) => {
+          await dispatchServerCallModeration(activeServerId, targetId, action);
+        },
       });
+      if (result.moderationChanged) await loadChannelsAndMembers();
       if (isBankai && result.ok) {
         await refreshUnlockedThemes();
         await loadMyProfile();
@@ -1943,6 +1978,9 @@ export default function Home() {
     }
     visibleVoiceMembersByChannel[channelId] = Array.from(members.values());
   }
+  const visibleVoiceMemberIds = Array.from(new Set(
+    Object.values(visibleVoiceMembersByChannel).flatMap((voiceMembers) => voiceMembers.map((member) => member.id))
+  ));
   const connectedVoiceMembers = voiceSession?.kind === "server"
     ? visibleVoiceMembersByChannel[voiceSession.channelId] ?? liveVoiceMembers
     : liveVoiceMembers;
@@ -2309,10 +2347,13 @@ export default function Home() {
         canKick={isOwner || isPlatformAdmin || hasPermission(myPermissions, "KICK_MEMBERS")}
         canBan={isOwner || isPlatformAdmin || hasPermission(myPermissions, "BAN_MEMBERS")}
         canTimeout={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MODERATE_MEMBERS") || hasPermission(myPermissions, "MUTE_MEMBERS")}
+        canDisconnectFromVoice={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MOVE_MEMBERS")}
+        voiceMemberIds={visibleVoiceMemberIds}
         canManageNicknames={isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_NICKNAMES")}
         onKickMember={handleKickMember}
         onBanMember={handleBanMember}
         onTimeoutMember={handleTimeoutMember}
+        onDisconnectMemberFromVoice={handleDisconnectMemberFromVoice}
         onChangeNickname={handleChangeMemberNickname}
         onMentionMember={handleMentionMember}
         onMessageMember={(member) => { setDirectMessageUserId(member.id); setActiveServerId(""); setActiveChannelId(""); setMobileMembersOpen(false); }}

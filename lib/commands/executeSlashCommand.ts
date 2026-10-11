@@ -19,6 +19,7 @@ interface CommandContext {
   currentUserId: string;
   /** Resolve "@nome" para o user_id do membro dentro do servidor atual */
   resolveMentionToUserId: (mention: string) => Promise<string | null>;
+  dispatchServerCallModeration?: (targetId: string, action: 'kick' | 'timeout') => Promise<void>;
 }
 
 export interface CommandResult {
@@ -26,6 +27,7 @@ export interface CommandResult {
   message: string; // feedback exibido só para quem executou (ex: mensagem de sistema local)
   /** Tema secreto desbloqueado neste sorteio, para atualizar a aparência. */
   unlockedThemeId?: string | null;
+  moderationChanged?: boolean;
 }
 
 /**
@@ -112,15 +114,16 @@ export async function executeSlashCommand(
       const userId = await ctx.resolveMentionToUserId(args[0] ?? "");
       if (!userId) return { ok: false, message: "Usuário não encontrado." };
 
-      // RLS ("members_delete_self_or_kick") exige kick_members
-      const { error } = await supabase
-        .from("members")
-        .delete()
-        .match({ server_id: ctx.serverId, user_id: userId });
+      const { error } = await supabase.rpc("moderate_server_member", {
+        p_server_id: ctx.serverId,
+        p_user_id: userId,
+        p_action: "kick",
+        p_reason: null,
+      });
 
-      return error
-        ? { ok: false, message: "Sem permissão para expulsar membros." }
-        : { ok: true, message: "Membro removido do servidor." };
+      if (error) return { ok: false, message: error.message || "Sem permissão para expulsar membros." };
+      await ctx.dispatchServerCallModeration?.(userId, 'kick');
+      return { ok: true, message: "Membro removido do servidor.", moderationChanged: true };
     }
 
     case "mute": {
@@ -128,30 +131,33 @@ export async function executeSlashCommand(
       if (!userId) return { ok: false, message: "Usuário não encontrado." };
 
       const minutes = Math.max(1, parseInt(args[1] ?? "10", 10) || 10);
+      if (minutes > 40320) return { ok: false, message: "O timeout pode durar no máximo 40.320 minutos (28 dias)." };
       const until = new Date(Date.now() + minutes * 60_000).toISOString();
 
-      const { error } = await supabase
-        .from("members")
-        .update({ communication_disabled_until: until })
-        .match({ server_id: ctx.serverId, user_id: userId });
+      const { error } = await supabase.rpc("set_server_member_timeout", {
+        p_server_id: ctx.serverId,
+        p_user_id: userId,
+        p_until: until,
+      });
 
-      return error
-        ? { ok: false, message: "Sem permissão para mutar." }
-        : { ok: true, message: `Membro mutado por ${minutes} minuto(s).` };
+      if (error) return { ok: false, message: error.message || "Sem permissão para mutar." };
+      await ctx.dispatchServerCallModeration?.(userId, 'timeout');
+      return { ok: true, message: `Membro mutado por ${minutes} minuto(s).`, moderationChanged: true };
     }
 
     case "unmute": {
       const userId = await ctx.resolveMentionToUserId(args[0] ?? "");
       if (!userId) return { ok: false, message: "Usuário não encontrado." };
 
-      const { error } = await supabase
-        .from("members")
-        .update({ communication_disabled_until: null })
-        .match({ server_id: ctx.serverId, user_id: userId });
+      const { error } = await supabase.rpc("set_server_member_timeout", {
+        p_server_id: ctx.serverId,
+        p_user_id: userId,
+        p_until: null,
+      });
 
       return error
-        ? { ok: false, message: "Sem permissão para desmutar." }
-        : { ok: true, message: "Mute removido." };
+        ? { ok: false, message: error.message || "Sem permissão para desmutar." }
+        : { ok: true, message: "Mute removido.", moderationChanged: true };
     }
 
     default:

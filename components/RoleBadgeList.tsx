@@ -31,11 +31,13 @@ export function RoleBadgeList({
   limit = 3,
   size = "medium",
   layout = "inline",
+  profileIsLight = false,
 }: {
   roles?: RoleBadge[] | null;
   limit?: number;
   size?: "small" | "medium";
   layout?: "inline" | "profile";
+  profileIsLight?: boolean;
 }) {
   if (!roles?.length) return null;
 
@@ -58,7 +60,7 @@ export function RoleBadgeList({
             key={role.id}
             title={role.name}
             className={profileLayout
-              ? "inline-flex h-6 w-fit max-w-full flex-none items-center gap-1.5 rounded-full border border-white/[0.06] bg-[#27282b] px-2.5 text-[11px] font-medium leading-none text-[#dbdee1]"
+              ? `inline-flex h-6 w-fit max-w-full flex-none items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium leading-none backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] ${profileIsLight ? "border-white/50 bg-white/[0.32] text-[#202124]" : "border-white/[0.22] bg-white/[0.10] text-[#f2f3f5]"}`
               : `inline-flex max-w-full shrink items-center rounded-md border font-semibold leading-none ${compact ? "gap-1 px-1.5 py-1 text-[10px]" : "gap-1.5 px-2.5 py-1.5 text-[11px]"}`}
             style={profileLayout ? undefined : style}
           >

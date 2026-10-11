@@ -67,12 +67,29 @@ export async function POST(request: Request) {
       // RLS confirma que a pessoa pertence ao servidor que contém este canal.
       const { data: channel } = await supabase
         .from('channels')
-        .select('id, type')
+        .select('id, type, server_id')
         .eq('id', roomId)
         .eq('type', 'voice')
         .maybeSingle();
       if (!channel) {
         return NextResponse.json({ error: 'Canal de voz não encontrado ou sem acesso.' }, { status: 403 });
+      }
+      const { data: membership, error: membershipError } = await supabase.from('members')
+        .select('is_banned, communication_disabled_until')
+        .eq('server_id', channel.server_id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (membershipError || !membership || membership.is_banned ||
+        (membership.communication_disabled_until && Date.parse(membership.communication_disabled_until) > Date.now())) {
+        return NextResponse.json({ error: 'Você não pode entrar nesta chamada enquanto o timeout estiver ativo.' }, { status: 403 });
+      }
+      const { data: timeout } = await supabase.from('guild_timeouts')
+        .select('until_at')
+        .eq('server_id', channel.server_id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (timeout?.until_at && Date.parse(timeout.until_at) > Date.now()) {
+        return NextResponse.json({ error: 'Você não pode entrar nesta chamada enquanto o timeout estiver ativo.' }, { status: 403 });
       }
     }
 

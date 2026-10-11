@@ -331,11 +331,11 @@ export function ChannelSidebar({
                             {channel.type === "text" ? (
                               <Hash className="h-4 w-4 shrink-0" />
                             ) : (
-                              <Volume2 className="h-4 w-4 shrink-0" style={hasVoiceMembers ? { color: "var(--sekai-link, rgb(var(--d-brand)))" } : undefined} />
+                              <Volume2 className="h-4 w-4 shrink-0" style={hasVoiceMembers ? { color: "var(--sekai-detail-accent, var(--sekai-logo-accent))" } : undefined} />
                             )}
                             <span className="truncate">{channel.name}</span>
                             {(hasVoiceMembers || channel.mentionCount || channel.unread) && <span className="ml-auto flex shrink-0 items-center gap-1">
-                              {hasVoiceMembers && <><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--sekai-link, rgb(var(--d-brand)))" }} title="Há pessoas na chamada" />{voiceDurationStart != null && <span className="text-[10px] tabular-nums" style={{ color: "var(--sekai-link, rgb(var(--d-brand)))" }}>{formatVoiceDuration(clockNow - voiceDurationStart)}</span>}</>}
+                              {hasVoiceMembers && <><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "var(--sekai-detail-accent, var(--sekai-logo-accent))" }} title="Há pessoas na chamada" />{voiceDurationStart != null && <span className="text-[10px] tabular-nums" style={{ color: "var(--sekai-detail-accent, var(--sekai-logo-accent))" }}>{formatVoiceDuration(clockNow - voiceDurationStart)}</span>}</>}
                               {channel.mentionCount ? <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-discord-danger px-1 text-[10px] font-bold leading-none text-white">{channel.mentionCount > 99 ? "99+" : channel.mentionCount}</span> : channel.unread ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
                             </span>}
                           </button>
@@ -431,7 +431,7 @@ export function ChannelSidebar({
         <div className="border-t border-black/20 bg-discord-bg-darkest px-3 py-2.5">
           <div className="flex min-w-0 flex-col gap-2">
             <div className="min-w-0">
-              <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-emerald-400">
+              <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold" style={{ color: "var(--sekai-detail-accent, var(--sekai-logo-accent))" }}>
                 <Volume2 className="h-3.5 w-3.5 shrink-0" />
                 <span>Voz conectada</span>
               </p>

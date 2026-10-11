@@ -105,6 +105,7 @@ export function ProfileBanner({
   positionX = 50,
   positionY = 50,
   zoom = 100,
+  pauseGif = false,
   className,
   style,
   children,
@@ -113,13 +114,16 @@ export function ProfileBanner({
   positionX?: number | null;
   positionY?: number | null;
   zoom?: number | null;
+  pauseGif?: boolean;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
-    <header className={cn("relative isolate overflow-hidden bg-theme-gradient", className)} style={style}>
-      {src && <CroppedProfileImage src={src} alt="" positionX={positionX} positionY={positionY} zoom={zoom} pauseGif={false} className="pointer-events-none" />}
+    <header className={cn("relative isolate overflow-hidden bg-theme-gradient", className)} style={style} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+      {src && <CroppedProfileImage src={src} alt="" positionX={positionX} positionY={positionY} zoom={zoom} pauseGif={pauseGif} isHovered={isHovered} className="pointer-events-none" />}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 via-black/10 to-black/30" />
       <div className="relative z-10 h-full">{children}</div>
     </header>

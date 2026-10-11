@@ -19,7 +19,7 @@ function gradientOf(stops: string[]) {
 }
 
 export default function ThemePicker({ placement = "down", align = "right", className }: ThemePickerProps) {
-  const { theme, setTheme, themes, colorMode, setColorMode } = useTheme();
+  const { theme, setTheme, themes, colorMode, setColorMode, detailAccent, hasCustomDetailAccent, setDetailAccent } = useTheme();
   const lightMode = colorMode === "light";
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -161,8 +161,35 @@ export default function ThemePicker({ placement = "down", align = "right", class
               );
             })}
           </div>
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.025] p-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-discord-text-normal">Cor dos detalhes</p>
+                <p className="mt-0.5 text-[10px] leading-4 text-discord-text-muted">Logo, chamada e voz conectada</p>
+              </div>
+              <label className="flex shrink-0 items-center gap-2 rounded-md border border-white/10 bg-black/20 px-2 py-1.5">
+                <span className="font-mono text-[10px] uppercase text-discord-text-muted">{detailAccent}</span>
+                <input
+                  type="color"
+                  value={detailAccent}
+                  aria-label="Escolher cor dos detalhes"
+                  title="Escolher cor dos detalhes"
+                  onChange={(event) => setDetailAccent(event.target.value)}
+                  className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDetailAccent(null)}
+              disabled={!hasCustomDetailAccent}
+              className="mt-2 text-[10px] font-medium text-discord-text-muted transition hover:text-white disabled:cursor-default disabled:opacity-45"
+            >
+              Usar cor padrão do tema
+            </button>
+          </div>
           <p className="mt-2 text-[11px] leading-4 text-discord-text-muted">
-            As cores mudam neste navegador. Temas secretos desenham o fundo do chat.
+            A cor dos detalhes é salva neste navegador. Temas secretos desenham o fundo do chat.
           </p>
         </div>, document.body
       )}

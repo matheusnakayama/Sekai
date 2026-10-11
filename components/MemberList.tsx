@@ -66,10 +66,13 @@ interface MemberListProps {
   canKick?: boolean;
   canBan?: boolean;
   canTimeout?: boolean;
+  canDisconnectFromVoice?: boolean;
+  voiceMemberIds?: string[];
   canManageNicknames?: boolean;
   onKickMember?: (member: MemberItem) => void;
   onBanMember?: (member: MemberItem) => void;
   onTimeoutMember?: (member: MemberItem) => void;
+  onDisconnectMemberFromVoice?: (member: MemberItem) => void;
   onChangeNickname?: (member: MemberItem) => void;
   onMentionMember?: (member: MemberItem) => void;
   onMessageMember?: (member: MemberItem) => void;
@@ -83,7 +86,7 @@ interface MemberListProps {
   onToggleSoundEffects?: (userId: string, muted: boolean) => void;
 }
 
-export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects }: MemberListProps) {
+export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canDisconnectFromVoice = false, voiceMemberIds = [], canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onDisconnectMemberFromVoice, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; trigger: HTMLButtonElement } | null>(null);
@@ -172,6 +175,8 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           canTimeout={canTimeout}
           canKick={canKick}
           canBan={canBan}
+          canDisconnectFromVoice={canDisconnectFromVoice}
+          memberInVoice={voiceMemberIds.includes(contextMember.id)}
           onClose={() => setContextMenu(null)}
           onOpenProfile={() => openProfile(contextMember, contextMenu.trigger)}
           onMention={() => onMentionMember?.(contextMember)}
@@ -181,6 +186,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           onTimeout={onTimeoutMember ? () => onTimeoutMember(contextMember) : undefined}
           onKick={onKickMember ? () => onKickMember(contextMember) : undefined}
           onBan={onBanMember ? () => onBanMember(contextMember) : undefined}
+          onDisconnectFromVoice={onDisconnectMemberFromVoice ? () => onDisconnectMemberFromVoice(contextMember) : undefined}
           onToggleRole={onToggleRole ? (role, assigned) => onToggleRole(contextMember, role, assigned) : undefined}
           soundEffectsMuted={mutedSoundEffectUserIds.includes(contextMember.id)}
           onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(contextMember.id, !mutedSoundEffectUserIds.includes(contextMember.id)) : undefined}
@@ -237,7 +243,7 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
   return (
     <button ref={rowRef} type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
       {member.memberListBannerUrl && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-80" style={{ maskImage: bannerMask, WebkitMaskImage: bannerMask }}>
-        <CroppedProfileImage src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} pauseGif={false} />
+        <CroppedProfileImage src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} pauseGif isHovered={hovered} />
         <span className="absolute inset-0 bg-gradient-to-l from-black/35 via-black/10 to-transparent" />
       </div>}
       <div className="relative z-10 h-8 w-8 shrink-0">

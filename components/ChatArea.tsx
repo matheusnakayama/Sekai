@@ -675,7 +675,7 @@ export function ChatArea({
           const element = event.currentTarget;
           wasAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
         }}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-2 py-3 sm:space-y-4 sm:px-4 sm:py-4"
+        className="min-h-0 flex-1 space-y-0 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4"
       >
         {loading && !messages.length ? (
           <div role="status" className="server-view-enter space-y-3 py-2">
@@ -686,8 +686,21 @@ export function ChatArea({
           <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
         ) : messages.map((message, index) => {
           const timestamp = new Date(message.createdAt);
-          const previousTimestamp = index > 0 ? new Date(messages[index - 1].createdAt) : null;
+          const previousMessage = index > 0 ? messages[index - 1] : null;
+          const previousTimestamp = previousMessage ? new Date(previousMessage.createdAt) : null;
           const showDate = !previousTimestamp || timestamp.toDateString() !== previousTimestamp.toDateString();
+          const elapsedFromPrevious = previousTimestamp ? timestamp.getTime() - previousTimestamp.getTime() : Infinity;
+          const isGroupedMessage = Boolean(
+            previousMessage &&
+            !showDate &&
+            !message.systemType &&
+            !previousMessage.systemType &&
+            previousMessage.authorId === message.authorId &&
+            elapsedFromPrevious >= 0 &&
+            elapsedFromPrevious <= 60 * 1000 &&
+            !pinnedIds.has(message.id) &&
+            !favoriteIds.has(message.id)
+          );
           const systemCopy = message.systemType === "member_joined"
             ? "entrou no servidor. Dê boas-vindas!"
             : message.systemType === "member_left"
@@ -708,12 +721,13 @@ export function ChatArea({
           <div onContextMenu={(event) => {
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, message });
-          }} className={`group relative flex rounded-xl px-1 py-2 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
-            {editing?.id !== message.id && <div className="pointer-events-none absolute right-2 top-1 z-10 hidden items-center gap-0.5 rounded-lg border border-white/10 bg-[#111214] p-0.5 shadow-lg group-hover:pointer-events-auto group-hover:flex">
-              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="grid h-7 w-7 place-items-center rounded-md text-base hover:bg-white/10">{emoji}</button>)}
-              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="grid h-7 w-7 place-items-center rounded-md text-discord-text-muted hover:bg-white/10 hover:text-white"><MoreHorizontal size={16} /></button>
+          }} className={`group relative flex rounded-xl px-1 ${isGroupedMessage ? "py-0" : "py-2"} transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+            {editing?.id !== message.id && <div className="pointer-events-none absolute right-2 top-1 z-10 hidden items-center gap-0.5 rounded-full border border-white/[0.06] bg-[#18191c]/95 p-0.5 shadow-md backdrop-blur group-hover:pointer-events-auto group-hover:flex">
+              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-75 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
+              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="grid h-6 w-6 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
             </div>}
-            {chatDisplay.showAvatars && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
+            {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-10 w-10 shrink-0" />}
+            {chatDisplay.showAvatars && !isGroupedMessage && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
                   <CroppedProfileImage
@@ -734,13 +748,13 @@ export function ChatArea({
             </button>}
 
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
+              {!isGroupedMessage && <div className="flex items-center gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
                 <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
                 <CustomBadgeList badges={memberById.get(message.authorId)?.badges} limit={2} />
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
                 {pinnedIds.has(message.id) && <Pin size={12} className="text-discord-text-muted" aria-label="Mensagem fixada" />}
                 {favoriteIds.has(message.id) && <Star size={12} className="fill-current text-amber-300" aria-label="Mensagem favorita" />}
-              </div>
+              </div>}
 
               {editing?.id === message.id ? <div className="mt-1 flex gap-2"><input autoFocus value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="min-w-0 flex-1 rounded-lg bg-discord-bg-dark px-3 py-2 text-sm text-discord-text-normal outline-none ring-1 ring-brand-500"/><button title="Salvar" onClick={async () => { await onEditMessage?.(message.id, editing.content); setEditing(null); }} className="rounded-lg bg-discord-brand p-2 text-white"><Check size={16}/></button><button title="Cancelar" onClick={() => setEditing(null)} className="rounded-lg bg-discord-bg-secondary p-2"><X size={16}/></button></div> : (() => {
                 if (message.topicId) return <ChatTopicCard topicId={message.topicId} title={message.content || "Novo tópico"} currentUserId={currentUserId}/>;
@@ -777,10 +791,10 @@ export function ChatArea({
                       key={r.emoji}
                       onClick={() => onToggleReaction?.(message.id, r.emoji)}
                       className={cn(
-                        "flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                        "flex h-6 items-center gap-1 rounded-full border px-1.5 text-[11px] transition",
                         r.reactedByMe
-                          ? "border-discord-brand bg-discord-brand/20 text-discord-brand"
-                          : "border-transparent bg-discord-bg-secondary text-discord-text-normal hover:border-discord-text-muted"
+                          ? "border-discord-brand/40 bg-discord-brand/15 text-discord-brand"
+                          : "border-white/[0.06] bg-[#1b1d21] text-discord-text-muted hover:border-white/15 hover:bg-white/[0.06] hover:text-discord-text-normal"
                       )}
                     >
                       <span>{r.emoji}</span>

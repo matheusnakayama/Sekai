@@ -6,7 +6,7 @@ import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
 import { accentVariables, colorsForMode } from "@/lib/colorMode";
 import { complementaryLinkColor, complementaryLogoColor } from "@/lib/linkColor";
-import { STYLESHEET_THEME_IDS, THEMES } from "@/lib/themes";
+import { DEFAULT_THEME, STYLESHEET_THEME_IDS, THEMES } from "@/lib/themes";
 import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
 const linkColors = Object.fromEntries(THEMES.map((theme) => [theme.id, complementaryLinkColor(theme.stops)]));
@@ -46,7 +46,7 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              `try{var m=${JSON.stringify(linkColors)};var l=${JSON.stringify(logoColors)};var d=${JSON.stringify(darkAccents)};var t=localStorage.getItem('sekai-theme');var mode=localStorage.getItem('sekai-color-mode');var root=document.documentElement;if(t){root.setAttribute('data-theme',t);if(m[t])root.style.setProperty('--sekai-link',m[t]);if(l[t])root.style.setProperty('--sekai-logo-accent',l[t])}if(mode==='dark'){root.setAttribute('data-color-mode','dark');var pack=d[t];if(pack){for(var k in pack)root.style.setProperty(k,pack[k])}}else{root.setAttribute('data-color-mode','light')}}catch(e){}`,
+              `try{var m=${JSON.stringify(linkColors)};var l=${JSON.stringify(logoColors)};var d=${JSON.stringify(darkAccents)};var t=localStorage.getItem('sekai-theme');var active=t&&l[t]?t:${JSON.stringify(DEFAULT_THEME)};var mode=localStorage.getItem('sekai-color-mode');var storedAccent=localStorage.getItem('sekai-detail-accent');var customAccent=/^#[0-9a-f]{6}$/i.test(storedAccent||'')?storedAccent:null;var root=document.documentElement;root.setAttribute('data-theme',active);if(m[active])root.style.setProperty('--sekai-link',m[active]);var detailAccent=customAccent||l[active];if(detailAccent){root.style.setProperty('--sekai-logo-accent',detailAccent);root.style.setProperty('--sekai-detail-accent',detailAccent)}if(mode==='dark'){root.setAttribute('data-color-mode','dark');var pack=d[active];if(pack){for(var k in pack)root.style.setProperty(k,pack[k])}}else{root.setAttribute('data-color-mode','light')}}catch(e){}`,
           }}
         />
       </head>

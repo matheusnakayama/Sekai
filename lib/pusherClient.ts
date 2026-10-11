@@ -6,7 +6,7 @@ let pusherInstance: Pusher | null = null;
 
 export class PusherConfigError extends Error {}
 
-export function getPusherClient(userName: string, userId: string, roomId: string, roomSession: string, avatarUrl?: string | null): Pusher {
+export function getPusherClient(userName: string, userId: string, roomId: string, roomSession: string, avatarUrl?: string | null, accessToken?: string): Pusher {
   const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
   const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
@@ -21,7 +21,7 @@ export function getPusherClient(userName: string, userId: string, roomId: string
       cluster,
       authEndpoint: '/api/pusher/auth',
       auth: {
-        params: { user_name: userName, user_id: userId, room_id: roomId, room_session: roomSession, user_avatar: avatarUrl ?? "" },
+        params: { user_name: userName, user_id: userId, room_id: roomId, room_session: roomSession, user_avatar: avatarUrl ?? "", access_token: accessToken ?? "" },
       },
       // O canal é "presence-*" para sabermos quem está na sala em tempo real.
     });
@@ -29,8 +29,8 @@ export function getPusherClient(userName: string, userId: string, roomId: string
   return pusherInstance;
 }
 
-export function subscribeToRoom(roomId: string, userName: string, userId: string, roomSession: string, avatarUrl?: string | null): Channel {
-  const pusher = getPusherClient(userName, userId, roomId, roomSession, avatarUrl);
+export function subscribeToRoom(roomId: string, userName: string, userId: string, roomSession: string, avatarUrl?: string | null, accessToken?: string): Channel {
+  const pusher = getPusherClient(userName, userId, roomId, roomSession, avatarUrl, accessToken);
   const channelName = `presence-room-${roomId}`;
   return pusher.channel(channelName) ?? pusher.subscribe(channelName);
 }
