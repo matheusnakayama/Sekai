@@ -209,8 +209,14 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
   const [hovered, setHovered] = useState(false);
 
   return (
-    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative flex min-h-[38px] w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover", member.status === "offline" && "opacity-50 hover:opacity-90")}>
-      <div className="relative h-8 w-8 shrink-0">
+    <button type="button" onContextMenu={(event) => onContextMenu(member, event.currentTarget, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.bannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+      {member.bannerUrl && <>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-70">
+          <CroppedProfileImage src={member.bannerUrl} positionX={member.bannerPositionX} positionY={member.bannerPositionY} zoom={member.bannerZoom} pauseGif={false} />
+        </div>
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-r from-black/35 via-black/50 to-black/30" />
+      </>}
+      <div className="relative z-10 h-8 w-8 shrink-0">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
           <CroppedProfileImage src={member.avatarUrl} alt="" className="rounded-full" isHovered={hovered} positionX={member.avatarPositionX} positionY={member.avatarPositionY} zoom={member.avatarZoom} />
@@ -223,14 +229,14 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
         <PresenceIndicator presence={member.status} avatarBadge borderColor="rgb(var(--d-dark))" cutoutColor="rgb(var(--d-dark))" />
       </div>
 
-      <span className="flex min-w-0 flex-1 flex-col justify-center">
+      <span className="relative z-10 flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1 leading-4">
           <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
           <CustomBadgeList badges={member.badges} limit={3} />
         </span>
         {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
       </span>
-      {!isSelf && <UserPlus className="absolute right-1.5 h-3.5 w-3.5 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
+      {!isSelf && <UserPlus className="absolute right-1.5 z-10 h-3.5 w-3.5 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
     </button>
   );
 }

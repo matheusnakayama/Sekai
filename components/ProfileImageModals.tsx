@@ -52,7 +52,7 @@ export function ProfileImagePickerModal({
 
         <div className="grid grid-cols-2 gap-3 px-6 pt-5">
           <button type="button" onClick={() => photoInput.current?.click()} className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-[#303036] px-4 text-center transition hover:border-white/20 hover:bg-[#38383f]">
-            <ImagePlus size={24} className="text-white/75"/><span className="text-sm font-semibold">Enviar foto</span><span className="text-[11px] text-white/45">PNG, JPG ou WebP</span>
+            <ImagePlus size={24} className="text-white/75"/><span className="text-sm font-semibold">Enviar foto</span><span className="text-[11px] text-white/45">{kind === "banner" ? "PNG/WebP transparente, JPG" : "PNG, JPG ou WebP"}</span>
           </button>
           <button type="button" onClick={() => gifInput.current?.click()} className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-[#303036] px-4 text-center transition hover:border-white/20 hover:bg-[#38383f]">
             <Film size={24} className="text-white/75"/><span className="text-sm font-semibold">Escolher GIF</span><span className="text-[11px] text-white/45">GIF animado do seu dispositivo</span>
