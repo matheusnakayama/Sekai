@@ -942,6 +942,16 @@ button.inset-0:active {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+.user-profile-card-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.user-profile-card-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 @keyframes profile-action-menu-in {
   from { opacity: 0; transform: translateY(-3px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
