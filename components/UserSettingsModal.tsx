@@ -24,6 +24,7 @@ type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "
 interface UserSettingsModalProps {
   userId: string;
   serverId?: string | null;
+  serverName?: string;
   members?: MemberItem[];
   initialSection?: Section;
   initial: {
@@ -93,7 +94,7 @@ function uploadExtension(file: File) {
   return ext && /^[a-z0-9]{1,8}$/.test(ext) ? ext : "png";
 }
 
-export function UserSettingsModal({ userId, serverId, initial, members = [], initialSection = "perfil", onClose, onSaved }: UserSettingsModalProps) {
+export function UserSettingsModal({ userId, serverId, serverName, initial, members = [], initialSection = "perfil", onClose, onSaved }: UserSettingsModalProps) {
   const supabase = createClient();
   const { theme, setTheme, themes } = useTheme();
   const [section, setSection] = useState<Section>(initialSection);
@@ -129,6 +130,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
   const [serverAvatarCrop, setServerAvatarCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [serverBannerCrop, setServerBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [serverMemberListBannerCrop, setServerMemberListBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
+  const [serverProfileLoadError, setServerProfileLoadError] = useState("");
   const [imagePicker, setImagePicker] = useState<{ kind: ProfileImageKind; scope: ImageScope } | null>(null);
   const [imageEditor, setImageEditor] = useState<ImageEditorTarget | null>(null);
   const [recentImages, setRecentImages] = useState<string[]>([]);
@@ -221,7 +223,14 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
 
   useEffect(() => {
     if (!serverId) return;
-    void supabase.from("members").select("nickname,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,banner_url,banner_position_x,banner_position_y,banner_zoom,member_list_banner_url,member_list_banner_position_x,member_list_banner_position_y,member_list_banner_zoom").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data }) => {
+    let active = true;
+    setServerProfileLoadError("");
+    void supabase.from("members").select("nickname,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,banner_url,banner_position_x,banner_position_y,banner_zoom,member_list_banner_url,member_list_banner_position_x,member_list_banner_position_y,member_list_banner_zoom").eq("server_id", serverId).eq("user_id", userId).maybeSingle().then(({ data, error: loadError }) => {
+      if (!active) return;
+      if (loadError) {
+        setServerProfileLoadError("Não foi possível carregar a personalização por servidor. Aplique db/server_member_profile_migration.sql no Supabase e tente novamente.");
+        return;
+      }
       if (!data) return;
       setServerDisplayName(data.nickname ?? initial.displayName);
       setServerAvatarPreview(data.avatar_url ?? "");
@@ -231,6 +240,7 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
       setServerBannerCrop({ x: data.banner_position_x ?? 50, y: data.banner_position_y ?? 50, zoom: data.banner_zoom ?? 100 });
       setServerMemberListBannerCrop({ x: data.member_list_banner_position_x ?? 50, y: data.member_list_banner_position_y ?? 50, zoom: data.member_list_banner_zoom ?? 100 });
     });
+    return () => { active = false; };
   }, [initial.displayName, serverId, supabase, userId]);
 
   useEffect(() => {
@@ -391,9 +401,10 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
         const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
         if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
       }
-      const { error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, avatar_position_x: nextAvatarCrop.x, avatar_position_y: nextAvatarCrop.y, avatar_zoom: nextAvatarCrop.zoom, banner_url: bannerUrl, banner_position_x: nextBannerCrop.x, banner_position_y: nextBannerCrop.y, banner_zoom: nextBannerCrop.zoom, member_list_banner_url: memberListBannerUrl, member_list_banner_position_x: nextMemberListBannerCrop.x, member_list_banner_position_y: nextMemberListBannerCrop.y, member_list_banner_zoom: nextMemberListBannerCrop.zoom }).eq("server_id", serverId).eq("user_id", userId);
+      const { data: updatedMember, error: serverUpdateError } = await supabase.from("members").update({ nickname: serverDisplayName.trim(), avatar_url: avatarUrl, avatar_position_x: nextAvatarCrop.x, avatar_position_y: nextAvatarCrop.y, avatar_zoom: nextAvatarCrop.zoom, banner_url: bannerUrl, banner_position_x: nextBannerCrop.x, banner_position_y: nextBannerCrop.y, banner_zoom: nextBannerCrop.zoom, member_list_banner_url: memberListBannerUrl, member_list_banner_position_x: nextMemberListBannerCrop.x, member_list_banner_position_y: nextMemberListBannerCrop.y, member_list_banner_zoom: nextMemberListBannerCrop.zoom }).eq("server_id", serverId).eq("user_id", userId).select("user_id").maybeSingle();
       setSaving(false);
       if (serverUpdateError) { setError("Falha ao salvar perfil do servidor: " + serverUpdateError.message); return; }
+      if (!updatedMember) { setError("Não foi possível localizar sua participação neste servidor para salvar o perfil."); return; }
       rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
       onSaved(); onClose(); return;
     }
@@ -553,9 +564,9 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-6 sm:px-9 sm:py-8">
             <div className="mx-auto max-w-2xl">
               {section === "perfil" && <section className="settings-section-enter">
-                {serverId && <div className="settings-segment mb-6"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")}>Perfil do usuário</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")}>Perfil do servidor</button></div>}
+                {serverId && <div className="settings-segment mb-6"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")}>Perfil global</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")}>Neste servidor</button></div>}
                 <div hidden={profileScope !== "user"}>
-                <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai.</p></div>
+                <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai. Este é seu perfil global; você pode substituí-lo em um servidor específico.</p></div>
                 <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
                   <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
                     {bannerPreview && <CroppedProfileImage src={bannerPreview} alt="" positionX={bannerCrop.x} positionY={bannerCrop.y} zoom={bannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
@@ -604,7 +615,8 @@ export function UserSettingsModal({ userId, serverId, initial, members = [], ini
                 <div className="mt-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4"><div className="mb-3 flex items-center gap-2"><Circle size={10} className="fill-current text-discord-brand"/><h4 className="text-sm font-semibold text-discord-header-primary">Presença</h4></div><div className="grid gap-2 sm:grid-cols-2">{PRESENCE.map((item) => <button type="button" key={item.id} onClick={() => setPresence(item.id)} className={`flex items-start gap-3 rounded-lg border p-3 text-left transition ${presence === item.id ? "border-discord-brand bg-discord-brand/10" : "border-white/5 hover:bg-discord-bg-modifier-hover"}`}><span className="mt-0.5"><PresenceIndicator presence={item.id} size={16} cutoutColor="rgb(var(--d-primary))" hollowSymbols/></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium text-discord-text-normal">{item.label}</span><span className="mt-0.5 block text-xs text-discord-text-muted">{item.description}</span></span>{presence === item.id && <Check size={15} className="text-discord-brand"/>}</button>)}</div><p className="mt-2 text-[11px] text-discord-text-muted">A presença é exibida no perfil e na lista de membros.</p></div>
                 </div>
                 {serverId && <div hidden={profileScope !== "server"}>
-                  <div className="mb-6"><p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Personalização por servidor</p><h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Seu perfil neste servidor</h1><p className="mt-2 text-sm text-discord-text-muted">Use um nome, avatar ou banner diferente só aqui. GIF animado é aceito até 8 MB.</p></div>
+                  <div className="mb-6"><p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Personalização por servidor</p><h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Seu perfil {serverName ? `em ${serverName}` : "neste servidor"}</h1><p className="mt-2 text-sm text-discord-text-muted">Use um nome, avatar ou banner diferente só aqui. O perfil global continua valendo nos outros servidores. GIF animado é aceito até 8 MB.</p></div>
+                  {serverProfileLoadError && <p role="alert" className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm leading-5 text-amber-100">{serverProfileLoadError}</p>}
                   <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-primary shadow-lg shadow-black/10">
                     <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
                       {serverBannerPreview && <CroppedProfileImage src={serverBannerPreview} alt="" positionX={serverBannerCrop.x} positionY={serverBannerCrop.y} zoom={serverBannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}

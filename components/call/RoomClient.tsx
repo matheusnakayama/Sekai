@@ -16,7 +16,7 @@ import { subscribeToRoom, disconnectPusher, getPusherClient } from '@/lib/pusher
 import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
-import { buildDisplayMediaRequest, prepareScreenAudioTrack } from '@/lib/screenShare';
+import { buildDisplayMediaRequest, prepareScreenAudioTrack, screenShareFailureMessage } from '@/lib/screenShare';
 import { advanceVoiceGate, createVoiceGate, openCallInput, setVoiceInputVolume, voiceDeviceId } from '@/lib/voiceCapture';
 import { inviteUrl } from '@/lib/invites';
 import type {
@@ -114,7 +114,7 @@ export default function RoomClient({
   const [hostId, setHostId] = useState('');
   const [focusedPresentationId, setFocusedPresentationId] = useState<string | null>(null);
   const [fatalError, setFatalError] = useState<CallError | null>(null);
-  const [banner, setBanner] = useState<{ message: string; connection: boolean } | null>(null);
+  const [banner, setBanner] = useState<{ message: string; connection: boolean; persistent?: boolean } | null>(null);
   const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
   const [pendingPrankPrompt, setPendingPrankPrompt] = useState<{ senderName: string } | null>(null);
 
@@ -619,7 +619,7 @@ export default function RoomClient({
   }, [micOn]);
 
   useEffect(() => {
-    if (!banner || banner.connection) return;
+    if (!banner || banner.connection || banner.persistent) return;
     const timer = window.setTimeout(() => setBanner(null), 6000);
     return () => window.clearTimeout(timer);
   }, [banner]);
@@ -641,8 +641,8 @@ export default function RoomClient({
     writeCallAudioPreference(next);
   }
 
-  function showProblem(message: string, connection = false) {
-    setBanner({ message, connection });
+  function showProblem(message: string, connection = false, persistent = false) {
+    setBanner({ message, connection, persistent });
   }
 
   function appendSystemChatMessage(text: string) {
@@ -935,7 +935,8 @@ export default function RoomClient({
       const screenTrack = display.getVideoTracks()[0];
       if (!screenTrack) {
         display.getTracks().forEach((track) => track.stop());
-        showProblem('O navegador não forneceu uma faixa de vídeo para compartilhar.');
+        setGoLiveOpen(false);
+        showProblem('Sua apresentação não foi iniciada: o navegador não forneceu uma faixa de vídeo (código: VideoTrackUnavailable). Verifique a permissão de captura e tente outra tela ou janela.', false, true);
         return;
       }
 
@@ -978,7 +979,9 @@ export default function RoomClient({
             cameraStreamRef.current
           )
           .catch(() => {});
-        showProblem('A tela foi capturada, mas não foi possível enviá-la aos participantes.');
+        setGoLiveOpen(false);
+        const detail = err && typeof err === 'object' && 'name' in err ? String(err.name) : 'erro de transmissão';
+        showProblem(`O PC capturou a tela, mas a chamada não conseguiu enviá-la aos participantes. Verifique a conexão e tente novamente (detalhe: ${detail}).`, false, true);
         return;
       }
 
@@ -1008,16 +1011,12 @@ export default function RoomClient({
         appendSystemChatMessage('O navegador encerrou o áudio compartilhado. A imagem continua.');
       }, { once: true });
     } catch (err) {
-      const cancelled = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError');
-      if (cancelled) return;
       console.error('Não foi possível iniciar a apresentação de tela:', err);
       screenAudioTrackRef.current = null;
       setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
       setGoLiveOpen(false);
-      showProblem(selection.sourceId
-        ? 'Não foi possível transmitir essa janela. Abra a lista de novo e escolha outra.'
-        : 'Não foi possível compartilhar a tela. Verifique as permissões do navegador.');
+      showProblem(screenShareFailureMessage(err, Boolean(selection.sourceId)), false, true);
     } finally {
       screenShareOperationRef.current = false;
       setGoLiveBusy(false);
@@ -1419,9 +1418,9 @@ export default function RoomClient({
         <div className="px-4 pt-3">
           <div className="max-w-xl mx-auto">
             <ErrorBanner
-              title={banner.connection ? "Aviso de conexão" : "Aviso"}
+              title={banner.connection ? "Aviso de conexão" : banner.persistent ? "Falha no compartilhamento de tela" : "Aviso"}
               message={banner.message}
-              tone={banner.connection ? "danger" : "neutral"}
+              tone={banner.connection || banner.persistent ? "danger" : "neutral"}
               actionLabel="Fechar"
               onRetry={() => setBanner(null)}
             />

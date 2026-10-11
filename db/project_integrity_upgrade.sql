@@ -206,11 +206,29 @@ grant execute on function public.has_permission(uuid, text) to authenticated;
 -- Mute temporário e banimentos precisam existir também no banco, não só na UI.
 alter table public.members add column if not exists is_muted boolean not null default false;
 alter table public.members add column if not exists communication_disabled_until timestamptz;
+alter table public.members
+  add column if not exists avatar_url text,
+  add column if not exists avatar_position_x double precision not null default 50,
+  add column if not exists avatar_position_y double precision not null default 50,
+  add column if not exists avatar_zoom double precision not null default 100,
+  add column if not exists banner_url text,
+  add column if not exists banner_position_x double precision not null default 50,
+  add column if not exists banner_position_y double precision not null default 50,
+  add column if not exists banner_zoom double precision not null default 100,
+  add column if not exists member_list_banner_url text,
+  add column if not exists member_list_banner_position_x double precision not null default 50,
+  add column if not exists member_list_banner_position_y double precision not null default 50,
+  add column if not exists member_list_banner_zoom double precision not null default 100;
 update public.members set is_muted = false where is_muted is null;
 alter table public.members alter column is_muted set default false;
 alter table public.members alter column is_muted set not null;
 revoke update on public.members from authenticated;
-grant update (nickname) on public.members to authenticated;
+grant update (
+  nickname,
+  avatar_url, avatar_position_x, avatar_position_y, avatar_zoom,
+  banner_url, banner_position_x, banner_position_y, banner_zoom,
+  member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom
+) on public.members to authenticated;
 create table if not exists public.guild_bans (
   server_id uuid not null references public.servers(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,

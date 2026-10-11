@@ -2023,6 +2023,7 @@ export default function Home() {
         <UserSettingsModal
           userId={currentUserId}
           serverId={activeServerId}
+          serverName={servers.find((server) => server.id === activeServerId)?.name}
           initialSection={settingsSection}
           initial={myProfile ?? { displayName: currentMember?.displayName ?? "Você", username: currentMember?.username ?? "" }}
           members={members}
