@@ -272,10 +272,12 @@ export default function Home() {
   const [voiceError, setVoiceError] = useState("");
   const [pendingVoiceJoin, setPendingVoiceJoin] = useState<{ channelId: string; startedAt: number } | null>(null);
   const [voiceParticipants, setVoiceParticipants] = useState<Participant[]>([]);
+  const [voiceParticipantsChannelId, setVoiceParticipantsChannelId] = useState<string | null>(null);
   const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
   const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, isSpeaking: false });
   const [voiceAudioSettings, setVoiceAudioSettings] = useState<VoiceAudioSettings | null>(null);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
+  const [voiceActivityByServer, setVoiceActivityByServer] = useState<Record<string, boolean>>({});
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [mutedSoundEffectUserIds, setMutedSoundEffectUserIds] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -1259,12 +1261,50 @@ export default function Home() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [activeServerId, channels, currentUserId, supabase]);
 
+  useEffect(() => {
+    const serverIds = serverListVersion ? serverListVersion.split(":") : [];
+    if (!currentUserId || !serverIds.length) {
+      setVoiceActivityByServer({});
+      return;
+    }
+
+    let cancelled = false;
+    let refreshing = false;
+    async function refreshServerVoiceActivity() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const response = await fetch("/api/pusher/server-activity", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = await response.json() as { activeServerIds?: string[] };
+        if (cancelled) return;
+        const accessibleServerIds = new Set(serverIds);
+        setVoiceActivityByServer(Object.fromEntries((payload.activeServerIds ?? []).filter((id) => accessibleServerIds.has(id)).map((id) => [id, true])));
+      } catch {
+        // A próxima atualização periódica tenta novamente sem interromper a interface.
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    void refreshServerVoiceActivity();
+    const timer = window.setInterval(() => void refreshServerVoiceActivity(), 8000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [currentUserId, serverListVersion, supabase]);
+
   const canManageChannels = isOwner || isPlatformAdmin || hasPermission(myPermissions, "MANAGE_CHANNELS");
   const canCreateInvite = isOwner || isPlatformAdmin || hasPermission(myPermissions, "CREATE_INSTANT_INVITE");
 
   const handleVoiceParticipantsChange = useCallback((participants: Participant[]) => {
     setVoiceParticipants(participants);
-  }, []);
+    setVoiceParticipantsChannelId(voiceSession?.channelId ?? null);
+  }, [voiceSession?.channelId]);
 
   const handleVoiceControlsReady = useCallback((controls: VoiceControlHandle | null) => {
     voiceControlsRef.current = controls;
@@ -1917,6 +1957,8 @@ export default function Home() {
       <ServerSidebar
         currentUserId={currentUserId ?? ""}
         servers={railServers}
+        voiceActivityByServer={voiceActivityByServer}
+        connectedVoiceServerId={voiceSession?.kind === "server" && voiceParticipantsChannelId === voiceSession.channelId && voiceParticipants.some((participant) => participant.isLocal) ? voiceSession.serverId ?? null : null}
         activeServerId={activeServerId}
         onSelectServer={(serverId) => { handleSelectServer(serverId); setMobileNavigationOpen(false); setMobileMembersOpen(false); }}
         onCreateServer={() => { setShowCreateServer(true); setMobileNavigationOpen(false); }}

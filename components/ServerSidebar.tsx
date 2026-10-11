@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Compass } from "lucide-react";
+import { Plus, Compass, Volume2 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import { SEKAI_LOGO_MONOCHROME } from "@/lib/brandAssets";
@@ -17,6 +17,8 @@ export interface ServerItem {
 interface ServerSidebarProps {
   currentUserId: string;
   servers: ServerItem[];
+  voiceActivityByServer?: Record<string, boolean>;
+  connectedVoiceServerId?: string | null;
   activeServerId?: string;
   onSelectServer: (serverId: string) => void;
   onCreateServer: () => void;
@@ -29,6 +31,8 @@ function ServerIcon({
   active,
   hasUnread,
   mentionCount,
+  voiceActivity,
+  voiceActive,
   onClick,
   children,
   label,
@@ -36,6 +40,8 @@ function ServerIcon({
   active?: boolean;
   hasUnread?: boolean;
   mentionCount?: number;
+  voiceActivity?: boolean;
+  voiceActive?: boolean;
   onClick: () => void;
   children: React.ReactNode;
   label: string;
@@ -61,7 +67,7 @@ function ServerIcon({
       <div className={cn("relative shrink-0 transition-transform duration-150", active && "translate-x-1")}>
         <button
           onClick={onClick}
-          aria-label={label}
+          aria-label={voiceActive ? `${label}; você está em chamada` : voiceActivity ? `${label}; há pessoas em chamada` : label}
           onMouseEnter={(event) => showTooltip(event.currentTarget)}
           onMouseLeave={() => setTooltipPosition(null)}
           onFocus={(event) => showTooltip(event.currentTarget)}
@@ -79,6 +85,19 @@ function ServerIcon({
             {mentionCount > 99 ? "99+" : mentionCount}
           </span>
         ) : null}
+        {(voiceActivity || voiceActive) && (
+          <span
+            aria-hidden="true"
+            title={voiceActive ? "Você está em uma chamada neste servidor" : "Há pessoas em chamada neste servidor"}
+            className={cn(
+              "absolute right-0.5 top-0.5 z-20 flex h-4 w-4 items-center justify-center rounded-full border-2 border-discord-bg-darkest text-white shadow-sm",
+              !voiceActive && "bg-discord-bg-floating",
+            )}
+            style={voiceActive ? { backgroundColor: "rgb(var(--d-brand))" } : undefined}
+          >
+            <Volume2 className="h-[9px] w-[9px] shrink-0" strokeWidth={2.8} />
+          </span>
+        )}
       </div>
 
       {tooltipPosition && createPortal(
@@ -99,6 +118,8 @@ function ServerIcon({
 export function ServerSidebar({
   currentUserId,
   servers,
+  voiceActivityByServer,
+  connectedVoiceServerId,
   activeServerId,
   onSelectServer,
   onCreateServer,
@@ -190,6 +211,8 @@ export function ServerSidebar({
             active={server.id === activeServerId}
             hasUnread={server.hasUnread}
             mentionCount={server.mentionCount}
+            voiceActivity={voiceActivityByServer?.[server.id]}
+            voiceActive={connectedVoiceServerId === server.id}
             onClick={() => onSelectServer(server.id)}
             label={server.name}
           >
