@@ -7,6 +7,10 @@ import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
 import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
+// O CSP com nonce precisa renderizar por requisicao para que o Next aplique o
+// nonce recebido do middleware aos scripts internos do framework.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Sekai",
   description: "Comunicação em tempo real para você e seus amigos",
