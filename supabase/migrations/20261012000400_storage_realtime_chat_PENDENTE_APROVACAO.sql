@@ -121,17 +121,7 @@ using (bucket_id = 'server-assets' and (storage.foldername(name))[2] = auth.uid(
       else public.has_permission(((storage.foldername(name))[1])::uuid, 'manage_guild') end
     else false end);
 
-create policy sekai_chat_images_read on storage.objects for select to authenticated
-using (bucket_id = 'chat-images' and public.sekai_can_access_chat_image(name, false));
-create policy sekai_chat_images_upload on storage.objects for insert to authenticated
-with check (bucket_id = 'chat-images' and public.sekai_can_access_chat_image(name, true)
-  and coalesce(metadata ->> 'mimetype', '') = any(array['image/jpeg','image/png','image/webp','image/gif'])
-  and lower(name) !~ '\.(svg|svgz|html?|xhtml)$');
-create policy sekai_chat_images_delete_own on storage.objects for delete to authenticated
-using (bucket_id = 'chat-images' and (storage.foldername(name))[3] = auth.uid()::text
-  and public.sekai_can_access_chat_image(name, false));
-
--- O banco continua validando tamanho/ritmo mesmo com gravações diretas do cliente.
+-- Predicado antes das policies que o referenciam (CREATE POLICY valida a assinatura agora).
 create or replace function public.sekai_can_access_chat_image(p_name text, p_for_upload boolean)
 returns boolean
 language plpgsql
@@ -143,7 +133,7 @@ declare
   v_parts text[] := string_to_array(coalesce(p_name, ''), '/');
   v_channel_id uuid;
 begin
-  if auth.uid() is null or array_length(v_parts, 1) <> 4 then return false; end if;
+  if auth.uid() is null or char_length(coalesce(p_name, '')) > 1024 or array_length(v_parts, 1) <> 4 then return false; end if;
   if v_parts[1] = 'channels' then
     if v_parts[2] !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
        or (p_for_upload and v_parts[3] <> auth.uid()::text) then return false; end if;
@@ -180,6 +170,17 @@ $$;
 revoke all on function public.sekai_can_access_chat_image(text, boolean) from public, anon;
 grant execute on function public.sekai_can_access_chat_image(text, boolean) to authenticated;
 
+create policy sekai_chat_images_read on storage.objects for select to authenticated
+using (bucket_id = 'chat-images' and public.sekai_can_access_chat_image(name, false));
+create policy sekai_chat_images_upload on storage.objects for insert to authenticated
+with check (bucket_id = 'chat-images' and public.sekai_can_access_chat_image(name, true)
+  and coalesce(metadata ->> 'mimetype', '') = any(array['image/jpeg','image/png','image/webp','image/gif'])
+  and lower(name) !~ '\.(svg|svgz|html?|xhtml)$');
+create policy sekai_chat_images_delete_own on storage.objects for delete to authenticated
+using (bucket_id = 'chat-images' and (storage.foldername(name))[3] = auth.uid()::text
+  and public.sekai_can_access_chat_image(name, false));
+
+-- O banco continua validando tamanho/ritmo mesmo com gravações diretas do cliente.
 -- Garantia de leitura Realtime para DMs: exatamente os dois participantes e
 -- apenas enquanto amizade aceita ou servidor compartilhado existir.
 drop policy if exists sekai_direct_messages_select_participants on public.sekai_direct_messages;

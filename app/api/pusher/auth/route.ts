@@ -91,6 +91,27 @@ export async function POST(req: NextRequest) {
     if (!directPair.includes(user.id.toLowerCase())) {
       return NextResponse.json({ error: 'Você não faz parte desta chamada.' }, { status: 403 });
     }
+    const peerId = directPair.find((id) => id !== user.id.toLowerCase());
+    if (!peerId) return NextResponse.json({ error: 'Conversa privada inválida.' }, { status: 403 });
+    const [forwardFriendship, reverseFriendship] = await Promise.all([
+      supabase.from('friendships').select('id').eq('status', 'accepted').eq('sender_id', user.id).eq('receiver_id', peerId).maybeSingle(),
+      supabase.from('friendships').select('id').eq('status', 'accepted').eq('sender_id', peerId).eq('receiver_id', user.id).maybeSingle(),
+    ]);
+    const friendAllowed = !forwardFriendship.error && !reverseFriendship.error && Boolean(forwardFriendship.data || reverseFriendship.data);
+    let sharesServer = false;
+    if (!friendAllowed) {
+      const { data: ownMemberships, error: ownMembershipError } = await supabase.from('members')
+        .select('server_id').eq('user_id', user.id).eq('is_banned', false);
+      const serverIds = Array.from(new Set((ownMemberships ?? []).map((row) => row.server_id).filter(Boolean)));
+      if (!ownMembershipError && serverIds.length) {
+        const { data: sharedMemberships, error: sharedMembershipError } = await supabase.from('members')
+          .select('server_id').eq('user_id', peerId).eq('is_banned', false).in('server_id', serverIds);
+        sharesServer = !sharedMembershipError && Boolean(sharedMemberships?.length);
+      }
+    }
+    if (!friendAllowed && !sharesServer) {
+      return NextResponse.json({ error: 'A chamada privada exige amizade aceita ou um servidor em comum.' }, { status: 403 });
+    }
   } else {
     const { data: room } = await supabase.from('channels')
       .select('id, server_id')

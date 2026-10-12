@@ -25,8 +25,8 @@ export function CreateServerModal({ onClose, onCreate, onJoin }: CreateServerMod
     const file = e.target.files?.[0];
     if (!file) return;
     e.currentTarget.value = "";
-    if (!file.type.startsWith("image/")) { setError("Escolha um arquivo de imagem."); return; }
-    if (file.size > 8 * 1024 * 1024) { setError("O ícone deve ter no máximo 8 MB."); return; }
+    if (!new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]).has(file.type)) { setError("Escolha uma imagem JPEG, PNG, WebP ou GIF."); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("O ícone deve ter no máximo 5 MB."); return; }
     setError("");
     setIconFile(file);
     setIconPreview(URL.createObjectURL(file));

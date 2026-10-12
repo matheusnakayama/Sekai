@@ -1652,7 +1652,7 @@ export default function Home() {
       receiver_id: member.id,
       content: content.trim(),
     });
-    if (error || !serverId) throw new Error("Não foi possível entrar com este convite. Confira o código ou tente novamente mais tarde.");
+    if (error) throw new Error("Não foi possível enviar esta mensagem direta.");
   }
 
   const currentMember = members.find((m) => m.id === currentUserId);
