@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, Link2, LogOut, MessageSquare, Pencil, Plus, Trash2,
-  Monitor, Palette, Settings2, Shield, UserRound, X,
+  Mic, Monitor, Palette, Settings2, Shield, UserRound, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TurnstileCaptcha } from "@/components/auth/TurnstileCaptcha";
@@ -18,9 +18,10 @@ import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/compon
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { SpotifyConnections } from "@/components/SpotifyConnections";
+import { VoiceSettingsPanel } from "@/components/VoiceSettingsPanel";
 import { CHAT_PREFERENCES_EVENT, DEFAULT_CHAT_DISPLAY, type ChatDisplayPreferences } from "@/lib/chatPreferences";
 
-type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias";
+type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias" | "voz";
 type Presence = "online" | "idle" | "dnd" | "offline";
 type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean; chat: ChatDisplayPreferences };
 
@@ -64,6 +65,7 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
   { id: "aparencia", label: "Aparência", icon: Palette, group: "Aplicativo" },
   { id: "mensagens", label: "Mensagens", icon: MessageSquare, group: "Aplicativo" },
   { id: "acessibilidade", label: "Acessibilidade", icon: Accessibility, group: "Aplicativo" },
+  { id: "voz", label: "Voz e vídeo", icon: Mic, group: "Aplicativo" },
   { id: "conexoes", label: "Conexões", icon: Link2, group: "Conexões" },
   { id: "insignias", label: "Insígnias", icon: Award, group: "Gestão" },
 ];
@@ -95,9 +97,29 @@ function loadPreferences(userId: string): Preferences {
   } catch { return DEFAULT_PREFERENCES; }
 }
 
-function uploadExtension(file: File) {
-  const ext = file.name.split(".").pop()?.toLowerCase();
-  return ext && /^[a-z0-9]{1,8}$/.test(ext) ? ext : "png";
+const PROFILE_IMAGE_FORMATS = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+} as const;
+const PROFILE_IMAGE_TYPE_BY_EXTENSION: Record<string, keyof typeof PROFILE_IMAGE_FORMATS> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+function profileImageUploadFormat(file: File) {
+  const rawType = file.type.trim().toLowerCase();
+  const normalizedType = rawType === "image/jpg" ? "image/jpeg" : rawType;
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const contentType = normalizedType in PROFILE_IMAGE_FORMATS
+    ? normalizedType as keyof typeof PROFILE_IMAGE_FORMATS
+    : !rawType ? PROFILE_IMAGE_TYPE_BY_EXTENSION[extension] : undefined;
+  if (!contentType) return null;
+  return { contentType, extension: PROFILE_IMAGE_FORMATS[contentType] };
 }
 
 export function UserSettingsModal({ userId, serverId, serverName, initial, initialSection = "perfil", onClose, onSaved }: UserSettingsModalProps) {
@@ -424,8 +446,10 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       const nextMemberListBannerCrop = removeServerMemberListBanner ? DEFAULT_CROP : serverMemberListBannerCrop;
       for (const item of [{ file: serverAvatarFile, kind: "avatar" as const }, { file: serverBannerFile, kind: "banner" as const }, { file: serverMemberListBannerFile, kind: "memberListBanner" as const }]) {
         if (!item.file) continue;
-        const path = `${userId}/server-profiles/${serverId}/${item.kind}-${Date.now()}.${uploadExtension(item.file)}`;
-        const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: true, contentType: item.file.type });
+        const format = profileImageUploadFormat(item.file);
+        if (!format) { setSaving(false); setError("Formato de imagem não suportado. Use PNG, JPG, WebP ou GIF."); return; }
+        const path = `${userId}/server-profiles/${serverId}/${item.kind}-${crypto.randomUUID()}.${format.extension}`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: false, contentType: format.contentType });
         if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : "banner"}: ${uploadError.message}`); return; }
         const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
         if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
@@ -446,8 +470,10 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
 
     for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }, { file: memberListBannerFile, kind: "memberListBanner" as const }]) {
       if (!item.file) continue;
-      const path = `${userId}/${item.kind}-${Date.now()}.${uploadExtension(item.file)}`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: true, contentType: item.file.type });
+      const format = profileImageUploadFormat(item.file);
+      if (!format) { setSaving(false); setError("Formato de imagem não suportado. Use PNG, JPG, WebP ou GIF."); return; }
+      const path = `${userId}/${item.kind}-${crypto.randomUUID()}.${format.extension}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: false, contentType: format.contentType });
       if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : "banner"}: ${uploadError.message}`); return; }
       const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
       if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
@@ -781,6 +807,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                 <PreferenceCard icon={Monitor} title="Densidade da interface" description="Escolha quanto espaço os elementos ocupam."><div className="grid grid-cols-2 gap-2">{([['comfortable', 'Confortável'], ['compact', 'Compacta']] as const).map(([value, label]) => <Choice key={value} active={preferences.density === value} onClick={() => setPreference("density", value)}>{label}</Choice>)}</div></PreferenceCard>
               </section>}
 
+              {section === "voz" && <VoiceSettingsPanel userId={userId} />}
+
               {section === "insignias" && isBadgeManager && <section className="settings-section-enter">
                 <SectionIntro eyebrow="Personalização da comunidade" title="Insígnias" text="Crie símbolos exclusivos e escolha quais membros podem exibi-los ao lado do nome."/>
                 <div className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-primary p-4 sm:p-5">
@@ -885,7 +913,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
           </div>
 
           {(error || notice) && <div className={`mx-5 mb-3 rounded-lg px-3 py-2 text-sm sm:mx-9 ${error ? "bg-discord-danger/10 text-discord-danger" : "bg-emerald-500/10 text-emerald-300"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : section === "voz" ? "As preferências de áudio são aplicadas imediatamente neste navegador." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && section !== "voz" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
       {imagePicker && <ProfileImagePickerModal kind={imagePicker.kind} recentImages={recentImages} onSelect={selectProfileMedia} onClose={() => setImagePicker(null)}/>}

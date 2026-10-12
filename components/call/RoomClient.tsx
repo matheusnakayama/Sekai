@@ -20,6 +20,7 @@ import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPrefere
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
 import { buildDisplayMediaRequest, prepareScreenAudioTrack, screenShareFailureMessage } from '@/lib/screenShare';
 import { advanceVoiceGate, createVoiceGate, openCallInput, setVoiceInputVolume, voiceDeviceId } from '@/lib/voiceCapture';
+import { readVoicePreferences, saveVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT, type VoicePreferences } from '@/lib/voicePreferences';
 import { inviteUrl } from '@/lib/invites';
 import type {
   CallError,
@@ -65,7 +66,10 @@ export default function RoomClient({
   onControlStateChange,
   mutedSoundEffectUserIds = [],
   autoJoin = false,
+  userId,
+  onOpenVoiceSettings,
 }: {
+  userId?: string;
   roomId: string;
   serverId?: string;
   roomName: string;
@@ -94,6 +98,7 @@ export default function RoomClient({
   } | null) => void;
   onControlStateChange?: (state: { micOn: boolean; deafened: boolean; camOn: boolean; isSpeaking: boolean }) => void;
   mutedSoundEffectUserIds?: string[];
+  onOpenVoiceSettings?: () => void;
   /** Entra direto, sem a tela de pré-visualização. A câmera começa desligada e o microfone segue o último estado da call. */
   autoJoin?: boolean;
 }) {
@@ -161,6 +166,32 @@ export default function RoomClient({
   const releaseCallMusicRef = useRef<() => void>(() => {});
   const supabase = createClient();
   onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!userId) return;
+    const applyPreferences = (preferences: VoicePreferences) => {
+      setSelectedInputDeviceId(preferences.inputDeviceId);
+      setSelectedOutputDeviceId(preferences.outputDeviceId);
+      setInputVolume(preferences.inputVolume);
+      setOutputVolume(preferences.outputVolume);
+      setVoiceProfile(preferences.voiceProfile);
+      setVoiceInputVolume(cameraStreamRef.current?.getAudioTracks()[0], preferences.inputVolume);
+    };
+
+    applyPreferences(readVoicePreferences(userId));
+    const handlePreferencesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ userId?: string; preferences?: VoicePreferences }>).detail;
+      if (detail?.userId !== userId || !detail.preferences) return;
+      const next = detail.preferences;
+      const inputChanged = next.inputDeviceId !== selectedInputDeviceId || next.voiceProfile !== voiceProfile;
+      applyPreferences(next);
+      if (inputChanged && phase === 'in-call') {
+        void changeCallInputRef.current(next.inputDeviceId, next.voiceProfile);
+      }
+    };
+    window.addEventListener(VOICE_PREFERENCES_UPDATED_EVENT, handlePreferencesUpdated);
+    return () => window.removeEventListener(VOICE_PREFERENCES_UPDATED_EVENT, handlePreferencesUpdated);
+  }, [phase, selectedInputDeviceId, userId, voiceProfile]);
 
   const activeMicrophoneTrackId = participants[localIdRef.current]?.stream?.getAudioTracks()[0]?.id ?? '';
 
@@ -885,6 +916,7 @@ export default function RoomClient({
       previousAudioTracks.forEach((track) => { if (track !== nextTrack && track.readyState === 'live') track.stop(); });
       setSelectedInputDeviceId(deviceId || voiceDeviceId(nextTrack) || '');
       setVoiceProfile(profile);
+      if (userId) saveVoicePreferences(userId, { inputDeviceId: deviceId || voiceDeviceId(nextTrack) || '', voiceProfile: profile }, false);
       replacement = null; // A faixa agora pertence à sessão da chamada.
     } catch (error) {
       replacement?.getTracks().forEach((track) => { if (track.readyState === 'live') track.stop(); });
@@ -894,8 +926,28 @@ export default function RoomClient({
   }
 
   changeCallInputRef.current = changeCallInput;
-  const selectInputDevice = useCallback((deviceId: string) => { void changeCallInputRef.current(deviceId); }, []);
-  const selectVoiceProfile = useCallback((profile: VoiceProfile) => { void changeCallInputRef.current(selectedInputDeviceId, profile); }, [selectedInputDeviceId]);
+  const selectInputDevice = useCallback((deviceId: string) => {
+    if (userId) saveVoicePreferences(userId, { inputDeviceId: deviceId }, false);
+    void changeCallInputRef.current(deviceId);
+  }, [userId]);
+  const selectVoiceProfile = useCallback((profile: VoiceProfile) => {
+    if (userId) saveVoicePreferences(userId, { voiceProfile: profile }, false);
+    void changeCallInputRef.current(selectedInputDeviceId, profile);
+  }, [selectedInputDeviceId, userId]);
+  const selectOutputDevice = useCallback((deviceId: string) => {
+    setSelectedOutputDeviceId(deviceId);
+    if (userId) saveVoicePreferences(userId, { outputDeviceId: deviceId }, false);
+  }, [userId]);
+  const updateInputVolume = useCallback((volume: number) => {
+    const next = Math.max(0, Math.min(2, volume));
+    setInputVolume(next);
+    if (userId) saveVoicePreferences(userId, { inputVolume: next }, false);
+  }, [userId]);
+  const updateOutputVolume = useCallback((volume: number) => {
+    const next = Math.max(0, Math.min(1, volume));
+    setOutputVolume(next);
+    if (userId) saveVoicePreferences(userId, { outputVolume: next }, false);
+  }, [userId]);
 
   const toggleMic = useCallback(() => {
     if (micLockedByHostRef.current) {
@@ -936,12 +988,12 @@ export default function RoomClient({
       playSoundEffect: playSoundboardEffect,
       audioSettings: { inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported },
       selectInputDevice,
-      selectOutputDevice: setSelectedOutputDeviceId,
-      setInputVolume,
-      setOutputVolume,
+      selectOutputDevice,
+      setInputVolume: updateInputVolume,
+      setOutputVolume: updateOutputVolume,
       setVoiceProfile: selectVoiceProfile,
     });
-  }, [onControlsReady, toggleMic, toggleDeafen, toggleCam, toggleScreenShare, playSoundboardEffect, inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported, selectInputDevice, selectVoiceProfile]);
+  }, [onControlsReady, toggleMic, toggleDeafen, toggleCam, toggleScreenShare, playSoundboardEffect, inputDevices, outputDevices, selectedInputDeviceId, selectedOutputDeviceId, inputVolume, outputVolume, voiceProfile, outputDeviceSelectionSupported, selectInputDevice, selectOutputDevice, updateInputVolume, updateOutputVolume, selectVoiceProfile]);
 
   useEffect(() => () => onControlsReady?.(null), [onControlsReady]);
 
@@ -1406,7 +1458,17 @@ export default function RoomClient({
     let cancelled = false;
 
     async function start() {
-      const stream = await openCallInput({ video: true }).catch(() => null);
+      const preferences = readVoicePreferences(userId ?? '');
+      setSelectedInputDeviceId(preferences.inputDeviceId);
+      setSelectedOutputDeviceId(preferences.outputDeviceId);
+      setInputVolume(preferences.inputVolume);
+      setOutputVolume(preferences.outputVolume);
+      setVoiceProfile(preferences.voiceProfile);
+      const stream = await openCallInput({
+        video: true,
+        audioDeviceId: preferences.inputDeviceId || undefined,
+        noiseSuppression: preferences.voiceProfile === 'noise-suppression',
+      }).catch(() => null);
 
       if (cancelled) {
         stream?.getTracks().forEach((track) => track.stop());
@@ -1420,7 +1482,10 @@ export default function RoomClient({
       const preference = readCallAudioPreference();
       const micEnabled = microphoneEnabledOnJoin(stream.getAudioTracks().length > 0, preference);
       stream.getVideoTracks().forEach((track) => (track.enabled = false));
-      stream.getAudioTracks().forEach((track) => (track.enabled = micEnabled));
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = micEnabled;
+        setVoiceInputVolume(track, preferences.inputVolume);
+      });
       setAutoJoining(false);
       await handleJoin({
         name: initialName,
@@ -1668,14 +1733,15 @@ export default function RoomClient({
           outputDevices={outputDevices}
           selectedInputDeviceId={selectedInputDeviceId}
           selectedOutputDeviceId={selectedOutputDeviceId}
-          onSelectInputDevice={(deviceId) => { void changeCallInput(deviceId); }}
-          onSelectOutputDevice={setSelectedOutputDeviceId}
+          onSelectInputDevice={selectInputDevice}
+          onSelectOutputDevice={selectOutputDevice}
           inputVolume={inputVolume}
           outputVolume={outputVolume}
-          onInputVolumeChange={setInputVolume}
-          onOutputVolumeChange={setOutputVolume}
+          onInputVolumeChange={updateInputVolume}
+          onOutputVolumeChange={updateOutputVolume}
           voiceProfile={voiceProfile}
-          onVoiceProfileChange={(profile) => { void changeCallInput(selectedInputDeviceId, profile); }}
+          onVoiceProfileChange={selectVoiceProfile}
+          onOpenVoiceSettings={onOpenVoiceSettings}
           outputDeviceSelectionSupported={outputDeviceSelectionSupported}
           onToggleCam={toggleCam}
           onToggleScreenShare={toggleScreenShare}

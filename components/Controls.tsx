@@ -66,6 +66,7 @@ export default function Controls({
   onOutputVolumeChange,
   voiceProfile,
   onVoiceProfileChange,
+  onOpenVoiceSettings,
   outputDeviceSelectionSupported,
   onToggleCam,
   onToggleScreenShare,
@@ -105,6 +106,7 @@ export default function Controls({
   onOutputVolumeChange: (volume: number) => void;
   voiceProfile: VoiceProfile;
   onVoiceProfileChange: (profile: VoiceProfile) => void;
+  onOpenVoiceSettings?: () => void;
   outputDeviceSelectionSupported: boolean;
   onToggleCam: () => void;
   onToggleScreenShare: () => void;
@@ -162,7 +164,7 @@ export default function Controls({
             <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round(inputVolume * 100)}%</span></span>
             <input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={inputVolume} onChange={(event) => onInputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
           </label>
-          <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
+          <button type="button" onClick={() => { setAudioMenuOpen(null); setVoiceSettingsOpen(false); onOpenVoiceSettings?.(); }} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
         </AnchoredPopover>
       </div>
 

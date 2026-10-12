@@ -407,7 +407,7 @@ export default function Home() {
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes">("perfil");
+  const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
@@ -545,7 +545,7 @@ export default function Home() {
   useEffect(() => {
     const openSettings = (event: Event) => {
       const section = (event as CustomEvent<string>).detail;
-      setSettingsSection(section === "conexoes" ? "conexoes" : "perfil");
+      setSettingsSection(section === "conexoes" || section === "voz" ? section : "perfil");
       setShowUserSettings(true);
     };
     window.addEventListener("sekai:open-settings", openSettings);
@@ -2173,6 +2173,7 @@ export default function Home() {
         onDeleteChannel={(channel) => { void deleteChannel(channel); }}
         onOpenServerMenu={() => activeServerId && setShowServerSettings(true)}
         onOpenSettings={() => setShowUserSettings(true)}
+        onOpenVoiceSettings={() => { setSettingsSection("voz"); setShowUserSettings(true); }}
         onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
         onToggleCamera={voiceSession ? () => voiceControlsRef.current?.toggleCam() : undefined}
         onToggleDeafen={voiceSession ? () => voiceControlsRef.current?.toggleDeafen() : undefined}
@@ -2328,6 +2329,7 @@ export default function Home() {
         <div className={callOpenHere ? "call-host call-bg relative h-full min-h-0 min-w-0 flex-1 overflow-y-auto" : "hidden"}>
           <RoomClient
             key={voiceSession.channelId}
+            userId={currentUserId ?? undefined}
             roomId={voiceSession.channelId}
             serverId={voiceSession.serverId}
             roomName={voiceSession.channelName}
@@ -2352,6 +2354,7 @@ export default function Home() {
               }
             }}
             callVisible={callOpenHere}
+            onOpenVoiceSettings={() => { setSettingsSection("voz"); setShowUserSettings(true); }}
           />
         </div>
       )}

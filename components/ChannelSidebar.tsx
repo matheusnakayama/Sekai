@@ -94,6 +94,7 @@ interface ChannelSidebarProps {
   onVoiceOutputVolumeChange?: (volume: number) => void;
   onVoiceProfileChange?: (profile: VoiceProfile) => void;
   onOpenSettings?: () => void;
+  onOpenVoiceSettings?: () => void;
   onPresenceChange?: (presence: "online" | "idle" | "dnd" | "offline") => boolean | void | Promise<boolean | void>;
   canManageChannels?: boolean;
   canCreateInvite?: boolean;
@@ -136,6 +137,7 @@ export function ChannelSidebar({
   onVoiceOutputVolumeChange,
   onVoiceProfileChange,
   onOpenSettings,
+  onOpenVoiceSettings,
   onPresenceChange,
   canManageChannels = false,
   canCreateInvite = false,
@@ -478,6 +480,7 @@ export function ChannelSidebar({
                     <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span>
                     <input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={voiceAudioSettings?.inputVolume ?? 1} onChange={(event) => onVoiceInputVolumeChange?.(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
                   </label>
+                  <button type="button" onClick={() => { setVoiceAudioMenuOpen(null); onOpenVoiceSettings?.(); }} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 transition hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
                 </AnchoredPopover>
               </div>
               <div ref={voiceOutputAnchorRef} className="relative flex items-center gap-0.5">
