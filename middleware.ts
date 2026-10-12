@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { scriptSourceDirective } from "@/lib/contentSecurityPolicy";
 
 function validOrigin(value: string | undefined) {
   if (!value) return "";
@@ -25,14 +26,6 @@ export function middleware(request: NextRequest) {
   const supabaseWs = supabaseOrigin ? supabaseOrigin.replace(/^https:/, "wss:").replace(/^http:/, "ws:") : "";
   const liveKitWs = liveKitOrigin ? liveKitOrigin.replace(/^https:/, "wss:") : "";
   const development = process.env.NODE_ENV !== "production";
-  const scriptSources = [
-    "'self'",
-    `'nonce-${nonce}'`,
-    "https://challenges.cloudflare.com",
-    "stun:",
-    "turn:",
-    "turns:",
-  ];
   const connectSources = [
     "'self'",
     supabaseOrigin,
@@ -49,7 +42,7 @@ export function middleware(request: NextRequest) {
   ].filter(Boolean);
   const directives = [
     "default-src 'self'",
-    `script-src ${scriptSources.join(" ")}`,
+    scriptSourceDirective(nonce, development),
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { safeChatMarkdownUrl } from "../lib/chatMarkdownUrl.ts";
+import { scriptSourceDirective } from "../lib/contentSecurityPolicy.ts";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 
@@ -45,12 +46,13 @@ test("theme initialization is same-origin external JavaScript without a nonce mi
   assert.match(themeRoute, /Content-Type": "application\/javascript/);
 });
 
-test("script-src stays free of unsafe-inline and unsafe-eval in development and production", () => {
-  const middleware = readFileSync(resolve(root, "middleware.ts"), "utf8");
+test("script-src permits unsafe-eval only in development", () => {
   const nextConfig = readFileSync(resolve(root, "next.config.mjs"), "utf8");
-  const scriptSourceList = middleware.match(/const scriptSources = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
-  assert.ok(scriptSourceList, "CSP script source list is present");
-  assert.doesNotMatch(scriptSourceList, /unsafe-inline|unsafe-eval/);
+  const production = scriptSourceDirective("test-nonce", false);
+  const development = scriptSourceDirective("test-nonce", true);
+  assert.doesNotMatch(production, /unsafe-inline|unsafe-eval/);
+  assert.match(development, /'unsafe-eval'/);
+  assert.doesNotMatch(development, /unsafe-inline/);
   assert.match(nextConfig, /config\.devtool = "source-map"/);
 });
 
