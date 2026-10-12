@@ -1,52 +1,63 @@
 # Relatório de segurança
 
-Data da revisão: 12/10/2026
-Branch de trabalho: `seguranca-auth`
+Data: 12/10/2026
+Branch: `seguranca-auth`
+
+## Resumo por severidade
+
+### Alta — exige ação antes da produção
+
+- As migrations 002, 003 e 004 estão em `supabase/migrations/` com sufixo `_PENDENTE_APROVACAO.sql`. Não foram aplicadas. Até aplicação aprovada, o banco continua com as policies e ACLs descritas no snapshot de referência.
+- A migration 002 restringe moderação/cargos/convites e fecha escritas diretas que contornam RPCs. A verificação de hierarquia depende do esquema/ACL real e ainda precisa passar os scripts de staging.
+- O snapshot contém 38 funções `SECURITY DEFINER` e seis policies `USING (true)`. A migration 003 propõe search path e ACLs para as funções e predicates restritos para essas policies. O teste local comprova a cobertura estática; só o staging confirma os ACLs e resultados de RLS aplicados.
+- A migration 004 define políticas e limites de Storage, DMs/Realtime e mensagens, mas requer teste real contra staging antes da aprovação.
+
+### Média — risco residual e integração
+
+- OAuth Spotify usa `state` e PKCE S256. Access/refresh tokens continuam em `localStorage`, sujeitos a leitura por JavaScript de mesma origem em caso de XSS.
+- Resgate de convite limita 10 tentativas por usuário em 15 minutos e serializa uso de `max_uses`; o RPC não recebe IP confiável e não tem limite por IP.
+- Chat ignora HTML cru em ReactMarkdown e permite destinos HTTPS seguros. O rate limit e tamanho máximo SQL dependem da migration 004 e não foram exercitados no banco.
+- Pusher valida sessão/identidade/canal e revalida relacionamento para chamada direta; voice, Realtime, Pusher, Supabase Storage, Spotify e Blob não foram exercitados contra serviços reais.
+- Os scripts SQL de staging estão prontos para parametrização, mas não foram executados.
+
+### Baixa — qualidade/avisos
+
+- `npm run lint` passou com avisos existentes de dependências de hooks e `<img>`.
+- Build passou com avisos de cache Webpack sem impacto funcional observado.
 
 ## Escopo revisado
 
-- Fluxos de cadastro, login, recuperação e atualização de senha no App Router.
-- Sessão Supabase existente, handlers de API, autorização Pusher/LiveKit, pesquisas PostgREST e SQL de referência em `db/schema-atual-producao.sql`.
-- Configuração de headers de segurança, variáveis listadas em código e migrations existentes em `db/`.
+- Fluxos de autenticação existentes e código novo/alterado de moderação, convites, Pusher, chat, Spotify e Blob.
+- Migrations pendentes 002–004, migrations anteriores 001 e snapshot de referência `db/schema-atual-producao.sql`.
+- Scripts de staging em `scripts/` e testes automatizados em `tests/`.
+- A cópia `db/schema-atual-producao copy.sql` foi preservada sem commit. `desktop/` não foi modificada.
+- Não houve push, conexão a banco remoto nem aplicação de migrations. `db/sekai_schema.sql` não foi executado.
+- Nenhum `.env*` foi aberto manualmente. Uma primeira tentativa de build local fez o Next informar que carregou `.env.local` automaticamente; nenhum valor foi impresso. Os builds finais foram executados em cópia temporária sem `.env*`.
 
-O arquivo de produção `db/schema-atual-producao copy.sql` permaneceu fora de commits. `.env.local` e arquivos de segredo não foram lidos; somente o `.env.example` criado nesta alteração foi conferido. Não houve conexão com Supabase remoto, execução SQL, push ou publicação.
+## Alterações preparadas
 
-## Implementado no código
+- **Autenticação existente:** cadastro público Supabase Auth, confirmação de e-mail, Turnstile, validação de campos, honeypot, senha mínima de 12 caracteres e MFA TOTP permanecem como documentado na etapa anterior. A sessão Supabase continua no `localStorage`; cookies HttpOnly dependem de testes reais de servidor, mensagens, voz e Realtime. Signup não usa `service_role`.
+- **Migration 002:** hierarquia estrita para moderação e cargos; bloqueio de autoatribuição; políticas de escrita de canais, cargos, membros, bans e convites; despacho de moderação de uso único; rate limit por usuário para preview/resgate; expiração, `max_uses`, bloqueio de banidos e índices únicos normalizados para códigos de convite. O índice aborta a migration se houver duplicatas preexistentes.
+- **Migration 003:** remove o default da sobrecarga `is_server_member(uuid,uuid)` para resolver ambiguidade mantendo a assinatura explícita; aplica `search_path` fixo a funções `SECURITY DEFINER` de `public`; revoga EXECUTE de `PUBLIC`/`anon` e concede os papéis necessários a predicados de policy e RPCs identificados; substitui as seis policies abertas do snapshot.
+- **Migration 004:** buckets de Storage com limites de tamanho/MIME e políticas por pasta/permissão; bloqueio de SVG/HTML; bucket privado `chat-images`; políticas de leitura de DMs e broadcast soundboard; mensagens de no máximo 4.000 caracteres e limite transacional de envio.
+- **Aplicação:** chat valida URLs Markdown e ignora HTML cru; endpoint Pusher revalida o relacionamento em chamadas diretas; seleção de ícone alinha MIME/tamanho com a policy; Blob usa `handleUploadPresigned`, que no pacote local valida assinatura Ed25519 via `x-vercel-signature` e `BLOB_WEBHOOK_PUBLIC_KEY`; Spotify valida `state` e PKCE.
 
-- Cadastro público na página inicial com Supabase Auth, validação Zod, senha entre 12 e 128 caracteres, sem regra de composição, nome de usuário limitado e sem campo de privilégio.
-- Confirmação e recuperação usam mensagens genéricas na interface. Login sempre exibe erro genérico. O callback usa somente a origem canônica configurada e caminhos internos fixos.
-- Cloudflare Turnstile é exigido na interface de cadastro, login e recuperação. O token é encaminhado ao Supabase Auth. A chave pública do site é entregue por endpoint sem cache; a chave secreta deve ser configurada no painel Supabase.
-- Honeypot oculto: o cliente descarta o envio quando preenchido e o endpoint de segurança registra somente ação e horário, sem IP, e-mail ou conteúdo do campo.
-- Redefinição de senha valida confirmação e mínimo de 12 caracteres. A conta pode configurar TOTP e concluir desafio AAL2.
-- Cookies HttpOnly não foram adotados. O cliente ainda depende de acesso a token para Supabase Realtime, Pusher, LiveKit e WebRTC; testes reais desses caminhos exigem um ambiente configurado. Foi adicionada CSP com nonce por resposta e headers de defesa em profundidade.
-- Handlers de API passaram a impor limites de corpo, validação Zod onde recebem dados, autenticar rotas de presença/TURN e restringir URL/identificadores. O token LiveKit agora expira em 10 minutos e consulta banimento/timeout antes de emitir.
-- Filtros `.or()` montados com valores interpolados foram removidos das buscas de amizades e mensagens diretas, usando consultas `.eq()` parametrizadas.
-- A dependência Zod foi declarada diretamente. Figtree não é mais baixada do Google Fonts no build; a lista de membros usa a pilha local já definida no CSS.
+## Revisão adversarial
 
-## Banco de dados e SQL
+- Exercitei com testes de contrato destinos `javascript:`, `data:`, `vbscript:` e HTTP no Markdown: são rejeitados. HTML cru está desativado no ReactMarkdown.
+- Os scripts de staging tentam ler dados alheios, operar sobre cargo igual/superior, autoatribuir cargo e gravar em pasta alheia; também tentam SVG/HTML. São scripts para serem executados após aprovação em staging, não resultados de execução.
+- A migration 002 é transacional e aborta com códigos normalizados duplicados. A migration 003 é a parte de maior impacto por alterar em lote funções, policies e ACLs. A migration 004 pode mudar acessibilidade de arquivos já carregados.
+- Não foi possível fazer revisão dinâmica de RLS, testar concorrência de convite ou verificar todos os fluxos sob roles reais: não havia banco staging autorizado/configurado. Por isso, os artefatos permanecem pendentes e o relatório não declara correção de produção.
 
-- O snapshot atual mostra funções `SECURITY DEFINER` sem `search_path` fixo, um `is_sekai_admin()` com identidades por e-mail embutidas e duas sobrecargas de `is_server_member`. Não removi a sobrecarga nem alterei políticas no banco em uso.
-- A migration `supabase/migrations/20261012000100_auth_security_PENDENTE_APROVACAO.sql` propõe trigger idempotente de perfil, allowlist administrativa por UUID com exigência AAL2 configurável, busca-path fixo para funções definidoras e correção do SQL dinâmico do event trigger de RLS.
-- A allowlist administrativa começa vazia. Aplicar a migration sem cadastrar os UUIDs atuais removeria acesso administrativo; por isso ela está explicitamente pendente e não foi executada.
-- O SQL dinâmico encontrado no event trigger usa hoje `object_identity` na instrução `ALTER TABLE`. A proposta usa `%I` com nomes provenientes de `pg_class`/`pg_namespace`. Os demais `EXECUTE` verificados em migrations de `db/` usam instruções constantes ou valores fixos do próprio script; não encontrei entrada de requisição interpolada nessas instruções.
-- Há políticas `USING (true)`/`WITH CHECK (true)` para leitura pública de definições/atribuições de insígnias e presença musical, além de uma política restritiva de atualização de mensagens que bloqueia marcadores de sistema. Não alterei essas policies sem confirmar a semântica do produto. Consulte `docs/PENDENCIAS.md`.
-- Nenhuma operação de cadastro usa `service_role`; o signup chama Supabase Auth com a chave publicável/anon.
+## Verificações executadas
 
-## Testes executados
-
-- `npm test`: 4 testes de entrada Auth passaram (normalização e limites de e-mail, senha, campos de privilégio, CAPTCHA, TOTP, honeypot e redefinição).
+- `npm run test`: **17 testes passaram, 0 falharam**, em três arquivos (`auth-validation`, `request-body`, `security-boundaries`). Inclui verificações estáticas do snapshot, migrations e handlers; não é teste SQL/RLS.
+- `npm run lint`: passou com avisos de hooks e `<img>`.
 - `npx tsc --noEmit --incremental false`: passou.
-- `npm run lint`: passou com avisos preexistentes de hooks e `<img>`; a nova imagem do QR TOTP acrescenta um aviso `<img>`.
-- `npm run build`: passou numa cópia temporária do workspace sem `.env*` e sem o SQL copiado. A primeira tentativa foi bloqueada por acesso à Google Fonts; removi a busca de fonte em build e repeti com sucesso, sem rede.
-- Servidor local do build: `GET /` retornou 200; CSP presente, nonce gerado e aplicado ao HTML, `nosniff` e `X-Frame-Options: DENY`; `script-src` não contém `unsafe-inline`.
-- Revisão adversarial estática e testes de schemas: campos extras de papel são descartados, senhas curtas/longas e tokens CAPTCHA excessivos são rejeitados, TOTP aceita apenas dígitos e corpos de API têm limites. Não houve teste contra serviços reais.
+- `npm run build`: passou em cópia temporária do repo sem `.env*`. Build gerou páginas e rotas; avisos de cache Webpack e lint não impediram a compilação.
+- `git diff --check` requer `core.whitespace=cr-at-eol` para respeitar arquivos CRLF; a checagem com essa configuração não encontrou whitespace indevido.
+- Não executei SQL de staging, nem testes com Supabase, Vercel Blob, Pusher, Spotify ou voz.
 
-## Limitações e riscos remanescentes
+## Próximas ações e rollback
 
-- Supabase, Turnstile, SMTP, Vercel, voz, mensagens e Realtime não foram configurados neste ambiente; confirmação por e-mail, CAPTCHA real, rate limits e interação fim a fim não foram verificados.
-- Cadastro/login/recuperação continuam chamando Supabase Auth no navegador para preservar o IP real nos limites do Supabase. As mensagens não enumeram contas, mas o tempo de resposta externo não é equalizado por este código. Limites por e-mail no login por senha também não são fornecidos pelo limite nativo do projeto; veja `docs/PENDENCIAS.md`.
-- O honeypot é um sinal auxiliar do formulário, não uma barreira contra clientes que chamam Auth diretamente. CAPTCHA e limites do Auth precisam estar ativos no painel.
-- `style-src 'unsafe-inline'` permanece para os muitos estilos dinâmicos React do aplicativo. Scripts inline são limitados por nonce; `script-src` de produção não permite `unsafe-inline` nem `unsafe-eval`.
-- O preview de links consulta destinos públicos e valida DNS/redirects, mas DNS rebinding entre resolução e conexão não foi eliminado neste escopo.
-- As políticas e funções pendentes exigem revisão e aprovação explícita do dono, além da inclusão manual dos UUIDs administrativos atuais antes de liberar a migration.
-- `npm audit`/instalação completa não foram executados: acesso de rede está bloqueado, e a tentativa offline de resolver Zod não encontrou pacote no cache. A versão já presente no lockfile e em `node_modules` foi promovida a dependência direta; `npm ls zod --depth=0` confirmou a resolução local.
+Leia [docs/PENDENCIAS.md](PENDENCIAS.md) para status por item, ações manuais, aprovadores e procedimentos de rollback. Antes de aplicar qualquer migration: duplicatas de convites devem ser resolvidas, UUIDs admin conferidos, backup/PITR validado e scripts executados em staging. Não reverta apenas grants/policies para o estado anterior: isso reabre permissões. Rollback das migrations 002–004 exige restaurar snapshot da etapa imediatamente anterior e reconciliar ações persistidas.
