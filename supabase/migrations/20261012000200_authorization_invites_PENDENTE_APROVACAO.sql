@@ -587,8 +587,20 @@ end;
 $$;
 revoke all on function public.sekai_consume_invite_attempt() from public, anon, authenticated;
 
-create index if not exists invites_normalized_code_idx on public.invites ((upper(btrim(code))));
-create index if not exists servers_normalized_invite_code_idx on public.servers ((upper(btrim(invite_code))));
+-- A normalizacao usada pelo resgate precisa ser univoca: sem isso SELECT ... FOR UPDATE
+-- poderia escolher arbitrariamente entre codigos que diferem apenas por caixa/espacos.
+do $$
+begin
+  if exists (select 1 from public.invites group by upper(btrim(code)) having count(*) > 1)
+     or exists (select 1 from public.servers where invite_code is not null and btrim(invite_code) <> ''
+       group by upper(btrim(invite_code)) having count(*) > 1) then
+    raise exception 'Existem codigos de convite duplicados apos normalizacao; deduplique-os antes de aplicar a migration';
+  end if;
+end;
+$$;
+create unique index if not exists invites_normalized_code_unique_idx on public.invites ((upper(btrim(code))));
+create unique index if not exists servers_normalized_invite_code_unique_idx
+  on public.servers ((upper(btrim(invite_code)))) where invite_code is not null and btrim(invite_code) <> '';
 
 create or replace function public.preview_invite(p_code text)
 returns jsonb
