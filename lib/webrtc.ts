@@ -467,10 +467,11 @@ export class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
-      // A voz é só a primeira seção de áudio. Qualquer outra (soundboard, ou
-      // uma seção que o navegador reordenou) não pode substituir o microfone
-      // remoto — senão o tile fica com uma faixa muda e o amigo não é ouvido.
-      if (event.track.kind === 'audio' && event.transceiver !== peer.audioTransceiver) {
+      // Só o transceptor de efeitos sonoros deve sair da faixa de voz. Clientes
+      // com seções de mídia em outra ordem podem entregar a voz por outro
+      // transceptor; tratá-la como efeito a silencia e também impede o indicador
+      // de fala de observar o áudio recebido.
+      if (event.track.kind === 'audio' && event.transceiver === peer.soundboardTransceiver) {
         this.onSoundboardTrack(peerId, event.track);
         return;
       }
@@ -1683,4 +1684,5 @@ export class WebRTCManager {
     this.speakingWatchers.clear();
   }
 }
+
 

@@ -25,6 +25,7 @@ import type { CustomBadge } from "@/lib/badges";
 import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import { CamIcon, MicIcon, ScreenShareIcon } from "@/components/icons";
+import packageJson from "../package.json";
 
 export interface Channel {
   id: string;
@@ -554,6 +555,15 @@ export function ChannelSidebar({
         </div>
       </div>}
       </CurrentUserProfileMenu>
+      <div className="flex justify-end px-3 pb-1 pt-0.5">
+        <span
+          aria-label={`Versão do Sekai ${packageJson.version}`}
+          title={`Versão do Sekai ${packageJson.version}`}
+          className="text-[10px] font-medium tracking-wide text-discord-text-muted/60"
+        >
+          v{packageJson.version}
+        </span>
+      </div>
     </div>
   );
 }
@@ -573,4 +583,5 @@ function VoiceAudioOption({ label, selected, onClick }: { label: string; selecte
     <span className="truncate">{label}</span>{selected && <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400" />}
   </button>;
 }
+
 
