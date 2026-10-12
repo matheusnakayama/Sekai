@@ -35,8 +35,12 @@ export function OverlaySettingsPanel() {
 
   useEffect(() => {
     let active = true;
-    if (!window.sekaiDesktop) return;
-    void window.sekaiDesktop.getOverlaySettings().then((saved) => {
+    const api = window.sekaiDesktop;
+    if (typeof api?.getOverlaySettings !== "function") {
+      setLoaded(true);
+      return;
+    }
+    void api.getOverlaySettings().then((saved) => {
       if (active) {
         setSettings({ ...DEFAULT_SETTINGS, ...saved });
         setLoaded(true);
@@ -48,10 +52,24 @@ export function OverlaySettingsPanel() {
   const update = useCallback((patch: Partial<SekaiOverlaySettings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    void desktop?.updateOverlaySettings(next);
+    if (typeof desktop?.updateOverlaySettings === "function") void desktop.updateOverlaySettings(next);
   }, [desktop, settings]);
 
   if (!desktop) return null;
+
+  if (typeof desktop.getOverlaySettings !== "function" || typeof desktop.updateOverlaySettings !== "function") {
+    return (
+      <section className="settings-section-enter">
+        <div className="mb-7">
+          <p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Somente no aplicativo</p>
+          <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Sobreposição de voz</h1>
+        </div>
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/[.06] p-4 text-sm leading-6 text-discord-text-normal" role="status">
+          Este aplicativo ainda não tem suporte à sobreposição. Atualize ou reinstale o Sekai para usar esse recurso.
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="settings-section-enter">

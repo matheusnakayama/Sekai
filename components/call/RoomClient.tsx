@@ -169,7 +169,7 @@ export default function RoomClient({
 
   useEffect(() => {
     const desktop = window.sekaiDesktop;
-    if (!desktop) return;
+    if (typeof desktop?.updateOverlayCall !== 'function') return;
     const active = phase === 'in-call';
     const publishOverlayState = () => {
       const brandChannels = getComputedStyle(document.documentElement).getPropertyValue('--brand-500').trim().split(/\s+/).map(Number);

@@ -35,11 +35,12 @@ interface SekaiOverlayCallState {
 interface SekaiDesktop {
   listSources(kind: 'window' | 'screen'): Promise<SekaiDesktopSource[]>;
   prepareCapture(sourceId: string, shareAudio: boolean): void;
-  getOverlaySettings(): Promise<SekaiOverlaySettings>;
-  updateOverlaySettings(settings: SekaiOverlaySettings): Promise<SekaiOverlaySettings>;
-  updateOverlayCall(state: SekaiOverlayCallState): void;
-  restoreCallFromOverlay(): void;
-  onOverlayState(callback: (state: { settings: SekaiOverlaySettings; callName: string; participants: SekaiOverlayParticipant[] }) => void): () => void;
+  // Optional so a newer hosted UI remains compatible with older installed Electron apps.
+  getOverlaySettings?(): Promise<SekaiOverlaySettings>;
+  updateOverlaySettings?(settings: SekaiOverlaySettings): Promise<SekaiOverlaySettings>;
+  updateOverlayCall?(state: SekaiOverlayCallState): void;
+  restoreCallFromOverlay?(): void;
+  onOverlayState?(callback: (state: { settings: SekaiOverlaySettings; callName: string; participants: SekaiOverlayParticipant[] }) => void): () => void;
 }
 
 interface Window {
