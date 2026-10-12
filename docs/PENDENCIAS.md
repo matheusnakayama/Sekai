@@ -46,8 +46,27 @@
 8. **Dependências e rede:** o build inicial tentou buscar Figtree no Google Fonts e foi bloqueado; removi essa dependência e o build isolado passou. `npm audit` e download/instalação online foram omitidos por falta de rede. A tentativa `npm install --offline` não achou o pacote Zod no cache, embora Zod 4.1.11 já estivesse no lockfile e em `node_modules`; a dependência foi declarada diretamente e verificada localmente.
 9. **Serviços reais:** painel Supabase, SMTP, Turnstile, Vercel, DNS, Pusher, LiveKit, Metered e Realtime não foram acessados. Testes reais de signup verificado, recuperação, MFA, mensagens, voz e canais realtime continuam pendentes.
 
+## Estado dos 9 itens da revisão adicional (12/10/2026)
+
+O trabalho adicional foi interrompido a pedido do dono. Os arquivos listados como rascunho estão **somente no working tree, sem commit e sem aplicação em banco remoto**. Nenhum deles deve ser considerado pronto para produção.
+
+1. **Autorização de moderação — parcial, não concluída.** Há um rascunho de migration (`20261012000200_authorization_invites_PENDENTE_APROVACAO.sql`) e alterações não commitadas nas rotas Pusher. Ainda não confirmei por revisão completa e testes que kick, mute, ban, cargos, exclusões e convites passam por RLS/RPC, respeitam a hierarquia (incluindo cargos iguais/superiores) e impedem autoelevação. **Não aplicar.**
+2. **`redeem_invite` — parcial, não concluído.** O mesmo rascunho 002 contém mudanças para força bruta, expiração, `max_uses` e banidos. A atomicidade sob concorrência e todos os caminhos de bloqueio ainda não foram demonstrados por testes. **Não aplicar.**
+3. **38 funções `SECURITY DEFINER` — não confirmado.** O rascunho `20261012000300_rls_functions_pending_PENDENTE_APROVACAO.sql` trata `search_path` e privilégios por catálogo, mas a revisão individual das 38 funções e a confirmação dos privilégios efetivos ainda faltam. Não afirmar que todas estão corrigidas.
+4. **Policies `USING (true)` — não concluído.** Há trabalho preliminar no rascunho 003, mas falta inventário verificável de cada policy, sua substituição restrita e validação dos efeitos. Policies atuais não foram alteradas em produção.
+5. **`is_server_member` — parcial, sem rollback concluído.** O rascunho 003 tenta resolver as duas sobrecargas; faltam auditar chamadas e dependências e registrar um plano de rollback testável. Não aplicar até completar essa análise.
+6. **Policies de Storage — parcial.** O rascunho `20261012000400_storage_realtime_chat_PENDENTE_APROVACAO.sql` foi iniciado. Ainda falta verificar bucket por bucket (`avatars`, `banners`, `server-icons`, `server-assets`, `chat-images`) MIME, tamanho, pasta do próprio usuário e bloqueio de SVG/HTML em todas as operações. Não aplicado.
+7. **Realtime, chat, Pusher, Spotify e Blob — parcial, sem validação final.** Existem alterações não commitadas em componentes/rotas de chat e Pusher, OAuth Spotify e upload/webhook Blob, além do rascunho 004. A revisão de DMs e canais, autorização Pusher, sanitização/limites/rate limit de chat, state/PKCE e armazenamento de tokens Spotify, e verificação da assinatura Blob não foi concluída de ponta a ponta. Não houve teste com serviços reais.
+8. **Scripts SQL para staging — rascunho.** `scripts/staging_rls_users.sql` e `scripts/staging_rls_storage.sql` existem, mas não foram executados. Faltam validar fixtures/UUIDs de usuário A, usuário B e anon, além dos resultados esperados, no staging.
+9. **Contagem de testes e documentos — não concluído.** A contagem entre os documentos ainda precisa ser reconciliada. `tests/security-boundaries.test.mjs` está em rascunho, não foi executado e precisa ser alinhado ao SQL atual. `SECURITY.md` e `docs/RELATORIO-SEGURANCA.md` ainda precisam receber a revisão final por severidade; não usar os rascunhos como evidência de aprovação.
+
+**Pasta `desktop`:** Electron não está em uso; essa pasta não foi atualizada nesta revisão.
+
+**Retomada:** revisar e finalizar os rascunhos 002–004, os scripts e os testes; então registrar um commit por etapa completa. Preservar `db/schema-atual-producao copy.sql` sem commit.
+
 ## Aprovações pendentes
 
 - Aprovação explícita do dono para aplicar `20261012000100_auth_security_PENDENTE_APROVACAO.sql` em produção, após confirmar os UUIDs administrativos e o plano de recuperação.
+- Revisão e aprovação do dono antes de aplicar qualquer rascunho 002–004; os três ainda não estão prontos e não foram aplicados.
 - Aprovação/decisão sobre política final de rate limit por e-mail no login e adoção de proxy de Auth que preserve IP e reduza vazamento temporal.
 - Aprovação/decisão sobre remover ou restringir as policies de leitura aberta e como resolver as sobrecargas `is_server_member` sem quebrar chamadas existentes.
