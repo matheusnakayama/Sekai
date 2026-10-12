@@ -600,12 +600,12 @@ export default function RoomClient({
         });
       };
 
-      manager.onAudioTransportProblem = (peerId, attempt) => {
+      manager.onAudioTransportProblem = (peerId, attempt, turnAvailable) => {
         const participantName = participantNamesRef.current.get(peerId) || 'o outro participante';
         showProblem(
           attempt === 1
-            ? `O áudio de ${participantName} não está chegando apesar da chamada conectada. O Sekai está tentando restabelecer a rota de voz.`
-            : `O áudio de ${participantName} continuou sem chegar após a recuperação automática. Saiam e entrem novamente na chamada com a versão mais recente do Sekai.`,
+            ? `O áudio de ${participantName} não está chegando apesar da chamada conectada. O Sekai está tentando restabelecer a rota de voz.${turnAvailable ? '' : ' O servidor TURN não está disponível; isso pode impedir a conexão entre redes diferentes.'}`
+            : `O áudio de ${participantName} continuou sem chegar após a recuperação automática.${turnAvailable ? '' : ' O servidor TURN não está disponível para esta chamada.'} Saiam e entrem novamente na chamada com a versão mais recente do Sekai.`,
           true,
           attempt > 1,
         );

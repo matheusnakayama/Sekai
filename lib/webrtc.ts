@@ -25,7 +25,7 @@ type SpeakingHandler = (peerId: string, speaking: boolean) => void;
 type ScreenShareHandler = (peerId: string, sharing: boolean) => void;
 type ScreenShareFailureHandler = (peerId: string) => void;
 type MediaStateHandler = (peerId: string, state: { micOn: boolean; camOn: boolean; deafened?: boolean }) => void;
-type AudioTransportProblemHandler = (peerId: string, attempt: number) => void;
+type AudioTransportProblemHandler = (peerId: string, attempt: number, turnAvailable: boolean) => void;
 
 export interface VideoSenderProfile {
   maxBitrate: number;
@@ -739,7 +739,7 @@ export class WebRTCManager {
     peer.audioRecoveryTarget = target;
     peer.inboundAudioNoProgressChecks = 0;
     peer.outboundAudioNoProgressChecks = 0;
-    this.onAudioTransportProblem(peerId, attempt);
+    this.onAudioTransportProblem(peerId, attempt, hasTurnUrl(this.iceServers));
     if (attempt > 1) return;
 
     await this.refreshIceServers();

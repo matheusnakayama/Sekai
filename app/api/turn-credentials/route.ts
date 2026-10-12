@@ -18,6 +18,15 @@ const iceServerSchema = z.object({
   credential: z.string().max(2048).optional(),
 }).passthrough();
 
+function hasTurnUrl(server: IceServerConfig) {
+  const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+  return urls.some((url) => /^turns?:/i.test(url));
+}
+
+function noStoreJson(body: object) {
+  return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
+}
+
 export async function GET(request: Request) {
   const authHeader = z.string().regex(/^Bearer\s+[\w.-]{20,8192}$/i).safeParse(request.headers.get('authorization') ?? '');
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -29,16 +38,15 @@ export async function GET(request: Request) {
   const { data: { user }, error } = await supabase.auth.getUser(authHeader.data.replace(/^Bearer\s+/i, ''));
   if (error || !user) return NextResponse.json({ error: 'Sessão inválida.' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
 
-  const iceServers: IceServerConfig[] = [...GOOGLE_STUN];
-
   const meteredKey = process.env.METERED_API_KEY;
   const meteredApp = process.env.METERED_APP_NAME;
+  const appName = z.string().min(1).max(63).regex(/^[a-z0-9-]+$/i).safeParse(meteredApp ?? '');
+  let meteredFailure = meteredKey && appName.success ? 'request_failed' : 'not_configured';
 
-  try {
-    const appName = z.string().min(1).max(63).regex(/^[a-z0-9-]+$/i).safeParse(meteredApp ?? '');
-    if (meteredKey && appName.success) {
+  if (meteredKey && appName.success) {
+    try {
       // Gera credenciais TURN de curta duração via API do Metered.ca.
-      // Documentação: https://www.metered.ca/docs/turn-credentials-api
+      // Documentação: https://www.metered.ca/docs/turn-rest-api/get-credential/
       const endpoint = new URL(`https://${appName.data}.metered.live/api/v1/turn/credentials`);
       endpoint.searchParams.set('apiKey', meteredKey);
       const res = await fetch(endpoint, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
@@ -46,22 +54,42 @@ export async function GET(request: Request) {
         const responseText = await readBoundedStream(res.body, 128 * 1024);
         if (responseText) {
           const parsedServers = z.array(iceServerSchema).max(20).safeParse(JSON.parse(responseText));
-          if (parsedServers.success) {
-            return NextResponse.json({ iceServers: [...iceServers, ...parsedServers.data] }, { headers: { 'Cache-Control': 'no-store' } });
+          if (parsedServers.success && parsedServers.data.some(hasTurnUrl)) {
+            return noStoreJson({
+              iceServers: [...GOOGLE_STUN, ...parsedServers.data],
+              turnAvailable: true,
+              turnSource: 'metered',
+            });
           }
+          meteredFailure = 'invalid_response';
+        } else {
+          meteredFailure = 'empty_response';
         }
+      } else {
+        meteredFailure = `http_${res.status}`;
       }
-    } else if (process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-      iceServers.push({
-        urls: process.env.TURN_URL,
-        username: process.env.TURN_USERNAME,
-        credential: process.env.TURN_CREDENTIAL,
-      });
+    } catch {
+      // Tenta a configuração TURN estática abaixo se o provedor estiver indisponível.
     }
-  } catch {
-    // Se o serviço de TURN falhar, seguimos apenas com STUN — chamadas na mesma
-    // rede ou entre redes "abertas" ainda funcionam, mas redes restritivas podem falhar.
   }
 
-  return NextResponse.json({ iceServers }, { headers: { 'Cache-Control': 'no-store' } });
+  const staticTurn = iceServerSchema.safeParse({
+    urls: process.env.TURN_URL ?? '',
+    username: process.env.TURN_USERNAME,
+    credential: process.env.TURN_CREDENTIAL,
+  });
+  if (staticTurn.success && hasTurnUrl(staticTurn.data) && staticTurn.data.username && staticTurn.data.credential) {
+    return noStoreJson({
+      iceServers: [...GOOGLE_STUN, staticTurn.data],
+      turnAvailable: true,
+      turnSource: 'static',
+    });
+  }
+
+  console.warn('Servidor TURN indisponível; entregando apenas STUN.', {
+    meteredConfigured: Boolean(meteredKey && appName.success),
+    meteredFailure,
+    staticTurnConfigured: Boolean(process.env.TURN_URL && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL),
+  });
+  return noStoreJson({ iceServers: GOOGLE_STUN, turnAvailable: false, turnSource: 'stun' });
 }
