@@ -1,6 +1,10 @@
 -- Execute SOMENTE em staging depois de revisar/aplicar manualmente as migrations pendentes.
--- Substitua os UUIDs abaixo por fixtures existentes. USER_B deve ter cargo igual ou
--- superior a USER_A; USER_C deve ser um terceiro participante de DM sem relacao com A.
+-- Antes de executar, substitua em TODO o arquivo os UUIDs de exemplo:
+--   USER_A_UUID: membro com kick_members, em SERVER_UUID.
+--   USER_B_UUID: membro do mesmo servidor com cargo igual ou superior a A.
+--   USER_C_UUID: usuário fora da conversa A e da DM B/C.
+--   SERVER_UUID: servidor de A e B. ROLE_B_UUID: cargo não-default de B.
+--   DM_B_C_MESSAGE_UUID: mensagem real trocada apenas entre B e C.
 -- Rode como database owner no SQL Editor para poder alternar SET ROLE. Tudo termina em ROLLBACK.
 
 begin;
@@ -26,6 +30,13 @@ begin
   end if;
   if not exists (select 1 from public.user_settings where user_id = '00000000-0000-0000-0000-00000000000b') then
     raise exception 'Crie antes uma linha user_settings para USER_B_UUID';
+  end if;
+  if not exists (select 1 from public.members where server_id = '00000000-0000-0000-0000-00000000000d' and user_id = '00000000-0000-0000-0000-00000000000a')
+     or not exists (select 1 from public.members where server_id = '00000000-0000-0000-0000-00000000000d' and user_id = '00000000-0000-0000-0000-00000000000b') then
+    raise exception 'USER_A_UUID e USER_B_UUID devem ser membros de SERVER_UUID';
+  end if;
+  if not exists (select 1 from public.roles where id = '00000000-0000-0000-0000-00000000000e' and server_id = '00000000-0000-0000-0000-00000000000d' and not is_default) then
+    raise exception 'ROLE_B_UUID deve ser um cargo não-default de SERVER_UUID';
   end if;
   if not exists (select 1 from public.sekai_direct_messages where id = '00000000-0000-0000-0000-00000000000f'
     and ((sender_id = '00000000-0000-0000-0000-00000000000b' and receiver_id = '00000000-0000-0000-0000-00000000000c')
@@ -62,6 +73,21 @@ begin
   if public.sekai_actor_role_position(v_server) > public.sekai_target_role_position(v_server, v_b) then
     raise exception 'Fixture invalida: B precisa ter cargo igual ou superior a A';
   end if;
+
+  begin
+    perform public.moderate_server_member(v_server, v_b, 'kick', 'teste de hierarquia');
+    raise exception using errcode = 'ZX001', message = 'moderacao de cargo igual/superior foi aceita';
+  exception
+    when insufficient_privilege then null;
+    when sqlstate 'ZX001' then raise exception 'Hierarquia: A moderou B com cargo igual/superior';
+  end;
+  begin
+    delete from public.members where server_id = v_server and user_id = v_b;
+    if found then raise exception using errcode = 'ZX001', message = 'DELETE direto de membro foi aceito'; end if;
+  exception
+    when insufficient_privilege then null;
+    when sqlstate 'ZX001' then raise exception 'RLS: DELETE direto de cargo igual/superior foi aceito';
+  end;
 
   -- Nao pode se atribuir cargo por RPC nem por UPDATE direto de members.role_id.
   begin
