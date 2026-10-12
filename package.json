@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "node --experimental-strip-types --test tests/auth-validation.test.mjs",
     "app": "electron desktop/main.cjs"
   },
   "eslintConfig": {
@@ -30,6 +31,7 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "tailwind-merge": "^2.4.0",
+    "zod": "4.1.11",
     "zustand": "^4.5.4"
   },
   "devDependencies": {
