@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
-  const accessToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  const channelId = new URL(request.url).searchParams.get('channelId');
-  if (!accessToken || !channelId || !/^[a-z0-9-]{4,64}$/.test(channelId)) {
+  const authHeader = z.string().regex(/^Bearer\s+[\w.-]{20,8192}$/i).safeParse(request.headers.get('authorization') ?? '');
+  const accessToken = authHeader.success ? authHeader.data.replace(/^Bearer\s+/i, '') : '';
+  const channelResult = z.string().uuid().safeParse(new URL(request.url).searchParams.get('channelId'));
+  if (!accessToken || !channelResult.success) {
     return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 400 });
   }
+  const channelId = channelResult.data;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

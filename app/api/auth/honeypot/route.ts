@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { honeypotEventSchema } from "@/lib/validation/auth";
+import { readBoundedJson } from "@/lib/http/requestBody";
 
 export const runtime = "nodejs";
 
@@ -9,13 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ accepted: true }, { status: 200, headers: { "Cache-Control": "no-store" } });
   }
 
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return NextResponse.json({ accepted: true }, { status: 200, headers: { "Cache-Control": "no-store" } });
-  }
-
+  const raw = await readBoundedJson(request, 4096);
   const parsed = honeypotEventSchema.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ accepted: true }, { status: 200, headers: { "Cache-Control": "no-store" } });

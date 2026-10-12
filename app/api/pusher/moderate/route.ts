@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
+import { readBoundedJson } from '@/lib/http/requestBody';
 
 export const runtime = 'nodejs';
 
@@ -16,7 +18,8 @@ function getPusherServer() {
 }
 
 export async function POST(request: Request) {
-  const accessToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const authHeader = z.string().regex(/^Bearer\s+[\w.-]{20,8192}$/i).safeParse(request.headers.get('authorization') ?? '');
+  const accessToken = authHeader.success ? authHeader.data.replace(/^Bearer\s+/i, '') : '';
   if (!accessToken) return NextResponse.json({ error: 'Sessão inválida.' }, { status: 401 });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -26,21 +29,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A desconexão de chamadas não está configurada.' }, { status: 503 });
   }
 
-  let body: { serverId?: unknown; targetId?: unknown; action?: unknown };
-  try {
-    const payload = await request.json() as unknown;
-    if (!payload || typeof payload !== 'object') return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 400 });
-    body = payload as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 400 });
-  }
-
-  const { serverId, targetId, action } = body;
-  if (typeof serverId !== 'string' || !/^[0-9a-f-]{36}$/i.test(serverId) ||
-      typeof targetId !== 'string' || !/^[0-9a-f-]{36}$/i.test(targetId) ||
-      !['kick', 'ban', 'timeout', 'disconnect'].includes(String(action))) {
+  const body = await readBoundedJson(request, 4096);
+  const parsed = z.object({ serverId: z.string().uuid(), targetId: z.string().uuid(), action: z.enum(['kick', 'ban', 'timeout', 'disconnect']) }).safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json({ error: 'Servidor, membro ou ação inválidos.' }, { status: 400 });
   }
+  const { serverId, targetId, action } = parsed.data;
 
   const supabase = createClient(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -55,7 +49,7 @@ export async function POST(request: Request) {
     timeout: ['moderate_members', 'mute_members'],
     disconnect: ['move_members'],
   };
-  const permissionResults = await Promise.all(requiredPermissions[action as ModerationDispatchAction].map((permission) =>
+  const permissionResults = await Promise.all(requiredPermissions[action].map((permission) =>
     supabase.rpc('has_permission', { p_server_id: serverId, p_permission: permission })
   ));
   if (!permissionResults.some((result) => !result.error && result.data === true)) {

@@ -1,5 +1,7 @@
 import { lookup } from "dns/promises";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { readBoundedStream } from "@/lib/http/requestBody";
 import { isBlockedAddress, isPublicHttpUrl } from "@/lib/linkSafety";
 
 export const runtime = "nodejs";
@@ -43,13 +45,15 @@ async function readPublicPage(target: string, redirects = 0): Promise<string> {
   if (!response.ok) throw new Error("A página não respondeu.");
   const type = response.headers.get("content-type") ?? "";
   if (!type.includes("text/html") && !type.includes("application/xhtml")) throw new Error("Não é uma página.");
-  const html = await response.text();
-  return html.slice(0, 250_000);
+  const html = await readBoundedStream(response.body, 250_000);
+  if (html === null) throw new Error("A página excedeu o limite de leitura.");
+  return html;
 }
 
 export async function GET(request: Request) {
-  const target = new URL(request.url).searchParams.get("url") ?? "";
-  if (!isPublicHttpUrl(target)) return NextResponse.json({ preview: null }, { status: 400 });
+  const parsed = z.string().trim().min(1).max(2048).url().safeParse(new URL(request.url).searchParams.get("url") ?? "");
+  if (!parsed.success || !isPublicHttpUrl(parsed.data)) return NextResponse.json({ preview: null }, { status: 400 });
+  const target = parsed.data;
   const cached = cache.get(target);
   if (cached && cached.expiresAt > Date.now()) return NextResponse.json({ preview: cached.preview });
   try {

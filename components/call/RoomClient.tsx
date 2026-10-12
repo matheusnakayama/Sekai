@@ -442,7 +442,7 @@ export default function RoomClient({
         },
       });
 
-      const iceServers = await fetchIceServers();
+      const iceServers = await fetchIceServers(accessToken);
       const channel = subscribeToRoom(roomId, joinedName, localIdRef.current, roomSessionRef.current, avatarUrl, accessToken);
       channelRef.current = channel;
       channel.bind('server-moderation', (payload: unknown) => {
@@ -500,7 +500,7 @@ export default function RoomClient({
         if (moderation.action === 'promote') updateHost(moderation.targetId);
       });
 
-      const manager = new WebRTCManager(channel, localIdRef.current);
+      const manager = new WebRTCManager(channel, localIdRef.current, accessToken);
       manager.setIceServers(iceServers);
       if (opts.stream) manager.setLocalStream(opts.stream);
       managerRef.current = manager;
@@ -1761,9 +1761,9 @@ function formatScreenCaptureSettings(settings: MediaTrackSettings, requested: Sc
   return `${dimensions} · ${frameRate}`;
 }
 
-async function fetchIceServers(): Promise<IceServerConfig[]> {
+async function fetchIceServers(accessToken: string): Promise<IceServerConfig[]> {
   try {
-    const res = await fetch('/api/turn-credentials');
+    const res = await fetch('/api/turn-credentials', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
     if (!res.ok) return [{ urls: 'stun:stun.l.google.com:19302' }];
     const data = await res.json();
     return data.iceServers ?? [{ urls: 'stun:stun.l.google.com:19302' }];

@@ -92,16 +92,17 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }, []);
 
   const loadFriends = useCallback(async () => {
-    const [{ data, error }, { data: inviteRows }] = await Promise.all([
-      supabase.from("friendships")
-      .select("id,sender_id,receiver_id,status,sender:profiles!friendships_sender_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color),receiver:profiles!friendships_receiver_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color)")
-      .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
-      .order("created_at", { ascending: false }),
+    const friendshipSelect = "id,sender_id,receiver_id,status,created_at,sender:profiles!friendships_sender_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color),receiver:profiles!friendships_receiver_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color)";
+    const [{ data: sent, error: sentError }, { data: received, error: receivedError }, { data: inviteRows }] = await Promise.all([
+      supabase.from("friendships").select(friendshipSelect).eq("sender_id", currentUserId).order("created_at", { ascending: false }),
+      supabase.from("friendships").select(friendshipSelect).eq("receiver_id", currentUserId).order("created_at", { ascending: false }),
       supabase.from("friend_server_invites")
         .select("id,sender_id,server_id,server_name,channel_id,status,sender:profiles!friend_server_invites_sender_id_fkey(id,username,display_name,avatar_url,status)")
         .eq("receiver_id", currentUserId).eq("status", "pending").order("created_at", { ascending: false }),
     ]);
+    const error = sentError ?? receivedError;
     if (error) { setMessage(explainDatabaseError(error, "friends")); return; }
+    const data = [...(sent ?? []), ...(received ?? [])].sort((left, right) => right.created_at.localeCompare(left.created_at));
     setRequests((data ?? []) as unknown as Friendship[]);
     setServerInvites((inviteRows ?? []) as unknown as ServerInvite[]);
   }, [currentUserId, supabase]);
@@ -128,8 +129,11 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }, [friendProfiles, recentProfiles, selectedFriend]);
 
   const loadRecentProfiles = useCallback(async () => {
-    const { data } = await supabase.from("sekai_direct_messages").select("sender_id,receiver_id,created_at")
-      .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`).order("created_at", { ascending: false }).limit(100);
+    const [sent, received] = await Promise.all([
+      supabase.from("sekai_direct_messages").select("sender_id,receiver_id,created_at").eq("sender_id", currentUserId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("sekai_direct_messages").select("sender_id,receiver_id,created_at").eq("receiver_id", currentUserId).order("created_at", { ascending: false }).limit(100),
+    ]);
+    const data = [...(sent.data ?? []), ...(received.data ?? [])].sort((left, right) => right.created_at.localeCompare(left.created_at)).slice(0, 100);
     const ids = Array.from(new Set((data ?? []).map((row) => row.sender_id === currentUserId ? row.receiver_id : row.sender_id))).filter((id) => id !== currentUserId);
     if (!ids.length) { setRecentProfiles([]); return; }
     const { data: profiles } = await supabase.from("profiles").select("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color").in("id", ids);
@@ -161,10 +165,14 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
 
   const loadDm = useCallback(async () => {
     if (!selectedFriend) { setDmMessages([]); return; }
-    const { data, error } = await supabase.from("sekai_direct_messages").select("id,sender_id,receiver_id,content,attachment_url,created_at")
-      .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${selectedFriend.id}),and(sender_id.eq.${selectedFriend.id},receiver_id.eq.${currentUserId})`)
-      .order("created_at", { ascending: true }).limit(100);
+    const columns = "id,sender_id,receiver_id,content,attachment_url,created_at";
+    const [sent, received] = await Promise.all([
+      supabase.from("sekai_direct_messages").select(columns).eq("sender_id", currentUserId).eq("receiver_id", selectedFriend.id).order("created_at", { ascending: false }).limit(100),
+      supabase.from("sekai_direct_messages").select(columns).eq("sender_id", selectedFriend.id).eq("receiver_id", currentUserId).order("created_at", { ascending: false }).limit(100),
+    ]);
+    const error = sent.error ?? received.error;
     if (error) { setMessage(explainDatabaseError(error, "messages")); return; }
+    const data = [...(sent.data ?? []), ...(received.data ?? [])].sort((left, right) => left.created_at.localeCompare(right.created_at)).slice(-100);
     setDmMessages((data ?? []) as DirectMessage[]);
   }, [currentUserId, selectedFriend, supabase]);
   useEffect(() => { void loadDm(); }, [loadDm]);

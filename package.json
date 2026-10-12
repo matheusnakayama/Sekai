@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test tests/auth-validation.test.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "app": "electron desktop/main.cjs"
   },
   "eslintConfig": {

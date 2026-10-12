@@ -321,9 +321,12 @@ export default function Home() {
   const dialogs = useDialogs();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [authUserCandidateId, setAuthUserCandidateId] = useState<string | null>(null);
+  const authUserCandidateRef = useRef<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [mfaCheckComplete, setMfaCheckComplete] = useState(false);
   const [mfaChallengeRequired, setMfaChallengeRequired] = useState(false);
+  const [mfaCheckFailed, setMfaCheckFailed] = useState(false);
   const [servers, setServers] = useState<ServerItem[]>([]);
   const serversRef = useRef<ServerItem[]>([]);
   const serverListRequestSequence = useRef(0);
@@ -843,11 +846,18 @@ export default function Home() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
+      const candidateId = data.user?.id ?? null;
+      authUserCandidateRef.current = candidateId;
+      setAuthUserCandidateId(candidateId);
       setAuthChecked(true);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user?.id ?? null);
+      const candidateId = session?.user?.id ?? null;
+      if (authUserCandidateRef.current !== candidateId) {
+        authUserCandidateRef.current = candidateId;
+        setCurrentUserId(null);
+      }
+      setAuthUserCandidateId(candidateId);
       setAuthChecked(true);
     });
     return () => sub.subscription.unsubscribe();
@@ -855,24 +865,40 @@ export default function Home() {
 
   useEffect(() => {
     if (!authChecked) return;
-    if (!currentUserId) {
+    if (!authUserCandidateId) {
+      setCurrentUserId(null);
       setMfaChallengeRequired(false);
+      setMfaCheckFailed(false);
       setMfaCheckComplete(true);
       return;
     }
     let cancelled = false;
+    setCurrentUserId(null);
+    setMfaCheckFailed(false);
     setMfaCheckComplete(false);
     void supabase.auth.mfa.getAuthenticatorAssuranceLevel().then(({ data, error }) => {
       if (cancelled) return;
-      setMfaChallengeRequired(!error && data.nextLevel === "aal2" && data.currentLevel !== "aal2");
+      if (error) {
+        setMfaCheckFailed(true);
+        setMfaChallengeRequired(false);
+        setCurrentUserId(null);
+        setMfaCheckComplete(true);
+        return;
+      }
+      const challengeRequired = !error && data.nextLevel === "aal2" && data.currentLevel !== "aal2";
+      setMfaCheckFailed(false);
+      setMfaChallengeRequired(challengeRequired);
+      if (!challengeRequired) setCurrentUserId(authUserCandidateId);
       setMfaCheckComplete(true);
     }).catch(() => {
       if (cancelled) return;
+      setMfaCheckFailed(true);
       setMfaChallengeRequired(false);
+      setCurrentUserId(null);
       setMfaCheckComplete(true);
     });
     return () => { cancelled = true; };
-  }, [authChecked, currentUserId, supabase]);
+  }, [authChecked, authUserCandidateId, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2056,10 +2082,11 @@ export default function Home() {
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
-  if (!authChecked || (currentUserId && !mfaCheckComplete)) return null;
+  if (!authChecked || (authUserCandidateId && !mfaCheckComplete)) return null;
+  if (mfaCheckFailed) return <main className="flex min-h-screen items-center justify-center bg-discord-bg-primary px-4 py-8"><div className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 text-center shadow-2xl sm:p-8"><h1 className="text-xl font-bold text-discord-header-primary">Não foi possível validar a sessão</h1><p className="mt-2 text-sm leading-6 text-discord-text-muted">Tente novamente mais tarde ou saia e entre novamente.</p><button type="button" onClick={() => { void supabase.auth.signOut(); setAuthUserCandidateId(null); setCurrentUserId(null); setMfaCheckFailed(false); }} className="mt-5 rounded-xl bg-theme-gradient px-5 py-3 font-semibold text-white">Sair da conta</button></div></main>;
   if (mfaChallengeRequired) return <MfaChallenge
-    onVerified={() => { setMfaChallengeRequired(false); setMfaCheckComplete(true); }}
-    onCancel={() => { void supabase.auth.signOut(); setCurrentUserId(null); setMfaChallengeRequired(false); }}
+    onVerified={() => { setMfaChallengeRequired(false); setCurrentUserId(authUserCandidateId); setMfaCheckComplete(true); }}
+    onCancel={() => { void supabase.auth.signOut(); setAuthUserCandidateId(null); setCurrentUserId(null); setMfaChallengeRequired(false); }}
   />;
   if (!currentUserId) return <LoginScreen />;
 

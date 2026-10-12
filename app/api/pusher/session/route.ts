@@ -1,27 +1,26 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { issueRoomSession } from '@/lib/roomSession';
 import { parseDirectVoiceRoomId } from '@/lib/directCalls';
+import { readBoundedJson } from '@/lib/http/requestBody';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
-  const accessToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const authHeader = z.string().regex(/^Bearer\s+[\w.-]{20,8192}$/i).safeParse(request.headers.get('authorization') ?? '');
+  const accessToken = authHeader.success ? authHeader.data.replace(/^Bearer\s+/i, '') : '';
   if (!accessToken) {
     return NextResponse.json({ error: 'Entre no Sekai para participar da chamada.' }, { status: 401 });
   }
 
-  let body: { roomId?: unknown };
-  try {
-    body = await request.json() as { roomId?: unknown };
-  } catch {
-    return NextResponse.json({ error: 'Sala inválida.' }, { status: 400 });
-  }
-  const roomId = body.roomId;
-
-  if (typeof roomId !== 'string' || !/^[a-z0-9-]{4,80}$/.test(roomId)) {
+  const body = await readBoundedJson(request, 4096);
+  if (body === null) return NextResponse.json({ error: 'Sala inválida.' }, { status: 400 });
+  const roomInput = z.object({ roomId: z.string().min(4).max(80).regex(/^[a-z0-9-]+$/) }).safeParse(body);
+  if (!roomInput.success) {
     return NextResponse.json({ error: 'Código da sala inválido.' }, { status: 400 });
   }
+  const roomId = roomInput.data.roomId;
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,11 +45,11 @@ export async function POST(request: Request) {
       const peerId = directPair.find((id) => id !== user.id.toLowerCase());
       if (!peerId) return NextResponse.json({ error: 'Conversa privada inválida.' }, { status: 400 });
 
-      const { data: friendships } = await supabase.from('friendships').select('id')
-        .eq('status', 'accepted')
-        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${user.id})`)
-        .limit(1);
-      const isFriend = !!friendships?.length;
+      const [forwardFriendship, reverseFriendship] = await Promise.all([
+        supabase.from('friendships').select('id').eq('status', 'accepted').eq('sender_id', user.id).eq('receiver_id', peerId).maybeSingle(),
+        supabase.from('friendships').select('id').eq('status', 'accepted').eq('sender_id', peerId).eq('receiver_id', user.id).maybeSingle(),
+      ]);
+      const isFriend = !!forwardFriendship.data || !!reverseFriendship.data;
       let sharesServer = false;
       if (!isFriend) {
         const { data: ownMemberships } = await supabase.from('members').select('server_id').eq('user_id', user.id);

@@ -3,6 +3,8 @@ import Pusher from 'pusher';
 import { createClient } from '@supabase/supabase-js';
 import { parseDirectVoiceRoomId } from '@/lib/directCalls';
 import { verifyRoomSession } from '@/lib/roomSession';
+import { z } from 'zod';
+import { readBoundedText } from '@/lib/http/requestBody';
 
 export const runtime = 'nodejs';
 
@@ -32,18 +34,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.text();
+  const body = await readBoundedText(req, 16 * 1024);
+  if (body === null) return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
   const params = new URLSearchParams(body);
-  const socketId = params.get('socket_id');
-  const channelName = params.get('channel_name');
-  const userName = params.get('user_name')?.slice(0, 60) || 'Convidado';
-  const userAvatar = params.get('user_avatar') || null;
-  const userId = params.get('user_id') || '';
-  const roomSession = params.get('room_session');
-  const accessToken = params.get('access_token') || '';
-  const roomId = channelName?.startsWith('presence-room-') ? channelName.slice('presence-room-'.length) : '';
+  const parsed = z.object({
+    socket_id: z.string().regex(/^\d+\.\d+$/).max(80),
+    channel_name: z.string().min(1).max(128),
+    user_name: z.string().trim().max(60).optional().default('Convidado'),
+    user_avatar: z.string().max(2048).optional().nullable().refine((value) => {
+      if (value === undefined || value === null || value === '') return true;
+      try {
+        const avatar = new URL(value);
+        return avatar.protocol === 'https:' && !avatar.username && !avatar.password;
+      } catch {
+        return false;
+      }
+    }),
+    user_id: z.string().uuid(),
+    room_session: z.string().min(1).max(2048),
+    access_token: z.string().min(20).max(8192),
+  }).safeParse(Object.fromEntries(params.entries()));
+  if (!parsed.success) return NextResponse.json({ error: 'Parâmetros inválidos.' }, { status: 400 });
+  const { socket_id: socketId, channel_name: channelName, user_id: userId, room_session: roomSession, access_token: accessToken } = parsed.data;
+  const userName = parsed.data.user_name || 'Convidado';
+  const userAvatar = parsed.data.user_avatar || null;
+  const roomId = channelName.startsWith('presence-room-') ? channelName.slice('presence-room-'.length) : '';
 
-  if (!socketId || !channelName || !/^[a-z0-9-]{4,80}$/.test(roomId) || !userId) {
+  if (!/^[a-z0-9-]{4,80}$/.test(roomId)) {
     return NextResponse.json({ error: 'Parâmetros ausentes.' }, { status: 400 });
   }
 
