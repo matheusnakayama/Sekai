@@ -195,15 +195,13 @@ export default function VideoTile({
   }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.screenAudioTrack, playAudioElement, screenShareRevealed, screenVolume]);
 
   async function enablePlayback() {
-    try {
-      await videoRef.current?.play();
-      for (const audio of [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current]) {
-        if (audio?.srcObject && !audio.muted) await playAudioElement(audio);
-      }
-      setPlaybackBlocked(false);
-    } catch {
-      setPlaybackBlocked(true);
-    }
+    const video = videoRef.current;
+    if (video?.srcObject) void video.play().catch(() => undefined);
+
+    const audioElements = [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current]
+      .filter((audio): audio is HTMLAudioElement => Boolean(audio?.srcObject && !audio.muted));
+    const results = await Promise.allSettled(audioElements.map((audio) => playAudioElement(audio)));
+    setPlaybackBlocked(results.some((result) => result.status === 'rejected'));
   }
 
   return (
