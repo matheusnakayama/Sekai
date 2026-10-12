@@ -168,15 +168,15 @@ export default function RoomClient({
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    const desktop = window.sekaiDesktop;
-    if (typeof desktop?.updateOverlayCall !== 'function') return;
+    const updateOverlayCall = window.sekaiDesktop?.updateOverlayCall;
+    if (typeof updateOverlayCall !== 'function') return;
     const active = phase === 'in-call';
     const publishOverlayState = () => {
       const brandChannels = getComputedStyle(document.documentElement).getPropertyValue('--brand-500').trim().split(/\s+/).map(Number);
       const accentColor = brandChannels.length === 3 && brandChannels.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 255)
         ? `#${brandChannels.map((channel) => Math.round(channel).toString(16).padStart(2, '0')).join('')}`
         : '#22c55e';
-      desktop.updateOverlayCall({
+      updateOverlayCall({
         callName: active ? roomName : '',
         accentColor,
         participants: active ? Object.values(participants).map((participant) => ({
