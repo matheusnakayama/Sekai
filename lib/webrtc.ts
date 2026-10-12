@@ -55,6 +55,7 @@ interface PeerEntry {
   localSpeaking: boolean;
   remoteMicOn?: boolean;
   remoteSpeaking?: boolean;
+  mediaStateAnnounced?: boolean;
   lastInboundAudioPackets?: number;
   lastOutboundAudioPackets?: number;
   inboundAudioNoProgressChecks: number;
@@ -153,6 +154,8 @@ export class WebRTCManager {
   private localId: string;
   private accessToken: string;
   private localMicOn = true;
+  private localCamOn = false;
+  private localDeafened = false;
   private localSpeaking = false;
   private audioRecoveryAttempts = new Map<string, number>();
 
@@ -405,12 +408,26 @@ export class WebRTCManager {
 
   broadcastMediaState(state: { micOn: boolean; camOn: boolean; deafened?: boolean; isSpeaking?: boolean }) {
     this.localMicOn = state.micOn;
+    this.localCamOn = state.camOn;
+    this.localDeafened = state.deafened ?? this.localDeafened;
     this.localSpeaking = state.isSpeaking ?? this.localSpeaking;
     for (const peer of this.peers.values()) {
       peer.localMicOn = this.localMicOn;
       peer.localSpeaking = this.localSpeaking;
     }
     this.send({ type: 'media-state', from: this.localId, ...state, isSpeaking: this.localSpeaking });
+  }
+
+  private announceMediaState(peerId: string) {
+    this.send({
+      type: 'media-state',
+      from: this.localId,
+      to: peerId,
+      micOn: this.localMicOn,
+      camOn: this.localCamOn,
+      deafened: this.localDeafened,
+      isSpeaking: this.localSpeaking,
+    });
   }
 
   private ensurePeerConnection(peerId: string, options?: {
@@ -593,8 +610,13 @@ export class WebRTCManager {
     }
   }
 
-  private scheduleAudioHealthCheck(peerId: string, peer: PeerEntry, delayMs = 3_500) {
-    if (peer.audioHealthTimer !== undefined || peer.connection.signalingState === 'closed') return;
+  private scheduleAudioHealthCheck(peerId: string, peer: PeerEntry, delayMs = 3_500, replaceTimer = false) {
+    if (peer.audioHealthTimer !== undefined) {
+      if (!replaceTimer) return;
+      window.clearTimeout(peer.audioHealthTimer);
+      peer.audioHealthTimer = undefined;
+    }
+    if (peer.connection.signalingState === 'closed') return;
     peer.audioHealthTimer = window.setTimeout(() => {
       peer.audioHealthTimer = undefined;
       if (this.peers.get(peerId) !== peer || peer.connection.connectionState !== 'connected') return;
@@ -602,7 +624,10 @@ export class WebRTCManager {
         console.warn('Não foi possível verificar o fluxo de áudio:', error);
       }).finally(() => {
         if (this.peers.get(peerId) === peer && peer.connection.connectionState === 'connected') {
-          this.scheduleAudioHealthCheck(peerId, peer);
+          const audioActive = (peer.localMicOn && peer.localSpeaking) ||
+            (peer.remoteMicOn === true && peer.remoteSpeaking === true) ||
+            (peer.remoteMicOn === true && peer.remoteSpeaking === undefined);
+          this.scheduleAudioHealthCheck(peerId, peer, audioActive ? 1_000 : 3_500);
         }
       });
     }, delayMs);
@@ -802,6 +827,7 @@ export class WebRTCManager {
     if (this.peers.get(peerId) !== peer || pc.signalingState === 'closed') return;
     const failed = pc.connectionState === 'failed' || pc.iceConnectionState === 'failed';
     const disconnected = pc.connectionState === 'disconnected' || pc.iceConnectionState === 'disconnected';
+    if (pc.connectionState !== 'connected') peer.mediaStateAnnounced = false;
     if (pc.connectionState === 'connected') {
       peer.recoveryAttempts = 0;
       peer.offerRetryAttempts = 0;
@@ -820,6 +846,13 @@ export class WebRTCManager {
         peer.offerRetryTimer = undefined;
       }
       this.onConnectionStateChange(peerId, 'connected');
+      // O estado global enviado ao entrar pode chegar antes de o peer ser
+      // criado no outro cliente. Sincronize novamente após estabelecer o par
+      // para o monitor RTP saber se deve esperar pacotes de voz.
+      if (!peer.mediaStateAnnounced) {
+        peer.mediaStateAnnounced = true;
+        this.announceMediaState(peerId);
+      }
       this.scheduleAudioHealthCheck(peerId, peer);
       if (this.videoProfileOverride) {
         const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
@@ -1493,6 +1526,7 @@ export class WebRTCManager {
         peer.remoteMicOn = payload.micOn;
         if (payload.isSpeaking !== undefined) peer.remoteSpeaking = payload.isSpeaking;
         if (!peer.remoteMicOn || peer.remoteSpeaking === false) peer.inboundAudioNoProgressChecks = 0;
+        else if (peer.remoteSpeaking === true) this.scheduleAudioHealthCheck(payload.from, peer, 1_000, true);
       }
       this.onMediaState(payload.from, { micOn: payload.micOn, camOn: payload.camOn, deafened: payload.deafened });
       return;
