@@ -32,7 +32,6 @@ export function middleware(request: NextRequest) {
     "stun:",
     "turn:",
     "turns:",
-    ...(development ? ["'unsafe-eval'"] : []),
   ];
   const connectSources = [
     "'self'",

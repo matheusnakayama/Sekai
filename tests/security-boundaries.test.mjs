@@ -31,6 +31,29 @@ test("chat markdown disables raw HTML and validates every link and image destina
   assert.match(source, /const safeHref = safeChatMarkdownUrl\(href \?\? ""\)/);
 });
 
+test("login does not depend on the redirect origin while signup and recovery do", () => {
+  const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+  assert.match(page, /if \(mode !== "login" && !siteUrl\)/);
+  assert.match(page, /disabled=\{loading \|\| Boolean\(success\) \|\| !captchaToken \|\| \(mode !== "login" && !siteUrl\)\}/);
+});
+
+test("theme initialization is same-origin external JavaScript without a nonce mismatch", () => {
+  const layout = readFileSync(resolve(root, "app/layout.tsx"), "utf8");
+  const themeRoute = readFileSync(resolve(root, "app/theme-init.js/route.ts"), "utf8");
+  assert.match(layout, /<Script src="\/theme-init\.js" strategy="beforeInteractive" \/>/);
+  assert.doesNotMatch(layout, /dangerouslySetInnerHTML|nonce=/);
+  assert.match(themeRoute, /Content-Type": "application\/javascript/);
+});
+
+test("script-src stays free of unsafe-inline and unsafe-eval in development and production", () => {
+  const middleware = readFileSync(resolve(root, "middleware.ts"), "utf8");
+  const nextConfig = readFileSync(resolve(root, "next.config.mjs"), "utf8");
+  const scriptSourceList = middleware.match(/const scriptSources = \[([\s\S]*?)\n  \];/)?.[1] ?? "";
+  assert.ok(scriptSourceList, "CSP script source list is present");
+  assert.doesNotMatch(scriptSourceList, /unsafe-inline|unsafe-eval/);
+  assert.match(nextConfig, /config\.devtool = "source-map"/);
+});
+
 test("Pusher room authorization validates identity, signed room, and current DM relationship", () => {
   const source = readFileSync(resolve(root, "app/api/pusher/auth/route.ts"), "utf8");
   assert.match(source, /verifyRoomSession\(roomId, userId, roomSession/);

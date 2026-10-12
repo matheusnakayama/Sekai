@@ -140,7 +140,7 @@ function LoginScreen() {
       setError("Conclua a verificação anti-bot para continuar.");
       return;
     }
-    if (!siteUrl) {
+    if (mode !== "login" && !siteUrl) {
       setError("O serviço de autenticação está temporariamente indisponível.");
       return;
     }
@@ -306,7 +306,7 @@ function LoginScreen() {
 
         <button
           type="submit"
-          disabled={loading || Boolean(success) || !captchaToken || !siteUrl}
+          disabled={loading || Boolean(success) || !captchaToken || (mode !== "login" && !siteUrl)}
           className="mt-2 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 transition hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Processando…" : mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Enviar instruções"}
