@@ -211,7 +211,7 @@ create policy custom_badges_select_authenticated on public.custom_badges for sel
 drop policy if exists user_badges_read on public.user_badges;
 drop policy if exists user_badges_select_authenticated on public.user_badges;
 create policy user_badges_select_authenticated on public.user_badges for select to authenticated
-  using (auth.uid() is not null and (visible_in_profile or visible_in_member_list));
+  using (auth.uid() = user_id or (auth.uid() is not null and (visible_in_profile or visible_in_member_list)));
 
 drop policy if exists user_now_playing_select on public.user_now_playing;
 create policy user_now_playing_select on public.user_now_playing for select to authenticated
@@ -272,7 +272,7 @@ begin
     select p.oid::regprocedure as identity
       from pg_catalog.pg_proc p
       join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public' and p.prosecdef
+     where n.nspname = 'public' and p.prosecdef and p.prokind = 'f'
   loop
     execute pg_catalog.format(
       'alter function %s set search_path = pg_catalog, public, auth, extensions, storage, realtime, pg_temp',
@@ -318,5 +318,22 @@ grant execute on function public.channel_effective_permissions(uuid, uuid) to au
 grant execute on function public.is_server_member(uuid) to authenticated;
 grant execute on function public.is_server_member(uuid, uuid) to authenticated;
 grant execute on function public.sekai_is_dm_participant(uuid) to authenticated;
+
+-- Preserve explicit authenticated RPCs after removing their inherited PUBLIC grant.
+-- Trigger/event-trigger entry points remain non-callable through PostgREST.
+grant execute on function public.accept_friend_server_invite(uuid) to authenticated;
+grant execute on function public.assign_server_member_role(uuid, uuid, uuid, boolean) to authenticated;
+grant execute on function public.cast_channel_poll_vote(uuid, uuid) to authenticated;
+grant execute on function public.create_channel_poll(uuid, text, text[]) to authenticated;
+grant execute on function public.create_channel_topic(uuid, text, text) to authenticated;
+grant execute on function public.get_channel_poll_results(uuid) to authenticated;
+grant execute on function public.is_sekai_admin() to authenticated;
+grant execute on function public.moderate_server_member(uuid, uuid, text, text) to authenticated;
+grant execute on function public.preview_invite(text) to authenticated;
+grant execute on function public.redeem_invite(text) to authenticated;
+grant execute on function public.set_server_banner(uuid, text) to authenticated;
+grant execute on function public.set_server_member_nickname(uuid, uuid, text) to authenticated;
+grant execute on function public.set_server_member_timeout(uuid, uuid, timestamptz) to authenticated;
+grant execute on function public.sekai_roll_bankai(uuid) to authenticated;
 
 commit;
