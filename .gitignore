@@ -4,3 +4,5 @@ node_modules
 node_modules/
 .next/
 .next-codex-build/
+backup-*.sql
+supabase/.temp/

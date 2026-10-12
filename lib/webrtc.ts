@@ -138,6 +138,7 @@ export class WebRTCManager {
   private iceServers: IceServerConfig[] = [{ urls: 'stun:stun.l.google.com:19302' }];
   private channel: Channel;
   private localId: string;
+  private accessToken: string;
 
   onTrack: TrackHandler = () => {};
   onSoundboardTrack: SoundboardTrackHandler = () => {};
@@ -148,9 +149,10 @@ export class WebRTCManager {
   onScreenShareFailure: ScreenShareFailureHandler = () => {};
   onMediaState: MediaStateHandler = () => {};
 
-  constructor(channel: Channel, localId: string) {
+  constructor(channel: Channel, localId: string, accessToken: string) {
     this.channel = channel;
     this.localId = localId;
+    this.accessToken = accessToken;
     this.channel.bind('client-signal', (payload: SignalPayload) => {
       if ('to' in payload && payload.to !== this.localId) return;
       this.handleSignal(payload);
@@ -746,7 +748,10 @@ export class WebRTCManager {
 
   private async refreshIceServers() {
     try {
-      const response = await fetch('/api/turn-credentials');
+      const response = await fetch('/api/turn-credentials', {
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+        cache: 'no-store',
+      });
       if (!response.ok) return;
       const data = await response.json() as { iceServers?: IceServerConfig[] };
       if (data.iceServers?.length) this.iceServers = data.iceServers;

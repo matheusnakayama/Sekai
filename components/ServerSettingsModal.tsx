@@ -178,7 +178,7 @@ export function ServerSettingsModal({
           {tab === "integracoes" && <ServerIntegrationPanel/>}
           {tab === "apps" && <ServerDirectoryPanel/>}
           {tab === "cargos" && (
-            <CargosTab serverId={serverId} canEdit={isOwner || perms.manageRoles} onChanged={onChanged} onAudit={onAudit} />
+            <CargosTab serverId={serverId} currentUserId={currentUserId} canEdit={isOwner || perms.manageRoles} onChanged={onChanged} onAudit={onAudit} />
           )}
           {tab === "canais" && (
             <CanaisTab serverId={serverId} canEdit={isOwner || perms.manageChannels} onChanged={onChanged} />
@@ -271,11 +271,11 @@ function GeralTab({
     const file = e.target.files?.[0];
     if (!file) return;
     e.currentTarget.value = "";
-    if (!file.type.startsWith("image/")) { await dialogs.notify({ title: "Arquivo inválido", message: "Escolha um arquivo de imagem." }); return; }
-    if (file.size > 8 * 1024 * 1024) { await dialogs.notify({ title: "Imagem muito grande", message: "O ícone deve ter no máximo 8 MB." }); return; }
+    if (!new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]).has(file.type)) { await dialogs.notify({ title: "Arquivo inválido", message: "Escolha uma imagem JPEG, PNG, WebP ou GIF." }); return; }
+    if (file.size > 5 * 1024 * 1024) { await dialogs.notify({ title: "Imagem muito grande", message: "O ícone deve ter no máximo 5 MB." }); return; }
     const extension = file.name.split(".").pop()?.toLowerCase();
     const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
-    const path = `${serverId}/icon-${Date.now()}.${ext}`;
+    const path = `${serverId}/${currentUserId}/icon-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("server-icons").upload(path, file, { upsert: true, contentType: file.type });
     if (error) {
       await dialogs.notify({ title: "Falha no upload", message: error.message });
@@ -507,7 +507,7 @@ const PERMISSION_DESCRIPTIONS: Record<keyof typeof PERMISSIONS, string> = {
   MOVE_MEMBERS: "Mova participantes entre canais de voz.",
 };
 
-function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string; canEdit: boolean; onChanged: () => void; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void> }) {
+function CargosTab({ serverId, currentUserId, canEdit, onChanged, onAudit }: { serverId: string; currentUserId: string; canEdit: boolean; onChanged: () => void; onAudit: (action: string, target?: string, details?: Record<string, unknown>) => Promise<void> }) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [roles, setRoles] = useState<any[]>([]);
@@ -583,7 +583,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     if (markerIndex < 0) return;
     let path: string;
     try { path = decodeURIComponent(assetUrl.slice(markerIndex + marker.length).split("?")[0]); } catch { return; }
-    if (!path.startsWith(`${serverId}/${folder}/`)) return;
+    if (!path.startsWith(`${serverId}/${currentUserId}/${folder}/`)) return;
     await supabase.storage.from("server-assets").remove([path]);
   }
 
@@ -593,7 +593,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
 
     const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
     const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const path = `${serverId}/role-icons/${roleId}/${uniqueName}.${extension}`;
+    const path = `${serverId}/${currentUserId}/role-icons/${roleId}/${uniqueName}.${extension}`;
     const { error: uploadError } = await supabase.storage.from("server-assets").upload(path, file, {
       upsert: false,
       contentType: file.type,
@@ -613,7 +613,7 @@ function CargosTab({ serverId, canEdit, onChanged, onAudit }: { serverId: string
     if (file.size > MAX_ROLE_ICON_SIZE) return { error: "A insígnia do cargo deve ter no máximo 5 MB." };
     const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
     const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const path = `${serverId}/role-insignias/${roleId}/${uniqueName}.${extension}`;
+    const path = `${serverId}/${currentUserId}/role-insignias/${roleId}/${uniqueName}.${extension}`;
     const { error: uploadError } = await supabase.storage.from("server-assets").upload(path, file, { upsert: false, contentType: file.type, cacheControl: "31536000" });
     if (uploadError) return { error: uploadError.message };
     const insigniaUrl = supabase.storage.from("server-assets").getPublicUrl(path).data.publicUrl;

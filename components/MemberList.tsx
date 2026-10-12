@@ -1,6 +1,5 @@
 "use client";
 
-import { Figtree } from "next/font/google";
 import { cn } from "@/lib/utils";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import { RoleInsignia } from "@/components/RoleBadgeList";
@@ -14,12 +13,6 @@ import type { CustomBadge } from "@/lib/badges";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { UserPlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-
-const memberFont = Figtree({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
 
 export interface MemberItem {
   id: string;
@@ -113,7 +106,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
 
   return (
     <>
-    <div className={cn("member-roster h-full w-60 overflow-y-auto bg-discord-bg-dark px-1.5 py-2", memberFont.className)}>
+    <div className={cn("member-roster h-full w-60 overflow-y-auto bg-discord-bg-dark px-1.5 py-2")}>
       {groups.map(({ id, roleName, roleColor, roleInsigniaUrl, members: roleMembers }, index) => (
         <section key={id} className="mb-1">
           <div className={cn("flex min-w-0 items-center gap-1.5 px-2 pb-1", index === 0 ? "pt-1" : "pt-3")}>

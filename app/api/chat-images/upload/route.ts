@@ -3,6 +3,8 @@ import { handleUploadPresigned, type HandleUploadPresignedBody } from '@vercel/b
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 import { verifyRoomSession } from '@/lib/roomSession';
+import { z } from 'zod';
+import { readBoundedJson } from '@/lib/http/requestBody';
 
 export const runtime = 'nodejs';
 
@@ -21,13 +23,8 @@ function getPusherServer() {
 function parseClientPayload(value: string | null | undefined) {
   if (!value) return null;
   try {
-    const parsed = JSON.parse(value) as { roomId?: unknown; userId?: unknown; sessionToken?: unknown };
-    if (
-      typeof parsed.roomId !== 'string' || !/^[a-z0-9-]{4,64}$/.test(parsed.roomId) ||
-      typeof parsed.userId !== 'string' || parsed.userId.length < 1 || parsed.userId.length > 100 ||
-      typeof parsed.sessionToken !== 'string' || parsed.sessionToken.length > 2048
-    ) return null;
-    return { roomId: parsed.roomId, userId: parsed.userId, sessionToken: parsed.sessionToken };
+    const parsed = z.object({ roomId: z.string().min(4).max(64).regex(/^[a-z0-9-]+$/), userId: z.string().uuid(), sessionToken: z.string().min(1).max(2048) }).safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -45,12 +42,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A configuração do Pusher está incompleta.' }, { status: 503 });
   }
 
-  let body: HandleUploadPresignedBody;
-  try {
-    body = (await request.json()) as HandleUploadPresignedBody;
-  } catch {
-    return NextResponse.json({ error: 'Solicitação de envio inválida.' }, { status: 400 });
-  }
+  const rawBody = await readBoundedJson(request, 64 * 1024);
+  const bodyResult = z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('blob.generate-presigned-url'),
+      payload: z.object({
+        pathname: z.string().trim().min(1).max(1024).refine((path) => !path.includes('\\') && !path.split('/').includes('..')),
+        multipart: z.boolean(),
+        clientPayload: z.string().max(4096).nullable(),
+      }).strict(),
+    }).strict(),
+    z.object({
+      type: z.literal('blob.upload-completed'),
+      payload: z.object({
+        blob: z.record(z.string(), z.unknown()),
+        tokenPayload: z.string().max(4096).nullable().optional(),
+      }).passthrough(),
+    }).strict(),
+  ]).safeParse(rawBody);
+  if (!bodyResult.success) return NextResponse.json({ error: 'Solicitação de envio inválida.' }, { status: 400 });
+  // A assinatura do callback Blob cobre JSON.stringify(payload). Mantemos a ordem
+  // de propriedades do objeto original, mas só após a validação Zod estrita.
+  const body = (bodyResult.data.type === 'blob.upload-completed' ? rawBody : bodyResult.data) as unknown as HandleUploadPresignedBody;
 
   try {
     const response = await handleUploadPresigned({

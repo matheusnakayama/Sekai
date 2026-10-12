@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import Pusher from 'pusher';
 import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  const accessToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const authHeader = z.string().regex(/^Bearer\s+[\w.-]{20,8192}$/i).safeParse(request.headers.get('authorization') ?? '');
+  const accessToken = authHeader.success ? authHeader.data.replace(/^Bearer\s+/i, '') : '';
   if (!accessToken) return NextResponse.json({ error: 'Sessão inválida.' }, { status: 401 });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

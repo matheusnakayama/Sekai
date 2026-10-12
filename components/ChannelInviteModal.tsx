@@ -31,16 +31,16 @@ export function ChannelInviteModal({ channel, serverId, serverName, currentUserI
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const { data: rows, error: friendshipError } = await supabase.from("friendships")
-        .select("sender_id,receiver_id")
-        .eq("status", "accepted")
-        .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
-      if (friendshipError) {
-        if (!cancelled) setError(friendshipError.message);
+      const [sent, received] = await Promise.all([
+        supabase.from("friendships").select("sender_id,receiver_id").eq("status", "accepted").eq("sender_id", currentUserId),
+        supabase.from("friendships").select("sender_id,receiver_id").eq("status", "accepted").eq("receiver_id", currentUserId),
+      ]);
+      if (sent.error || received.error) {
+        if (!cancelled) setError(sent.error?.message ?? received.error?.message ?? "Não foi possível carregar as amizades.");
         if (!cancelled) setLoading(false);
         return;
       }
-      const ids = Array.from(new Set((rows ?? []).map((row) => row.sender_id === currentUserId ? row.receiver_id : row.sender_id)))
+      const ids = Array.from(new Set([...(sent.data ?? []), ...(received.data ?? [])].map((row) => row.sender_id === currentUserId ? row.receiver_id : row.sender_id)))
         .filter((id) => id !== currentUserId);
       if (!ids.length) { if (!cancelled) { setFriends([]); setLoading(false); } return; }
       const { data: profiles, error: profileError } = await supabase.from("profiles")

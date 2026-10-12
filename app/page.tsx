@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Menu, Users, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { TurnstileCaptcha } from "@/components/auth/TurnstileCaptcha";
+import { MfaChallenge } from "@/components/auth/MfaChallenge";
+import { emailInputSchema, loginInputSchema, recoveryInputSchema, signupInputSchema } from "@/lib/validation/auth";
 import { aggregateRolePermissions, hasPermission, PERMISSIONS, toBigInt } from "@/lib/permissions";
 import { UserSettingsModal } from "@/components/UserSettingsModal";
 import { ServerSettingsModal } from "@/components/ServerSettingsModal";
@@ -81,76 +84,149 @@ function writeCachedChannels(userId: string, serverId: string, channels: Channel
 
 function LoginScreen() {
   const supabase = createClient();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [honeypot, setHoneypot] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const [siteUrl, setSiteUrl] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/captcha-config", { cache: "no-store" })
+      .then(async (response): Promise<{ siteUrl?: string }> => response.ok ? response.json() as Promise<{ siteUrl?: string }> : {})
+      .then((config) => { if (active && typeof config.siteUrl === "string") setSiteUrl(config.siteUrl); })
+      .catch(() => { if (active) setSiteUrl(""); });
+    return () => { active = false; };
+  }, []);
+
+  function clearChallenge() {
+    setCaptchaToken("");
+    setCaptchaResetKey((current) => current + 1);
+  }
+
+  async function discardHoneypot(action: "signup" | "signin" | "recovery") {
+    try {
+      await fetch("/api/auth/honeypot", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, honeypot }),
+      });
+    } catch {
+      // A recusa silenciosa não deve indicar ao bot qual campo ativou a proteção.
+    }
+    if (action === "signin") setError("E-mail ou senha inválidos.");
+    else setSuccess("Se a solicitação puder ser concluída, as próximas instruções serão enviadas ao e-mail informado.");
+    clearChallenge();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSuccess("");
+    if (honeypot.trim()) {
+      await discardHoneypot(mode === "login" ? "signin" : mode);
+      return;
+    }
+    if (!captchaToken) {
+      setError("Conclua a verificação anti-bot para continuar.");
+      return;
+    }
+    if (mode !== "login" && !siteUrl) {
+      setError("O serviço de autenticação está temporariamente indisponível.");
+      return;
+    }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedUsername = username.trim().replace(/^@/, "").toLowerCase();
-    if (mode === "signup") {
-      if (!/^[a-zA-Z0-9_.-]{2,32}$/.test(normalizedUsername)) {
-        setError("O usuário deve ter de 2 a 32 caracteres: letras, números, ponto, hífen ou sublinhado.");
+    const emailResult = emailInputSchema.safeParse(email);
+    if (!emailResult.success) {
+      setError("Informe um endereço de e-mail válido.");
+      return;
+    }
+    setLoading(true);
+
+    try {
+      if (mode === "login") {
+        const input = loginInputSchema.safeParse({ email: emailResult.data, password, captchaToken, honeypot });
+        if (!input.success) {
+          setError("E-mail ou senha inválidos.");
+          return;
+        }
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: input.data.email,
+          password: input.data.password,
+          options: { captchaToken: input.data.captchaToken },
+        });
+        if (loginError) setError("E-mail ou senha inválidos.");
         return;
       }
-      if (password.length < 6) {
-        setError("A senha precisa ter pelo menos 6 caracteres.");
+
+      if (mode === "recovery") {
+        const input = recoveryInputSchema.safeParse({ email: emailResult.data, captchaToken, honeypot });
+        if (!input.success) {
+          setError("Informe um endereço de e-mail válido e conclua a verificação.");
+          return;
+        }
+        await supabase.auth.resetPasswordForEmail(input.data.email, {
+          redirectTo: new URL("/auth/reset-password", siteUrl).toString(),
+          captchaToken: input.data.captchaToken,
+        });
+        setSuccess("Por segurança, não informamos se esse endereço possui uma conta. Se houver uma conta elegível, as instruções serão enviadas por e-mail.");
+        return;
+      }
+
+      const input = signupInputSchema.safeParse({
+        email: emailResult.data,
+        password,
+        username,
+        displayName,
+        captchaToken,
+        honeypot,
+      });
+      if (!input.success) {
+        const passwordInvalid = input.error.issues.some((issue) => issue.path[0] === "password");
+        const usernameInvalid = input.error.issues.some((issue) => issue.path[0] === "username");
+        setError(passwordInvalid
+          ? "A senha precisa ter entre 12 e 128 caracteres."
+          : usernameInvalid
+            ? "O nome de usuário deve ter de 2 a 32 letras, números, ponto, hífen ou sublinhado."
+            : "Confira os dados informados e tente novamente.");
         return;
       }
       if (password !== confirmPassword) {
         setError("As senhas não coincidem.");
         return;
       }
-    }
 
-    setLoading(true);
-    if (mode === "login") {
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-      setLoading(false);
-      if (loginError) setError("E-mail ou senha inválidos.");
-      return;
-    }
-
-    const { data, error: signupError } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: {
-        data: {
-          username: normalizedUsername,
-          display_name: displayName.trim() || normalizedUsername,
+      const { error: signupError } = await supabase.auth.signUp({
+        email: input.data.email,
+        password: input.data.password,
+        options: {
+          emailRedirectTo: new URL("/", siteUrl).toString(),
+          captchaToken: input.data.captchaToken,
+          data: {
+            username: input.data.username,
+            display_name: input.data.displayName || input.data.username,
+          },
         },
-      },
-    });
-    setLoading(false);
-    if (signupError) {
-      const message = signupError.message.toLowerCase();
-      if (message.includes("already registered") || message.includes("already been registered")) {
-        setError("Este e-mail já possui uma conta. Entre ou use outro e-mail.");
-      } else if (message.includes("signup is disabled") || message.includes("signups not allowed")) {
-        setError("O cadastro está desativado nas configurações de autenticação do Supabase.");
-      } else if (message.includes("database error saving new user")) {
-        setError("O Supabase não conseguiu criar o perfil. Confira se a migração de cadastro foi executada no banco.");
-      } else {
-        setError(signupError.message);
-      }
-      return;
-    }
-
-    if (data.session) {
-      // O listener de autenticação do app assume a sessão e abre a conta recém-criada.
-      setSuccess("Conta criada! Entrando no Sekai...");
-    } else {
-      setSuccess("Conta criada! Confira seu e-mail para confirmar o cadastro e depois entre no Sekai.");
+      });
+      void signupError;
+      setSuccess("Se o endereço puder receber cadastro, as próximas instruções serão enviadas por e-mail.");
+    } catch {
+      if (mode === "login") setError("E-mail ou senha inválidos.");
+      else setSuccess(mode === "signup"
+        ? "Se o endereço puder receber cadastro, as próximas instruções serão enviadas por e-mail."
+        : "Por segurança, não informamos se esse endereço possui uma conta. Se houver uma conta elegível, as instruções serão enviadas por e-mail.");
+    } finally {
+      setLoading(false);
+      clearChallenge();
     }
   }
 
@@ -163,13 +239,13 @@ function LoginScreen() {
         className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 shadow-2xl shadow-black/30 sm:p-8"
       >
         <p className="text-[11px] font-bold uppercase tracking-[.2em] text-discord-text-muted">Sekai</p>
-        <h1 className="mt-2 text-[28px] font-bold leading-tight text-discord-header-primary">{mode === "login" ? "Bem-vindo de volta" : "Crie sua conta"}</h1>
-        <p className="mt-2 text-sm leading-6 text-discord-text-muted">{mode === "login" ? "Entre para voltar aos seus servidores." : "Um nome, um e-mail e você já pode conversar."}</p>
+        <h1 className="mt-2 text-[28px] font-bold leading-tight text-discord-header-primary">{mode === "login" ? "Bem-vindo de volta" : mode === "signup" ? "Crie sua conta" : "Recuperar senha"}</h1>
+        <p className="mt-2 text-sm leading-6 text-discord-text-muted">{mode === "login" ? "Entre para voltar aos seus servidores." : mode === "signup" ? "Confirme seu e-mail para ativar a conta." : "Informe seu e-mail para receber as instruções de redefinição."}</p>
 
-        <div className="settings-segment mb-6 mt-6 w-full">
-          <button type="button" aria-pressed={mode === "login"} onClick={() => { setMode("login"); setError(""); setSuccess(""); }}>Entrar</button>
-          <button type="button" aria-pressed={mode === "signup"} onClick={() => { setMode("signup"); setError(""); setSuccess(""); }}>Criar conta</button>
-        </div>
+        {mode !== "recovery" && <div className="settings-segment mb-6 mt-6 w-full">
+          <button type="button" aria-pressed={mode === "login"} onClick={() => { setMode("login"); setError(""); setSuccess(""); clearChallenge(); }}>Entrar</button>
+          <button type="button" aria-pressed={mode === "signup"} onClick={() => { setMode("signup"); setError(""); setSuccess(""); clearChallenge(); }}>Criar conta</button>
+        </div>}
 
         {mode === "signup" && <>
           <label className={fieldLabel}>
@@ -181,6 +257,11 @@ function LoginScreen() {
             <input type="text" maxLength={50} autoComplete="nickname" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Como você quer aparecer" className="settings-field" />
           </label>
         </>}
+
+        <label className={`${fieldLabel} absolute -left-[10000px] top-auto h-px w-px overflow-hidden`} aria-hidden="true">
+          Deixe este campo vazio
+          <input type="text" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(event) => setHoneypot(event.target.value)} />
+        </label>
 
         <label className={fieldLabel}>
           E-mail
@@ -195,34 +276,40 @@ function LoginScreen() {
           />
         </label>
 
-        <label className={fieldLabel}>
+        {mode !== "recovery" && <label className={fieldLabel}>
           Senha
           <input
             type="password"
             required
-            minLength={mode === "signup" ? 6 : undefined}
+            minLength={mode === "signup" ? 12 : undefined}
+            maxLength={mode === "signup" ? 128 : 256}
             value={password}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={mode === "signup" ? "Pelo menos 6 caracteres" : "Sua senha"}
+            placeholder={mode === "signup" ? "Pelo menos 12 caracteres" : "Sua senha"}
             className="settings-field"
           />
-        </label>
+        </label>}
 
         {mode === "signup" && <label className={fieldLabel}>
           Confirmar senha
-          <input type="password" required minLength={6} value={confirmPassword} autoComplete="new-password" onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repita a senha" className="settings-field" />
+          <input type="password" required minLength={12} maxLength={128} value={confirmPassword} autoComplete="new-password" onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repita a senha" className="settings-field" />
         </label>}
+
+        <TurnstileCaptcha resetKey={captchaResetKey} onToken={setCaptchaToken} />
 
         {error && <p role="alert" className="mb-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
         {success && <p role="status" className="mb-3 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">{success}</p>}
 
+        {mode === "login" && <button type="button" onClick={() => { setMode("recovery"); setError(""); setSuccess(""); clearChallenge(); }} className="mb-3 w-full text-sm text-discord-text-link hover:underline">Esqueci minha senha</button>}
+        {mode === "recovery" && <button type="button" onClick={() => { setMode("login"); setError(""); setSuccess(""); clearChallenge(); }} className="mb-3 w-full text-sm text-discord-text-link hover:underline">Voltar ao login</button>}
+
         <button
           type="submit"
-          disabled={loading || Boolean(success)}
+          disabled={loading || Boolean(success) || !captchaToken || (mode !== "login" && !siteUrl)}
           className="mt-2 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 transition hover:brightness-110 disabled:opacity-60"
         >
-          {loading ? (mode === "login" ? "Entrando..." : "Criando conta...") : (mode === "login" ? "Entrar" : "Criar conta")}
+          {loading ? "Processando…" : mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Enviar instruções"}
         </button>
       </form>
     </div>
@@ -234,7 +321,12 @@ export default function Home() {
   const dialogs = useDialogs();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [authUserCandidateId, setAuthUserCandidateId] = useState<string | null>(null);
+  const authUserCandidateRef = useRef<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [mfaCheckComplete, setMfaCheckComplete] = useState(false);
+  const [mfaChallengeRequired, setMfaChallengeRequired] = useState(false);
+  const [mfaCheckFailed, setMfaCheckFailed] = useState(false);
   const [servers, setServers] = useState<ServerItem[]>([]);
   const serversRef = useRef<ServerItem[]>([]);
   const serverListRequestSequence = useRef(0);
@@ -754,14 +846,59 @@ export default function Home() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
+      const candidateId = data.user?.id ?? null;
+      authUserCandidateRef.current = candidateId;
+      setAuthUserCandidateId(candidateId);
       setAuthChecked(true);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user?.id ?? null);
+      const candidateId = session?.user?.id ?? null;
+      if (authUserCandidateRef.current !== candidateId) {
+        authUserCandidateRef.current = candidateId;
+        setCurrentUserId(null);
+      }
+      setAuthUserCandidateId(candidateId);
+      setAuthChecked(true);
     });
     return () => sub.subscription.unsubscribe();
   }, [supabase]);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!authUserCandidateId) {
+      setCurrentUserId(null);
+      setMfaChallengeRequired(false);
+      setMfaCheckFailed(false);
+      setMfaCheckComplete(true);
+      return;
+    }
+    let cancelled = false;
+    setCurrentUserId(null);
+    setMfaCheckFailed(false);
+    setMfaCheckComplete(false);
+    void supabase.auth.mfa.getAuthenticatorAssuranceLevel().then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        setMfaCheckFailed(true);
+        setMfaChallengeRequired(false);
+        setCurrentUserId(null);
+        setMfaCheckComplete(true);
+        return;
+      }
+      const challengeRequired = !error && data.nextLevel === "aal2" && data.currentLevel !== "aal2";
+      setMfaCheckFailed(false);
+      setMfaChallengeRequired(challengeRequired);
+      if (!challengeRequired) setCurrentUserId(authUserCandidateId);
+      setMfaCheckComplete(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setMfaCheckFailed(true);
+      setMfaChallengeRequired(false);
+      setCurrentUserId(null);
+      setMfaCheckComplete(true);
+    });
+    return () => { cancelled = true; };
+  }, [authChecked, authUserCandidateId, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -960,7 +1097,7 @@ export default function Home() {
           window.history.replaceState({}, "", window.location.pathname);
           return;
         }
-        await dialogs.notify({ title: "Convite indisponível", message: error?.message || "Não foi possível entrar com este convite." });
+        await dialogs.notify({ title: "Convite indisponível", message: "Não foi possível entrar com este convite. Confira o código ou tente novamente mais tarde." });
         window.history.replaceState({}, "", window.location.pathname);
         if (list?.[0]) setActiveServerId((current) => current || list[0].id);
         return;
@@ -1515,7 +1652,7 @@ export default function Home() {
       receiver_id: member.id,
       content: content.trim(),
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("Não foi possível enviar esta mensagem direta.");
   }
 
   const currentMember = members.find((m) => m.id === currentUserId);
@@ -1691,7 +1828,7 @@ export default function Home() {
       if (iconFile) {
         const extension = iconFile.name.split(".").pop()?.toLowerCase();
         const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
-        const path = `${data.id}/icon-${Date.now()}.${ext}`;
+        const path = `${data.id}/${currentUserId}/icon-${Date.now()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("server-icons")
           .upload(path, iconFile, { upsert: true, contentType: iconFile.type });
@@ -1868,6 +2005,10 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) {
+    if (content.length > 4000) {
+      await dialogs.notify({ title: "Mensagem muito longa", message: "A mensagem deve ter no máximo 4.000 caracteres." });
+      return;
+    }
     const isBankai = /^!bankai$/i.test(content.trim());
     if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content) || isBankai) {
       const result = await executeSlashCommand(content, {
@@ -1935,7 +2076,10 @@ export default function Home() {
 
   async function uploadChannelAttachment(file: File): Promise<string> {
     if (!currentUserId || !activeChannelId) throw new Error("Selecione um canal de texto antes de enviar um arquivo.");
-    if (file.size > 10 * 1024 * 1024) throw new Error("O limite para anexos é de 10 MB.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("O limite para imagens do chat é de 5 MB.");
+    if (!new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]).has(file.type)) {
+      throw new Error("O chat aceita apenas imagens JPEG, PNG, WebP ou GIF.");
+    }
     const safeName = file.name.normalize("NFKD").replace(/[^\w.-]+/g, "_").replace(/^\.+/, "").slice(-140) || "arquivo";
     const path = `channels/${activeChannelId}/${currentUserId}/${crypto.randomUUID()}-${safeName}`;
     const { error } = await supabase.storage.from("chat-images").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
@@ -1945,7 +2089,12 @@ export default function Home() {
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
-  if (!authChecked) return null;
+  if (!authChecked || (authUserCandidateId && !mfaCheckComplete)) return null;
+  if (mfaCheckFailed) return <main className="flex min-h-screen items-center justify-center bg-discord-bg-primary px-4 py-8"><div className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 text-center shadow-2xl sm:p-8"><h1 className="text-xl font-bold text-discord-header-primary">Não foi possível validar a sessão</h1><p className="mt-2 text-sm leading-6 text-discord-text-muted">Tente novamente mais tarde ou saia e entre novamente.</p><button type="button" onClick={() => { void supabase.auth.signOut(); setAuthUserCandidateId(null); setCurrentUserId(null); setMfaCheckFailed(false); }} className="mt-5 rounded-xl bg-theme-gradient px-5 py-3 font-semibold text-white">Sair da conta</button></div></main>;
+  if (mfaChallengeRequired) return <MfaChallenge
+    onVerified={() => { setMfaChallengeRequired(false); setCurrentUserId(authUserCandidateId); setMfaCheckComplete(true); }}
+    onCancel={() => { void supabase.auth.signOut(); setAuthUserCandidateId(null); setCurrentUserId(null); setMfaChallengeRequired(false); }}
+  />;
   if (!currentUserId) return <LoginScreen />;
 
   const callOpenHere = callExpanded && !!voiceSession && (

@@ -6,6 +6,9 @@ import {
   Monitor, Palette, Settings2, Shield, UserRound, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { TurnstileCaptcha } from "@/components/auth/TurnstileCaptcha";
+import { MfaSettings } from "@/components/auth/MfaSettings";
+import { emailInputSchema } from "@/lib/validation/auth";
 import type { MemberItem } from "@/components/MemberList";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import type { CustomBadge } from "@/lib/badges";
@@ -149,6 +152,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [emailDraft, setEmailDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
+  const [resetCaptchaToken, setResetCaptchaToken] = useState("");
+  const [resetCaptchaKey, setResetCaptchaKey] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isBadgeManager, setIsBadgeManager] = useState(false);
@@ -622,11 +627,28 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
 
   async function sendPasswordReset() {
     if (!email) return;
+    const parsedEmail = emailInputSchema.safeParse(email);
+    if (!parsedEmail.success || !resetCaptchaToken) {
+      setError("Informe um endereço válido e conclua a verificação anti-bot.");
+      return;
+    }
     setSendingReset(true); setError(""); setNotice("");
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-    setSendingReset(false);
-    if (resetError) setError("Não foi possível enviar o link: " + resetError.message);
-    else setNotice("Enviamos um link de redefinição para seu e-mail.");
+    try {
+      const response = await fetch("/api/auth/captcha-config", { cache: "no-store" });
+      const config = response.ok ? await response.json() as { siteUrl?: string } : {};
+      if (!config.siteUrl) throw new Error("missing_site_url");
+      await supabase.auth.resetPasswordForEmail(parsedEmail.data, {
+        redirectTo: new URL("/auth/reset-password", config.siteUrl).toString(),
+        captchaToken: resetCaptchaToken,
+      });
+      setNotice("Por segurança, não informamos se esse endereço possui uma conta. Se houver uma conta elegível, as instruções serão enviadas por e-mail.");
+    } catch {
+      setNotice("Por segurança, não informamos se esse endereço possui uma conta. Se houver uma conta elegível, as instruções serão enviadas por e-mail.");
+    } finally {
+      setSendingReset(false);
+      setResetCaptchaToken("");
+      setResetCaptchaKey((current) => current + 1);
+    }
   }
 
   async function changeEmail() {
@@ -855,7 +877,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
               {section === "conta" && <section className="settings-section-enter">
                 <SectionIntro eyebrow="Acesso" title="Minha conta" text="Revise seus dados de acesso e proteja sua conta."/>
                 <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-5"><div className="mb-4 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-discord-brand/15 text-discord-brand"><Bell size={19}/></div><div><h4 className="font-semibold text-discord-header-primary">E-mail da conta</h4><p className="text-xs text-discord-text-muted">O novo e-mail precisa ser confirmado.</p></div></div><div className="flex flex-wrap gap-2"><input type="email" value={emailDraft} onChange={(e) => setEmailDraft(e.target.value)} placeholder="voce@exemplo.com" className={`${inputClass} mt-0 min-w-[180px] flex-1`}/><button onClick={() => void changeEmail()} disabled={!emailDraft.trim() || emailDraft.trim() === email || sendingReset} className="rounded-lg bg-discord-bg-modifier-hover px-4 py-2.5 text-sm font-semibold text-discord-text-normal transition hover:brightness-125 disabled:opacity-50">Atualizar e-mail</button></div><p className="mt-2 text-xs text-discord-text-muted">Atual: {email || "indisponível"}</p></div>
-                <div className="mb-7 rounded-xl border border-white/5 p-5"><h4 className="font-semibold text-discord-header-primary">Senha</h4><p className="mt-1 text-sm text-discord-text-muted">Enviaremos um link seguro para redefinir sua senha.</p><button disabled={!email || sendingReset} onClick={() => void sendPasswordReset()} className="mt-4 rounded-lg bg-discord-bg-modifier-hover px-4 py-2.5 text-sm font-semibold text-discord-text-normal transition hover:brightness-125 disabled:opacity-50">{sendingReset ? "Enviando..." : "Enviar link de redefinição"}</button></div>
+                <div className="mb-7 rounded-xl border border-white/5 p-5"><h4 className="font-semibold text-discord-header-primary">Senha</h4><p className="mt-1 text-sm text-discord-text-muted">Enviaremos um link seguro para redefinir sua senha.</p><TurnstileCaptcha resetKey={resetCaptchaKey} onToken={setResetCaptchaToken}/><button disabled={!email || sendingReset || !resetCaptchaToken} onClick={() => void sendPasswordReset()} className="mt-4 rounded-lg bg-discord-bg-modifier-hover px-4 py-2.5 text-sm font-semibold text-discord-text-normal transition hover:brightness-125 disabled:opacity-50">{sendingReset ? "Enviando..." : "Enviar link de redefinição"}</button></div>
+                <MfaSettings />
                 <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-5"><h4 className="font-semibold text-rose-300">Sessão</h4><p className="mt-1 text-sm text-discord-text-muted">Encerre sua sessão neste dispositivo.</p><button onClick={() => void handleLogout()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-rose-500/30 px-4 py-2.5 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/10"><LogOut size={16}/>Sair da conta</button></div>
               </section>}
             </div>

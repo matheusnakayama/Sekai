@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { finishSpotifyConnect, publishConnection, writeSpotifySession } from "@/lib/spotify";
+import { cancelSpotifyConnect, finishSpotifyConnect, publishConnection, writeSpotifySession } from "@/lib/spotify";
 
 function Callback() {
   const params = useSearchParams();
@@ -13,6 +13,7 @@ function Callback() {
     const code = params.get("code");
     const error = params.get("error");
     if (error || !code) {
+      cancelSpotifyConnect();
       setMessage("A conexão com o Spotify foi cancelada.");
       return;
     }
@@ -24,7 +25,7 @@ function Callback() {
         return;
       }
       try {
-        const session = await finishSpotifyConnect(code);
+        const session = await finishSpotifyConnect(code, params.get("state"));
         writeSpotifySession(data.user.id, session);
         await publishConnection(data.user.id, { displayName: session.displayName, profileUrl: session.profileUrl }).catch(() => undefined);
         window.location.replace("/");
