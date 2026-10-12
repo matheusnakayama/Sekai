@@ -236,6 +236,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     event.preventDefault();
     const content = dmDraft.trim();
     if (!selectedFriend || !content) return;
+    if (content.length > 4000) { setMessage("A mensagem deve ter no máximo 4.000 caracteres."); return; }
     setMessage("");
     const { data, error } = await supabase.from("sekai_direct_messages").insert({ sender_id: currentUserId, receiver_id: selectedFriend.id, content }).select("id,sender_id,receiver_id,content,attachment_url,created_at").single();
     if (error) { setMessage(explainDatabaseError(error, "messages")); return; }
@@ -245,6 +246,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
 
   async function sendQuickDirectMessage(profile: ProfileCardUser, content: string) {
     if (profile.id === currentUserId) throw new Error("Não é possível enviar uma mensagem para a própria conta.");
+    if (content.trim().length > 4000) throw new Error("A mensagem deve ter no máximo 4.000 caracteres.");
     const { error } = await supabase.from("sekai_direct_messages").insert({
       sender_id: currentUserId,
       receiver_id: profile.id,
@@ -517,7 +519,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           )}
           <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex min-h-14 items-center gap-1 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:mx-5 sm:gap-3 sm:px-4 sm:py-2">
             <label title="Enviar imagem" aria-label="Enviar imagem" className={`grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={21}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
-            <input value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} onPaste={(event) => { const imageItem = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/")); const file = imageItem?.getAsFile(); if (file) { event.preventDefault(); void uploadDmImage(file); } }} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
+            <input maxLength={4000} value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} onPaste={(event) => { const imageItem = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/")); const file = imageItem?.getAsFile(); if (file) { event.preventDefault(); void uploadDmImage(file); } }} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
             <button type="button" onClick={() => setDmDraft((draft) => `${draft}${draft ? " " : ""}🙂`)} title="Adicionar emoji" aria-label="Adicionar emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white"><Smile size={20}/></button>
             <button type="submit" aria-label="Enviar mensagem" disabled={!dmDraft.trim() || uploadingImage} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 disabled:opacity-35"><Send size={19}/></button>
           </form>

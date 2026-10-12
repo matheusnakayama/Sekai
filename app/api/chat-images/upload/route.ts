@@ -61,7 +61,9 @@ export async function POST(request: Request) {
     }).strict(),
   ]).safeParse(rawBody);
   if (!bodyResult.success) return NextResponse.json({ error: 'Solicitação de envio inválida.' }, { status: 400 });
-  let body = bodyResult.data as unknown as HandleUploadPresignedBody;
+  // A assinatura do callback Blob cobre JSON.stringify(payload). Mantemos a ordem
+  // de propriedades do objeto original, mas só após a validação Zod estrita.
+  const body = (bodyResult.data.type === 'blob.upload-completed' ? rawBody : bodyResult.data) as unknown as HandleUploadPresignedBody;
 
   try {
     const response = await handleUploadPresigned({

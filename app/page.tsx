@@ -1097,7 +1097,7 @@ export default function Home() {
           window.history.replaceState({}, "", window.location.pathname);
           return;
         }
-        await dialogs.notify({ title: "Convite indisponível", message: error?.message || "Não foi possível entrar com este convite." });
+        await dialogs.notify({ title: "Convite indisponível", message: "Não foi possível entrar com este convite. Confira o código ou tente novamente mais tarde." });
         window.history.replaceState({}, "", window.location.pathname);
         if (list?.[0]) setActiveServerId((current) => current || list[0].id);
         return;
@@ -1652,7 +1652,7 @@ export default function Home() {
       receiver_id: member.id,
       content: content.trim(),
     });
-    if (error) throw new Error(error.message);
+    if (error || !serverId) throw new Error("Não foi possível entrar com este convite. Confira o código ou tente novamente mais tarde.");
   }
 
   const currentMember = members.find((m) => m.id === currentUserId);
@@ -1828,7 +1828,7 @@ export default function Home() {
       if (iconFile) {
         const extension = iconFile.name.split(".").pop()?.toLowerCase();
         const ext = extension && /^[a-z0-9]{1,8}$/.test(extension) ? extension : "png";
-        const path = `${data.id}/icon-${Date.now()}.${ext}`;
+        const path = `${data.id}/${currentUserId}/icon-${Date.now()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("server-icons")
           .upload(path, iconFile, { upsert: true, contentType: iconFile.type });
@@ -2005,6 +2005,10 @@ export default function Home() {
   }
 
   async function handleSend(content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) {
+    if (content.length > 4000) {
+      await dialogs.notify({ title: "Mensagem muito longa", message: "A mensagem deve ter no máximo 4.000 caracteres." });
+      return;
+    }
     const isBankai = /^!bankai$/i.test(content.trim());
     if (content.startsWith("/") || /^\.troll(?:\s|$)/i.test(content) || isBankai) {
       const result = await executeSlashCommand(content, {
@@ -2072,7 +2076,10 @@ export default function Home() {
 
   async function uploadChannelAttachment(file: File): Promise<string> {
     if (!currentUserId || !activeChannelId) throw new Error("Selecione um canal de texto antes de enviar um arquivo.");
-    if (file.size > 10 * 1024 * 1024) throw new Error("O limite para anexos é de 10 MB.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("O limite para imagens do chat é de 5 MB.");
+    if (!new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]).has(file.type)) {
+      throw new Error("O chat aceita apenas imagens JPEG, PNG, WebP ou GIF.");
+    }
     const safeName = file.name.normalize("NFKD").replace(/[^\w.-]+/g, "_").replace(/^\.+/, "").slice(-140) || "arquivo";
     const path = `channels/${activeChannelId}/${currentUserId}/${crypto.randomUUID()}-${safeName}`;
     const { error } = await supabase.storage.from("chat-images").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });

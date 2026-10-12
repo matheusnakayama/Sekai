@@ -11,6 +11,7 @@ import { inviteCodeFromUrl } from "@/lib/invites";
 import { linkifyMentions, type MentionName } from "@/lib/mentions";
 import { ServerInviteEmbed } from "@/components/ServerInviteCard";
 import { ImageLightbox } from "@/components/ImageLightbox";
+import { safeChatMarkdownUrl } from "@/lib/chatMarkdownUrl";
 
 type Preview = { url: string; title: string; description: string; image: string; site: string };
 const previewCache = new Map<string, Preview | null>();
@@ -79,9 +80,10 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
           if (href === "#sekai-mention" || href === "#sekai-mention-mine") {
             return <span className={href === "#sekai-mention-mine" ? "mention-chip mention-chip-mine" : "mention-chip"}>{children}</span>;
           }
-          return <a href={href} target="_blank" rel="noreferrer" className="sekai-link">{children}</a>;
+          const safeHref = safeChatMarkdownUrl(href ?? "");
+          return safeHref ? <a href={safeHref} target="_blank" rel="noreferrer" className="sekai-link">{children}</a> : <span>{children}</span>;
         },
-      }}>
+      }} skipHtml urlTransform={(url) => safeChatMarkdownUrl(url)}>
         {withEmoji}
       </ReactMarkdown>
     </Tag>

@@ -978,6 +978,7 @@ export function ChatArea({
           <textarea
             ref={composerRef}
             rows={1}
+            maxLength={4000}
             value={draft}
             onChange={(e) => { setDraft(e.target.value); refreshMentionSearch(e.target.value, e.target.selectionStart); }}
             onKeyDown={onComposerKeyDown}

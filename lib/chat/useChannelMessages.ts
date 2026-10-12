@@ -212,6 +212,7 @@ export function useChannelMessages(
     async (content: string, attachmentUrl?: string | null, attachment?: { name: string; mimeType: string }) => {
       // A policy "messages_insert_own" garante author_id = auth.uid(),
       // send_messages = true e que o usuário não está mutado.
+      if (content.length > 4000) throw new Error("A mensagem deve ter no máximo 4.000 caracteres.");
       const pendingId = `pending:${crypto.randomUUID()}`;
       const optimistic: ChatMessage = {
         id: pendingId,

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 export const SPOTIFY_CLIENT_ID = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 const SCOPES = "user-read-currently-playing user-read-playback-state";
 const VERIFIER_KEY = "sekai-spotify-verifier";
+const STATE_KEY = "sekai-spotify-state";
 const SYNC_ISSUE_EVENT = "sekai-spotify-sync-issue";
 
 export type SpotifySession = {
@@ -156,7 +157,9 @@ async function codeChallenge(verifier: string) {
 export async function beginSpotifyConnect() {
   if (!SPOTIFY_CLIENT_ID) throw new Error("O Spotify ainda não foi configurado neste Sekai.");
   const verifier = randomVerifier();
+  const state = randomVerifier().slice(0, 64);
   sessionStorage.setItem(VERIFIER_KEY, verifier);
+  sessionStorage.setItem(STATE_KEY, state);
   const challenge = await codeChallenge(verifier);
   const url = new URL("https://accounts.spotify.com/authorize");
   url.searchParams.set("client_id", SPOTIFY_CLIENT_ID);
@@ -165,13 +168,22 @@ export async function beginSpotifyConnect() {
   url.searchParams.set("scope", SCOPES);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("code_challenge", challenge);
+  url.searchParams.set("state", state);
   window.location.assign(url.toString());
 }
 
-export async function finishSpotifyConnect(code: string) {
-  const verifier = sessionStorage.getItem(VERIFIER_KEY);
+export function cancelSpotifyConnect() {
   sessionStorage.removeItem(VERIFIER_KEY);
-  if (!verifier || !SPOTIFY_CLIENT_ID) throw new Error("A conexão expirou. Abra Conexões e tente de novo.");
+  sessionStorage.removeItem(STATE_KEY);
+}
+
+export async function finishSpotifyConnect(code: string, returnedState: string | null) {
+  const verifier = sessionStorage.getItem(VERIFIER_KEY);
+  const expectedState = sessionStorage.getItem(STATE_KEY);
+  cancelSpotifyConnect();
+  if (!verifier || !expectedState || !returnedState || expectedState !== returnedState || !SPOTIFY_CLIENT_ID) {
+    throw new Error("A conexão expirou ou não pôde ser validada. Abra Conexões e tente de novo.");
+  }
   const body = new URLSearchParams({
     client_id: SPOTIFY_CLIENT_ID,
     grant_type: "authorization_code",

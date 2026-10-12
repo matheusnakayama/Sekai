@@ -43,25 +43,26 @@ export async function POST(request: Request) {
   if (authError || !user) return NextResponse.json({ error: 'Sessão inválida.' }, { status: 401 });
   if (user.id === targetId) return NextResponse.json({ error: 'Não é possível desconectar a própria conta por este menu.' }, { status: 400 });
 
-  const requiredPermissions: Record<ModerationDispatchAction, string[]> = {
-    kick: ['kick_members'],
-    ban: ['ban_members'],
-    timeout: ['moderate_members', 'mute_members'],
-    disconnect: ['move_members'],
-  };
-  const permissionResults = await Promise.all(requiredPermissions[action].map((permission) =>
-    supabase.rpc('has_permission', { p_server_id: serverId, p_permission: permission })
-  ));
-  if (!permissionResults.some((result) => !result.error && result.data === true)) {
-    return NextResponse.json({ error: 'Você não tem permissão para esta ação.' }, { status: 403 });
-  }
-
   if (action === 'disconnect') {
     const { error: authorizationError } = await supabase.rpc('authorize_server_voice_disconnect', {
       p_server_id: serverId,
       p_user_id: targetId,
     });
     if (authorizationError) return NextResponse.json({ error: authorizationError.message }, { status: 403 });
+  } else {
+    // Apenas uma RPC de moderação autorizada e recente cria este passe de uso único.
+    // A verificação também preserva a hierarquia depois de kick/ban removerem o alvo.
+    const { data: authorized, error: authorizationError } = await supabase.rpc('consume_server_moderation_dispatch', {
+      p_server_id: serverId,
+      p_user_id: targetId,
+      p_action: action,
+    });
+    if (authorizationError || authorized !== true) {
+      return NextResponse.json({ error: 'Ação de moderação não autorizada ou expirada.' }, { status: 403 });
+    }
+  }
+
+  if (action === 'disconnect') {
     const { data: targetMembership, error: memberError } = await supabase.from('members')
       .select('user_id')
       .eq('server_id', serverId)

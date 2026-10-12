@@ -52,10 +52,10 @@ export async function POST(request: Request) {
       const isFriend = !!forwardFriendship.data || !!reverseFriendship.data;
       let sharesServer = false;
       if (!isFriend) {
-        const { data: ownMemberships } = await supabase.from('members').select('server_id').eq('user_id', user.id);
+        const { data: ownMemberships } = await supabase.from('members').select('server_id').eq('user_id', user.id).eq('is_banned', false);
         const serverIds = Array.from(new Set((ownMemberships ?? []).map((row) => row.server_id).filter(Boolean)));
         if (serverIds.length) {
-          const { data: sharedMemberships } = await supabase.from('members').select('server_id').eq('user_id', peerId).in('server_id', serverIds);
+          const { data: sharedMemberships } = await supabase.from('members').select('server_id').eq('user_id', peerId).eq('is_banned', false).in('server_id', serverIds);
           sharesServer = !!sharedMemberships?.length;
         }
       }
