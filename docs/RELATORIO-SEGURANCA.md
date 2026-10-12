@@ -51,7 +51,7 @@ Branch: `seguranca-auth`
 
 ## Verificações executadas
 
-- `npm run test`: **17 testes passaram, 0 falharam**, em três arquivos (`auth-validation`, `request-body`, `security-boundaries`). Inclui verificações estáticas do snapshot, migrations e handlers; não é teste SQL/RLS.
+- `npm run test`: **23 testes passaram, 0 falharam**, em quatro arquivos (`auth-validation`, `migration-schema-compat`, `request-body`, `security-boundaries`). Inclui comparação estática de relações/colunas do manifesto com o snapshot e verificações de migrations/handlers; não é teste SQL/RLS contra servidor.
 - `npm run lint`: passou com avisos de hooks e `<img>`.
 - `npx tsc --noEmit --incremental false`: passou.
 - `npm run build`: passou em cópia temporária do repo sem `.env*`. Build gerou páginas e rotas; avisos de cache Webpack e lint não impediram a compilação.

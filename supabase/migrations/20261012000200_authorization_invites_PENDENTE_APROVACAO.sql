@@ -146,13 +146,15 @@ begin
      or p_permission not in ('kick_members', 'ban_members', 'mute_members', 'moderate_members', 'move_members', 'manage_roles', 'manage_nicknames') then
     return false;
   end if;
-  -- Serializa cambios a roles/moderacao do servidor e le a hierarquia apos obter o lock.
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
+  -- Rejeita quem nao tem permissao antes do lock; valida novamente sob lock.
   if not public.has_permission(p_server_id, p_permission) then return false; end if;
   if public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if public.is_sekai_admin() then return true; end if;
   if not public.is_server_owner(p_server_id) and not exists (select 1 from public.members m
       where m.server_id = p_server_id and m.user_id = v_actor and not coalesce(m.is_banned, false)) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
+  if not public.has_permission(p_server_id, p_permission)
+     or public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if public.is_server_owner(p_server_id) then return true; end if;
   if exists (select 1 from public.servers s where s.id = p_server_id and s.owner_id = p_user_id) then return false; end if;
   if not exists (
@@ -176,12 +178,14 @@ declare
   v_role_position integer;
 begin
   if v_actor is null or p_server_id is null or p_role_id is null then return false; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if not public.has_permission(p_server_id, 'manage_roles') then return false; end if;
   if public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if not public.is_sekai_admin() and not public.is_server_owner(p_server_id)
      and not exists (select 1 from public.members m where m.server_id = p_server_id
        and m.user_id = v_actor and not coalesce(m.is_banned, false)) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
+  if not public.has_permission(p_server_id, 'manage_roles')
+     or public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   select r.position into v_role_position
   from public.roles r
   where r.id = p_role_id and r.server_id = p_server_id and not coalesce(r.is_default, false);
@@ -209,12 +213,14 @@ begin
   if v_actor is null or p_server_id is null or p_position is null or p_position < 0 or p_permissions is null then
     return false;
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if not public.has_permission(p_server_id, 'manage_roles') then return false; end if;
   if public.is_sekai_admin() then return true; end if;
   if public.sekai_is_member_timed_out(p_server_id, v_actor)
      or not exists (select 1 from public.members m where m.server_id = p_server_id
        and m.user_id = v_actor and not coalesce(m.is_banned, false)) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
+  if not public.has_permission(p_server_id, 'manage_roles')
+     or public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if public.is_server_owner(p_server_id) then return true; end if;
   if (p_permissions & public.perm('ADMINISTRATOR')) <> 0 then return false; end if;
   v_rank := public.sekai_actor_role_position(p_server_id);
@@ -291,12 +297,14 @@ declare
   v_target_position integer;
 begin
   if v_actor is null or p_server_id is null or p_user_id is null or p_user_id = v_actor then return false; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if not public.has_permission(p_server_id, 'ban_members') then return false; end if;
   if public.is_sekai_admin() then return true; end if;
   if public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if not public.is_server_owner(p_server_id) and not exists (select 1 from public.members m
       where m.server_id = p_server_id and m.user_id = v_actor and not coalesce(m.is_banned, false)) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
+  if not public.has_permission(p_server_id, 'ban_members')
+     or public.sekai_is_member_timed_out(p_server_id, v_actor) then return false; end if;
   if public.is_server_owner(p_server_id) then return true; end if;
   if p_delete then
     select b.target_role_position into v_target_position
@@ -380,12 +388,12 @@ begin
   if auth.uid() is null or p_server_id is null or p_user_id is null or p_role_id is null or p_assign is null then
     raise exception 'Autenticacao necessaria' using errcode = '42501';
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if p_user_id = auth.uid() then raise exception 'Nao e permitido alterar os proprios cargos' using errcode = '42501'; end if;
   if not public.sekai_can_manage_member(p_server_id, p_user_id, 'manage_roles')
      or not public.sekai_can_manage_role(p_server_id, p_role_id) then
     raise exception 'Sem permissao para alterar este cargo ou membro' using errcode = '42501';
   end if;
+  -- Helpers check permission before taking the server lock and retain it for this transaction.
   if not exists (select 1 from public.members m where m.server_id = p_server_id and m.user_id = p_user_id) then
     raise exception 'Membro nao encontrado neste servidor' using errcode = 'P0002';
   end if;
@@ -426,8 +434,12 @@ begin
     raise exception 'Acao de moderacao invalida' using errcode = '22023';
   end if;
   if char_length(coalesce(p_reason, '')) > 200 then raise exception 'Motivo muito longo' using errcode = '22023'; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   v_permission := case p_action when 'kick' then 'kick_members' else 'ban_members' end;
+  if not public.has_permission(p_server_id, v_permission)
+     or public.sekai_is_member_timed_out(p_server_id, auth.uid()) then
+    raise exception 'Sem permissao para moderar este membro' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if not public.sekai_can_manage_member(p_server_id, p_user_id, v_permission) then
     raise exception 'Sem permissao para moderar este membro' using errcode = '42501';
   end if;
@@ -470,10 +482,17 @@ begin
   if auth.uid() is null or p_server_id is null or p_user_id is null or p_user_id = auth.uid() then
     raise exception 'Autenticacao necessaria' using errcode = '42501';
   end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if p_until is not null and (p_until <= clock_timestamp() or p_until > clock_timestamp() + interval '28 days') then
     raise exception 'Duracao de timeout invalida' using errcode = '22023';
   end if;
+  if not (public.has_permission(p_server_id, 'moderate_members') or public.has_permission(p_server_id, 'mute_members'))
+     or public.sekai_is_member_timed_out(p_server_id, auth.uid())
+     or (not public.is_sekai_admin() and not public.is_server_owner(p_server_id)
+       and not exists (select 1 from public.members m where m.server_id = p_server_id
+         and m.user_id = auth.uid() and not coalesce(m.is_banned, false))) then
+    raise exception 'Sem permissao para moderar este membro' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   select exists (select 1 from public.members m where m.server_id = p_server_id and m.user_id = p_user_id)
     into v_member_exists;
   if v_member_exists then
@@ -538,6 +557,9 @@ declare
 begin
   if auth.uid() is null or p_server_id is null or p_user_id is null or p_user_id = auth.uid() then raise exception 'Autenticacao necessaria' using errcode = '42501'; end if;
   if char_length(coalesce(p_nickname, '')) > 32 then raise exception 'Apelido muito longo' using errcode = '22023'; end if;
+  if not public.sekai_can_manage_member(p_server_id, p_user_id, 'manage_nicknames') then
+    raise exception 'Sem permissao para alterar o apelido deste membro' using errcode = '42501';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended(p_server_id::text, 9173));
   if not public.sekai_can_manage_member(p_server_id, p_user_id, 'manage_nicknames') then
     raise exception 'Sem permissao para alterar o apelido deste membro' using errcode = '42501';
@@ -587,20 +609,16 @@ end;
 $$;
 revoke all on function public.sekai_consume_invite_attempt() from public, anon, authenticated;
 
--- A normalizacao usada pelo resgate precisa ser univoca: sem isso SELECT ... FOR UPDATE
--- poderia escolher arbitrariamente entre codigos que diferem apenas por caixa/espacos.
+-- invite_code nao existe em public.servers no snapshot de producao. Os codigos
+-- resgataveis vem apenas de invites.code; a normalizacao precisa ser univoca.
 do $$
 begin
-  if exists (select 1 from public.invites group by upper(btrim(code)) having count(*) > 1)
-     or exists (select 1 from public.servers where invite_code is not null and btrim(invite_code) <> ''
-       group by upper(btrim(invite_code)) having count(*) > 1) then
+  if exists (select 1 from public.invites group by upper(btrim(code)) having count(*) > 1) then
     raise exception 'Existem codigos de convite duplicados apos normalizacao; deduplique-os antes de aplicar a migration';
   end if;
 end;
 $$;
 create unique index if not exists invites_normalized_code_unique_idx on public.invites ((upper(btrim(code))));
-create unique index if not exists servers_normalized_invite_code_unique_idx
-  on public.servers ((upper(btrim(invite_code)))) where invite_code is not null and btrim(invite_code) <> '';
 
 create or replace function public.preview_invite(p_code text)
 returns jsonb
@@ -629,9 +647,6 @@ begin
      and (coalesce(i.max_uses, 0) = 0 or coalesce(i.uses, 0) < i.max_uses)
      and (coalesce(i.max_age, 0) = 0 or i.created_at + make_interval(secs => i.max_age) > clock_timestamp())
    limit 1;
-  if v_server_id is null then
-    select s.id into v_server_id from public.servers s where upper(btrim(s.invite_code)) = v_code limit 1;
-  end if;
   if v_server_id is null then return null; end if;
   select s.name, s.icon_url, s.banner_url, s.created_at into v_name, v_icon, v_banner, v_created
     from public.servers s where s.id = v_server_id;
@@ -679,8 +694,7 @@ begin
        or (coalesce(v_invite.max_uses, 0) > 0 and coalesce(v_invite.uses, 0) >= v_invite.max_uses) then return null; end if;
     v_server_id := v_invite.server_id;
   else
-    select s.id into v_server_id from public.servers s where upper(btrim(s.invite_code)) = v_code limit 1;
-    if v_server_id is null then return null; end if;
+    return null;
   end if;
   if v_server_id is null then return null; end if;
 

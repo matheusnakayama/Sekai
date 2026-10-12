@@ -27,7 +27,7 @@
 - **Alta até a aprovação:** o banco em produção ainda conserva as policies/grants atuais. As migrations pendentes não são correções aplicadas.
 - **Média:** Spotify usa OAuth PKCE com state, mas tokens de acesso e renovação ainda são persistidos no `localStorage`, ficando expostos a JavaScript de mesma origem em caso de XSS.
 - **Média:** convite limita tentativas por usuário autenticado, sem rate limit por IP no RPC. Realtime, Pusher, voz, Storage e callbacks Blob ainda não foram testados com serviços reais.
-- O relatório lista a cobertura local, avisos e etapas de staging necessárias. Os 17 testes automatizados são testes unitários/estáticos e não provam políticas efetivas no banco.
+- O relatório lista a cobertura local, avisos e etapas de staging necessárias. Os 23 testes automatizados são testes unitários/estáticos e não provam políticas efetivas no banco.
 
 ## Relato de falhas
 
