@@ -5,9 +5,13 @@
 begin;
 set local search_path = pg_catalog, public, auth, extensions, storage, realtime, pg_temp;
 
--- Resolve a ambiguidade sem DROP: remove o DEFAULT da sobrecarga de 2 argumentos.
--- Chamadas antigas explicitas com dois UUIDs continuam resolvendo a assinatura,
--- mas so podem consultar a propria associacao (ou ser feitas por admin).
+-- Em producao existem DUAS sobrecargas: is_server_member(uuid) e
+-- is_server_member(uuid, uuid DEFAULT auth.uid()). Doze policies dependem da
+-- sobrecarga de 2 argumentos, entao nao da para apaga-la (erro 2BP01), e o
+-- Postgres tambem proibe remover o DEFAULT via CREATE OR REPLACE (erro 42P13).
+-- Solucao: manter a sobrecarga de 2 argumentos COM o mesmo DEFAULT e atualizar
+-- apenas o corpo (alterar corpo nao muda o default, entao e permitido).
+-- Chamadas de 1 argumento resolvem para a sobrecarga exata (uuid).
 
 create or replace function public.is_server_member(p_server_id uuid)
 returns boolean
@@ -27,7 +31,7 @@ $$;
 revoke all on function public.is_server_member(uuid) from public, anon;
 grant execute on function public.is_server_member(uuid) to authenticated;
 
-create or replace function public.is_server_member(p_server_id uuid, p_user_id uuid)
+create or replace function public.is_server_member(p_server_id uuid, p_user_id uuid default auth.uid())
 returns boolean
 language sql
 stable
