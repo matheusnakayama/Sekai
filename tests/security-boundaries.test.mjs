@@ -41,6 +41,7 @@ test("login does not depend on the redirect origin while signup and recovery do"
 test("theme initialization is same-origin external JavaScript without a nonce mismatch", () => {
   const layout = readFileSync(resolve(root, "app/layout.tsx"), "utf8");
   const themeRoute = readFileSync(resolve(root, "app/theme-init.js/route.ts"), "utf8");
+  assert.match(layout, /export const dynamic = "force-dynamic"/);
   assert.match(layout, /<Script src="\/theme-init\.js" strategy="beforeInteractive" \/>/);
   assert.doesNotMatch(layout, /dangerouslySetInnerHTML|nonce=/);
   assert.match(themeRoute, /Content-Type": "application\/javascript/);
