@@ -350,6 +350,12 @@ export default function RoomClient({
     if (!track || !micOn || phase !== 'in-call' || deafened) {
       setLocalSpeaking(false);
       updateLocalParticipant({ isSpeaking: false });
+      managerRef.current?.broadcastMediaState({
+        micOn: currentMicRef.current,
+        camOn: currentCamRef.current,
+        deafened: currentDeafenedRef.current,
+        isSpeaking: false,
+      });
       return;
     }
     const context = new AudioContext();
@@ -376,6 +382,12 @@ export default function RoomClient({
       if (next.speaking !== gate.speaking) {
         setLocalSpeaking(next.speaking);
         updateLocalParticipant({ isSpeaking: next.speaking });
+        managerRef.current?.broadcastMediaState({
+          micOn: currentMicRef.current,
+          camOn: currentCamRef.current,
+          deafened: currentDeafenedRef.current,
+          isSpeaking: next.speaking,
+        });
       }
       gate = next;
       frame = window.requestAnimationFrame(sample);
@@ -389,6 +401,12 @@ export default function RoomClient({
       void context.close();
       setLocalSpeaking(false);
       updateLocalParticipant({ isSpeaking: false });
+      managerRef.current?.broadcastMediaState({
+        micOn: currentMicRef.current,
+        camOn: currentCamRef.current,
+        deafened: currentDeafenedRef.current,
+        isSpeaking: false,
+      });
     };
   }, [activeMicrophoneTrackId, micOn, phase, deafened]);
 
@@ -582,6 +600,17 @@ export default function RoomClient({
         });
       };
 
+      manager.onAudioTransportProblem = (peerId, attempt) => {
+        const participantName = participantNamesRef.current.get(peerId) || 'o outro participante';
+        showProblem(
+          attempt === 1
+            ? `O áudio de ${participantName} não está chegando apesar da chamada conectada. O Sekai está tentando restabelecer a rota de voz.`
+            : `O áudio de ${participantName} continuou sem chegar após a recuperação automática. Saiam e entrem novamente na chamada com a versão mais recente do Sekai.`,
+          true,
+          attempt > 1,
+        );
+      };
+
       manager.onScreenShareState = (peerId, sharing) => {
         const wasSharing = remoteScreenSharingIdsRef.current.has(peerId);
         if (sharing) remoteScreenSharingIdsRef.current.add(peerId);
@@ -645,9 +674,19 @@ export default function RoomClient({
 
         setPhase('in-call');
 
+        others.forEach((member) => manager.preparePeerConnection(member.id));
+
+        // O recém-chegado não recebe o evento member_added dos participantes
+        // existentes; anuncie o estado inicial do microfone para o monitor RTP.
+        manager.broadcastMediaState({
+          micOn: currentMicRef.current,
+          camOn: currentCamRef.current,
+          deafened: currentDeafenedRef.current,
+          isSpeaking: false,
+        });
+
         // Um lado só inicia a conexão de cada par, evitando ofertas simultâneas.
         others.forEach((m) => {
-          manager.preparePeerConnection(m.id);
           if (localIdRef.current < m.id) {
             manager.callPeer(m.id).catch(() => {
               showProblem(`Não foi possível conectar com ${m.info?.name || 'um participante'}.`, true);

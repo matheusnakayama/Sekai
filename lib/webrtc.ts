@@ -25,6 +25,7 @@ type SpeakingHandler = (peerId: string, speaking: boolean) => void;
 type ScreenShareHandler = (peerId: string, sharing: boolean) => void;
 type ScreenShareFailureHandler = (peerId: string) => void;
 type MediaStateHandler = (peerId: string, state: { micOn: boolean; camOn: boolean; deafened?: boolean }) => void;
+type AudioTransportProblemHandler = (peerId: string, attempt: number) => void;
 
 export interface VideoSenderProfile {
   maxBitrate: number;
@@ -48,6 +49,18 @@ interface PeerEntry {
   iceRestartQueued: boolean;
   recoveryAttempts: number;
   recoveryTimer?: number;
+  audioHealthTimer?: number;
+  audioHealthCheckRunning?: boolean;
+  localMicOn: boolean;
+  localSpeaking: boolean;
+  remoteMicOn?: boolean;
+  remoteSpeaking?: boolean;
+  lastInboundAudioPackets?: number;
+  lastOutboundAudioPackets?: number;
+  inboundAudioNoProgressChecks: number;
+  outboundAudioNoProgressChecks: number;
+  audioSenderRepairAttempted: boolean;
+  audioRecoveryTarget?: 'inbound' | 'outbound';
   generation: number;
   useRelay: boolean;
   attemptStartedAt: number;
@@ -139,6 +152,9 @@ export class WebRTCManager {
   private channel: Channel;
   private localId: string;
   private accessToken: string;
+  private localMicOn = true;
+  private localSpeaking = false;
+  private audioRecoveryAttempts = new Map<string, number>();
 
   onTrack: TrackHandler = () => {};
   onSoundboardTrack: SoundboardTrackHandler = () => {};
@@ -148,6 +164,7 @@ export class WebRTCManager {
   onScreenShareState: ScreenShareHandler = () => {};
   onScreenShareFailure: ScreenShareFailureHandler = () => {};
   onMediaState: MediaStateHandler = () => {};
+  onAudioTransportProblem: AudioTransportProblemHandler = () => {};
 
   constructor(channel: Channel, localId: string, accessToken: string) {
     this.channel = channel;
@@ -165,6 +182,7 @@ export class WebRTCManager {
 
   setLocalStream(stream: MediaStream) {
     this.localStream = stream;
+    this.localMicOn = stream.getAudioTracks()[0]?.enabled ?? false;
     this.watchSpeaking(this.localId, stream);
   }
 
@@ -228,6 +246,7 @@ export class WebRTCManager {
     const entry = this.peers.get(peerId);
     if (entry) {
       if (entry.recoveryTimer !== undefined) window.clearTimeout(entry.recoveryTimer);
+      if (entry.audioHealthTimer !== undefined) window.clearTimeout(entry.audioHealthTimer);
       if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
       if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
       if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
@@ -253,6 +272,7 @@ export class WebRTCManager {
     const screenIds = this.remoteScreenByPeer.get(peerId);
     screenIds?.forEach((id) => this.remoteScreenTrackIds.delete(id));
     this.remoteScreenByPeer.delete(peerId);
+    this.audioRecoveryAttempts.delete(peerId);
     const watcher = this.speakingWatchers.get(peerId);
     if (watcher) {
       cancelAnimationFrame(watcher.raf);
@@ -383,11 +403,24 @@ export class WebRTCManager {
     this.send({ type: 'screen-share-state', from: this.localId, sharing });
   }
 
-  broadcastMediaState(state: { micOn: boolean; camOn: boolean; deafened?: boolean }) {
-    this.send({ type: 'media-state', from: this.localId, ...state });
+  broadcastMediaState(state: { micOn: boolean; camOn: boolean; deafened?: boolean; isSpeaking?: boolean }) {
+    this.localMicOn = state.micOn;
+    this.localSpeaking = state.isSpeaking ?? this.localSpeaking;
+    for (const peer of this.peers.values()) {
+      peer.localMicOn = this.localMicOn;
+      peer.localSpeaking = this.localSpeaking;
+    }
+    this.send({ type: 'media-state', from: this.localId, ...state, isSpeaking: this.localSpeaking });
   }
 
-  private ensurePeerConnection(peerId: string, options?: { generation?: number; useRelay?: boolean }): RTCPeerConnection {
+  private ensurePeerConnection(peerId: string, options?: {
+    generation?: number;
+    useRelay?: boolean;
+    remoteMicOn?: boolean;
+    remoteSpeaking?: boolean;
+    audioRecoveryTarget?: 'inbound' | 'outbound';
+    audioSenderRepairAttempted?: boolean;
+  }): RTCPeerConnection {
     const existing = this.peers.get(peerId);
     if (existing) return existing.connection;
 
@@ -413,6 +446,14 @@ export class WebRTCManager {
       flushedCandidateCount: 0,
       appliedCandidates: new Set(),
       videoParametersChain: Promise.resolve(),
+      localMicOn: this.localMicOn,
+      localSpeaking: this.localSpeaking,
+      remoteMicOn: options?.remoteMicOn,
+      remoteSpeaking: options?.remoteSpeaking,
+      inboundAudioNoProgressChecks: 0,
+      outboundAudioNoProgressChecks: 0,
+      audioSenderRepairAttempted: options?.audioSenderRepairAttempted ?? false,
+      audioRecoveryTarget: options?.audioRecoveryTarget,
     };
     this.peers.set(peerId, peer);
     peer.pendingCandidates.push(...this.takeEarlyVoiceIce(peerId, peer.generation));
@@ -552,6 +593,148 @@ export class WebRTCManager {
     }
   }
 
+  private scheduleAudioHealthCheck(peerId: string, peer: PeerEntry, delayMs = 3_500) {
+    if (peer.audioHealthTimer !== undefined || peer.connection.signalingState === 'closed') return;
+    peer.audioHealthTimer = window.setTimeout(() => {
+      peer.audioHealthTimer = undefined;
+      if (this.peers.get(peerId) !== peer || peer.connection.connectionState !== 'connected') return;
+      void this.checkAudioHealth(peerId, peer).catch((error) => {
+        console.warn('Não foi possível verificar o fluxo de áudio:', error);
+      }).finally(() => {
+        if (this.peers.get(peerId) === peer && peer.connection.connectionState === 'connected') {
+          this.scheduleAudioHealthCheck(peerId, peer);
+        }
+      });
+    }, delayMs);
+  }
+
+  private async checkAudioHealth(peerId: string, peer: PeerEntry) {
+    if (peer.audioHealthCheckRunning || !peer.audioTransceiver) return;
+    peer.audioHealthCheckRunning = true;
+    try {
+      const localActive = peer.localMicOn && peer.localSpeaking;
+      const remoteActive = peer.remoteMicOn === true && peer.remoteSpeaking === true;
+      // Clientes anteriores não anunciam quando começam a falar. Para eles,
+      // o microfone ativo usa uma janela maior para ignorar o silêncio normal.
+      const legacyRemoteActive = peer.remoteMicOn === true && peer.remoteSpeaking === undefined;
+      if (!localActive && !remoteActive && !legacyRemoteActive) {
+        peer.inboundAudioNoProgressChecks = 0;
+        peer.outboundAudioNoProgressChecks = 0;
+        return;
+      }
+
+      const [inboundResult, outboundResult] = await Promise.allSettled([
+        peer.audioTransceiver.receiver.getStats(),
+        peer.audioTransceiver.sender.getStats(),
+      ]);
+      if (this.peers.get(peerId) !== peer || peer.connection.connectionState !== 'connected') return;
+
+      const packetCount = (
+        report: RTCStatsReport,
+        type: 'inbound-rtp' | 'outbound-rtp',
+        field: 'packetsReceived' | 'packetsSent',
+      ) => {
+        const matching = Array.from(report.values()).filter((entry) => {
+          const stats = entry as unknown as Record<string, unknown>;
+          return stats.type === type && stats.isRemote !== true;
+        });
+        if (!matching.length) return 0;
+        return matching.reduce((total, entry) => {
+          const value = Number((entry as unknown as Record<string, unknown>)[field]);
+          return total + (Number.isFinite(value) ? value : 0);
+        }, 0);
+      };
+
+      let inboundProgress = false;
+      let outboundProgress = false;
+      if (inboundResult.status === 'fulfilled' && (remoteActive || legacyRemoteActive)) {
+        const packets = packetCount(inboundResult.value, 'inbound-rtp', 'packetsReceived');
+        inboundProgress = peer.lastInboundAudioPackets !== undefined && packets > peer.lastInboundAudioPackets;
+        peer.inboundAudioNoProgressChecks = inboundProgress || peer.lastInboundAudioPackets === undefined
+          ? 0
+          : peer.inboundAudioNoProgressChecks + 1;
+        peer.lastInboundAudioPackets = packets;
+      }
+      if (outboundResult.status === 'fulfilled' && localActive) {
+        const packets = packetCount(outboundResult.value, 'outbound-rtp', 'packetsSent');
+        outboundProgress = peer.lastOutboundAudioPackets !== undefined && packets > peer.lastOutboundAudioPackets;
+        peer.outboundAudioNoProgressChecks = outboundProgress || peer.lastOutboundAudioPackets === undefined
+          ? 0
+          : peer.outboundAudioNoProgressChecks + 1;
+        peer.lastOutboundAudioPackets = packets;
+      }
+
+      if (
+        (peer.audioRecoveryTarget === 'inbound' && inboundProgress) ||
+        (peer.audioRecoveryTarget === 'outbound' && outboundProgress) ||
+        (peer.audioRecoveryTarget === undefined && this.audioRecoveryAttempts.has(peerId) && inboundProgress)
+      ) {
+        this.audioRecoveryAttempts.delete(peerId);
+        peer.audioRecoveryTarget = undefined;
+        peer.audioSenderRepairAttempted = false;
+      }
+
+      const inboundThreshold = legacyRemoteActive ? 9 : 3;
+      if ((remoteActive || legacyRemoteActive) && peer.inboundAudioNoProgressChecks >= inboundThreshold) {
+        await this.recoverSilentAudio(peerId, peer, 'inbound');
+        return;
+      }
+
+      if (localActive && peer.outboundAudioNoProgressChecks >= 3) {
+        if (!peer.audioSenderRepairAttempted) {
+          const track = this.hasAudioTrackOverride
+            ? this.audioTrackOverride
+            : this.localStream?.getAudioTracks()[0] ?? null;
+          if (track?.readyState === 'live' && track.enabled) {
+            peer.audioSenderRepairAttempted = true;
+            peer.outboundAudioNoProgressChecks = 0;
+            peer.lastOutboundAudioPackets = undefined;
+            await peer.audioTransceiver.sender.replaceTrack(null);
+            await peer.audioTransceiver.sender.replaceTrack(track);
+            await this.configureVoiceSender(peer.audioTransceiver.sender);
+            console.info('Faixa de voz reconectada após detectar ausência de pacotes enviados.', peerId);
+            return;
+          }
+        }
+        if (peer.audioSenderRepairAttempted && peer.outboundAudioNoProgressChecks >= 3) {
+          await this.recoverSilentAudio(peerId, peer, 'outbound');
+        }
+      }
+    } finally {
+      peer.audioHealthCheckRunning = false;
+    }
+  }
+
+  private async recoverSilentAudio(peerId: string, peer: PeerEntry, target: 'inbound' | 'outbound') {
+    if (this.peers.get(peerId) !== peer) return;
+    const previousAttempts = this.audioRecoveryAttempts.get(peerId) ?? 0;
+    if (previousAttempts >= 2) return;
+    const attempt = previousAttempts + 1;
+    this.audioRecoveryAttempts.set(peerId, attempt);
+    peer.audioRecoveryTarget = target;
+    peer.inboundAudioNoProgressChecks = 0;
+    peer.outboundAudioNoProgressChecks = 0;
+    this.onAudioTransportProblem(peerId, attempt);
+    if (attempt > 1) return;
+
+    await this.refreshIceServers();
+    if (this.peers.get(peerId) !== peer) return;
+    const relay = peer.useRelay || hasTurnUrl(this.iceServers);
+    if (this.localId < peerId) {
+      this.resetPeer(peerId, true, relay);
+    } else {
+      this.send({
+        type: 'peer-reset',
+        from: this.localId,
+        to: peerId,
+        generation: peer.generation,
+        relay,
+        request: true,
+        audioRecovery: true,
+      });
+    }
+  }
+
   /**
    * Uma rede lenta ficava em "Conectando" porque os dois lados derrubavam a
    * tentativa um do outro, ou porque a checagem ainda nem tinha terminado.
@@ -637,6 +820,7 @@ export class WebRTCManager {
         peer.offerRetryTimer = undefined;
       }
       this.onConnectionStateChange(peerId, 'connected');
+      this.scheduleAudioHealthCheck(peerId, peer);
       if (this.videoProfileOverride) {
         const sender = pc.getSenders().find((candidate) => candidate.track?.kind === 'video');
         if (sender) void this.configureVideoSender(sender, this.profileForCurrentPeerCount(this.videoProfileOverride), peer);
@@ -683,12 +867,18 @@ export class WebRTCManager {
     const existing = this.peers.get(peerId);
     if (existing?.resetting) return;
     const attempts = existing?.recoveryAttempts ?? 0;
+    const audioState = {
+      remoteMicOn: existing?.remoteMicOn,
+      remoteSpeaking: existing?.remoteSpeaking,
+      audioRecoveryTarget: existing?.audioRecoveryTarget,
+      audioSenderRepairAttempted: existing?.audioSenderRepairAttempted,
+    };
     const generation = (existing?.generation ?? 0) + 1;
     const useRelay = relay || existing?.useRelay || false;
     if (notify) this.send({ type: 'peer-reset', from: this.localId, to: peerId, generation, relay: useRelay });
     this.discardConnection(peerId);
     this.onConnectionStateChange(peerId, 'disconnected');
-    this.ensurePeerConnection(peerId, { generation, useRelay });
+    this.ensurePeerConnection(peerId, { generation, useRelay, ...audioState });
     const peer = this.peers.get(peerId);
     if (!peer) return;
     peer.resetting = true;
@@ -711,9 +901,15 @@ export class WebRTCManager {
     const existing = this.peers.get(peerId);
     if (existing?.generation === generation && existing.connection.signalingState !== 'closed') return;
     const attempts = existing?.recoveryAttempts ?? 0;
+    const audioState = {
+      remoteMicOn: existing?.remoteMicOn,
+      remoteSpeaking: existing?.remoteSpeaking,
+      audioRecoveryTarget: existing?.audioRecoveryTarget,
+      audioSenderRepairAttempted: existing?.audioSenderRepairAttempted,
+    };
     this.discardConnection(peerId);
     this.onConnectionStateChange(peerId, 'disconnected');
-    this.ensurePeerConnection(peerId, { generation, useRelay: relay });
+    this.ensurePeerConnection(peerId, { generation, useRelay: relay, ...audioState });
     const peer = this.peers.get(peerId);
     if (!peer) return;
     peer.recoveryAttempts = attempts;
@@ -730,6 +926,7 @@ export class WebRTCManager {
     const entry = this.peers.get(peerId);
     if (!entry) return;
     this.clearRecovery(entry);
+    if (entry.audioHealthTimer !== undefined) window.clearTimeout(entry.audioHealthTimer);
     if (entry.initialCallFallbackTimer !== undefined) window.clearTimeout(entry.initialCallFallbackTimer);
     if (entry.offerRetryTimer !== undefined) window.clearTimeout(entry.offerRetryTimer);
     if (entry.videoArrivalTimer !== undefined) window.clearTimeout(entry.videoArrivalTimer);
@@ -1287,10 +1484,16 @@ export class WebRTCManager {
       return;
     }
     if (payload.type === 'peer-reset') {
-      this.handlePeerReset(payload.from, payload.generation, payload.relay === true, payload.request === true);
+      this.handlePeerReset(payload.from, payload.generation, payload.relay === true, payload.request === true, payload.audioRecovery === true);
       return;
     }
     if (payload.type === 'media-state') {
+      const peer = this.peers.get(payload.from);
+      if (peer) {
+        peer.remoteMicOn = payload.micOn;
+        if (payload.isSpeaking !== undefined) peer.remoteSpeaking = payload.isSpeaking;
+        if (!peer.remoteMicOn || peer.remoteSpeaking === false) peer.inboundAudioNoProgressChecks = 0;
+      }
       this.onMediaState(payload.from, { micOn: payload.micOn, camOn: payload.camOn, deafened: payload.deafened });
       return;
     }
@@ -1384,18 +1587,25 @@ export class WebRTCManager {
     }
   }
 
-  private handlePeerReset(peerId: string, generation: number | undefined, relay: boolean, request: boolean) {
+  private handlePeerReset(
+    peerId: string,
+    generation: number | undefined,
+    relay: boolean,
+    request: boolean,
+    audioRecovery = false,
+  ) {
     if (request) {
       if (this.localId > peerId) return;
       const peer = this.peers.get(peerId);
       if (peer?.resetting) return;
       const failed = peer?.connection.connectionState === 'failed' || peer?.connection.iceConnectionState === 'failed';
-      if (peer?.useRelay && !failed && Date.now() - peer.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
+      if (!audioRecovery && peer?.useRelay && !failed && Date.now() - peer.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
+      if (audioRecovery) this.audioRecoveryAttempts.set(peerId, Math.max(this.audioRecoveryAttempts.get(peerId) ?? 0, 1));
       void this.refreshIceServers().finally(() => {
         const current = this.peers.get(peerId);
         if (!current || current.resetting) return;
         const stillFailed = current.connection.connectionState === 'failed' || current.connection.iceConnectionState === 'failed';
-        if (current.useRelay && !stillFailed && Date.now() - current.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
+        if (!audioRecovery && current.useRelay && !stillFailed && Date.now() - current.attemptStartedAt < VOICE_CHECKING_GRACE_MS) return;
         this.resetPeer(peerId, true, relay || hasTurnUrl(this.iceServers));
       });
       return;
