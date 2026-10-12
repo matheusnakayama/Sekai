@@ -168,6 +168,33 @@ export default function RoomClient({
   onCloseRef.current = onClose;
 
   useEffect(() => {
+    const desktop = window.sekaiDesktop;
+    if (!desktop) return;
+    const active = phase === 'in-call';
+    const publishOverlayState = () => {
+      const brandChannels = getComputedStyle(document.documentElement).getPropertyValue('--brand-500').trim().split(/\s+/).map(Number);
+      const accentColor = brandChannels.length === 3 && brandChannels.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 255)
+        ? `#${brandChannels.map((channel) => Math.round(channel).toString(16).padStart(2, '0')).join('')}`
+        : '#22c55e';
+      desktop.updateOverlayCall({
+        callName: active ? roomName : '',
+        accentColor,
+        participants: active ? Object.values(participants).map((participant) => ({
+          id: participant.id,
+          name: participant.name,
+          avatarUrl: participant.avatarUrl || '',
+          isSpeaking: participant.isLocal ? localSpeaking : participant.isSpeaking,
+          micOn: participant.micOn,
+        })) : [],
+      });
+    };
+    publishOverlayState();
+    const themeObserver = new MutationObserver(publishOverlayState);
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => themeObserver.disconnect();
+  }, [localSpeaking, participants, phase, roomName]);
+
+  useEffect(() => {
     if (!userId) return;
     const applyPreferences = (preferences: VoicePreferences) => {
       setSelectedInputDeviceId(preferences.inputDeviceId);

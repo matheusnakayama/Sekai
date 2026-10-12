@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+body { color: #fff; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+#widget { width: 320px; transform-origin: top left; padding: 6px 10px; }
+#call-title { max-width: 300px; padding: 0 0 7px 4px; color: rgba(255,255,255,.82); font-size: 11px; font-weight: 700; letter-spacing: .03em; text-shadow: 0 1px 4px #000; }
+#participants { display: flex; flex-direction: column; gap: 5px; }
+.participant-button { display: flex; width: fit-content; max-width: 300px; min-height: 40px; align-items: center; gap: 7px; padding: 4px 11px 4px 5px; border: 2px solid transparent; border-radius: 24px; background: rgba(13, 15, 18, .78); box-shadow: 0 2px 9px rgba(0,0,0,.28); color: inherit; cursor: pointer; opacity: .64; text-align: left; transition: opacity 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+.participant.speaking, .participant-button.speaking { border-color: var(--voice-accent, #35d07f); box-shadow: 0 0 0 1px color-mix(in srgb, var(--voice-accent, #35d07f) 30%, transparent), 0 0 13px color-mix(in srgb, var(--voice-accent, #35d07f) 48%, transparent); opacity: 1; transform: translateX(2px); }
+.avatar { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; overflow: hidden; border-radius: 50%; background: #5142ad; color: white; font-size: 12px; font-weight: 700; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.name { overflow: hidden; max-width: 210px; color: #fff; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px #000; }
+.mic { margin-left: 2px; color: #ff5b64; font-size: 11px; }
+#overflow { width: fit-content; margin: 5px 0 0 6px; padding: 3px 9px; border-radius: 12px; background: rgba(13,15,18,.8); color: #fff; font-size: 11px; }

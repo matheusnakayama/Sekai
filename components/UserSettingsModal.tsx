@@ -19,9 +19,10 @@ import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { SpotifyConnections } from "@/components/SpotifyConnections";
 import { VoiceSettingsPanel } from "@/components/VoiceSettingsPanel";
+import { OverlaySettingsPanel } from "@/components/OverlaySettingsPanel";
 import { CHAT_PREFERENCES_EVENT, DEFAULT_CHAT_DISPLAY, type ChatDisplayPreferences } from "@/lib/chatPreferences";
 
-type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias" | "voz";
+type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias" | "voz" | "sobreposicao";
 type Presence = "online" | "idle" | "dnd" | "offline";
 type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean; chat: ChatDisplayPreferences };
 
@@ -66,6 +67,7 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
   { id: "mensagens", label: "Mensagens", icon: MessageSquare, group: "Aplicativo" },
   { id: "acessibilidade", label: "Acessibilidade", icon: Accessibility, group: "Aplicativo" },
   { id: "voz", label: "Voz e vídeo", icon: Mic, group: "Aplicativo" },
+  { id: "sobreposicao", label: "Sobreposição de voz", icon: Monitor, group: "Aplicativo" },
   { id: "conexoes", label: "Conexões", icon: Link2, group: "Conexões" },
   { id: "insignias", label: "Insígnias", icon: Award, group: "Gestão" },
 ];
@@ -126,6 +128,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const supabase = createClient();
   const { theme, setTheme, themes } = useTheme();
   const [section, setSection] = useState<Section>(initialSection);
+  const [desktopOverlayAvailable, setDesktopOverlayAvailable] = useState(false);
   const [profileScope, setProfileScope] = useState<"user" | "server">("user");
   const [displayName, setDisplayName] = useState(initial.displayName);
   const [username, setUsername] = useState(initial.username ?? "");
@@ -221,6 +224,10 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     setPreferences(loadPreferences(userId));
     void supabase.auth.getUser().then(({ data }) => { const currentEmail = data.user?.email ?? ""; setEmail(currentEmail); setEmailDraft(currentEmail); });
   }, [supabase, userId]);
+
+  useEffect(() => {
+    setDesktopOverlayAvailable(Boolean(window.sekaiDesktop));
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -331,12 +338,20 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [imageEditor, imagePicker, onClose, saving]);
 
-  const visibleNavigation = useMemo(() => NAV.filter((item) => item.id !== "insignias" || isBadgeManager), [isBadgeManager]);
+  const visibleNavigation = useMemo(() => NAV.filter((item) => {
+    if (item.id === "insignias" && !isBadgeManager) return false;
+    if (item.id === "sobreposicao" && !desktopOverlayAvailable) return false;
+    return true;
+  }), [desktopOverlayAvailable, isBadgeManager]);
   const currentSection = useMemo(() => visibleNavigation.find((item) => item.id === section) ?? visibleNavigation[0], [section, visibleNavigation]);
 
   useEffect(() => {
     if (!isBadgeManager && section === "insignias") setSection("perfil");
   }, [isBadgeManager, section]);
+
+  useEffect(() => {
+    if (!desktopOverlayAvailable && section === "sobreposicao") setSection("perfil");
+  }, [desktopOverlayAvailable, section]);
 
   function setPreference<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPreferences((current) => ({ ...current, [key]: value }));
@@ -810,6 +825,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
               </section>}
 
               {section === "voz" && <VoiceSettingsPanel userId={userId} />}
+              {section === "sobreposicao" && desktopOverlayAvailable && <OverlaySettingsPanel />}
 
               {section === "insignias" && isBadgeManager && <section className="settings-section-enter">
                 <SectionIntro eyebrow="Personalização da comunidade" title="Insígnias" text="Crie símbolos exclusivos e escolha quais membros podem exibi-los ao lado do nome."/>
@@ -915,7 +931,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
           </div>
 
           {(error || notice) && <div className={`mx-5 mb-3 rounded-lg px-3 py-2 text-sm sm:mx-9 ${error ? "bg-discord-danger/10 text-discord-danger" : "bg-emerald-500/10 text-emerald-300"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : section === "voz" ? "As preferências de áudio são aplicadas imediatamente neste navegador." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && section !== "voz" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : section === "voz" ? "As preferências de áudio são aplicadas imediatamente neste navegador." : section === "sobreposicao" ? "As opções são salvas neste aplicativo." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && section !== "voz" && section !== "sobreposicao" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
       {imagePicker && <ProfileImagePickerModal kind={imagePicker.kind} recentImages={recentImages} onSelect={selectProfileMedia} onClose={() => setImagePicker(null)}/>}
