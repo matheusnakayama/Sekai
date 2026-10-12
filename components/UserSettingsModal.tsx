@@ -512,8 +512,10 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     let imageUrl: string | null = null;
     let imagePath: string | null = null;
     if (badgeImageFile) {
-      imagePath = `${userId}/badges/badge-${Date.now()}-${Math.random().toString(36).slice(2)}.${uploadExtension(badgeImageFile)}`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(imagePath, badgeImageFile, { contentType: badgeImageFile.type });
+      const format = profileImageUploadFormat(badgeImageFile);
+      if (!format) { setBadgeSaving(false); setError("Formato de imagem não suportado. Use PNG, JPG, WebP ou GIF."); return; }
+      imagePath = `${userId}/badges/badge-${Date.now()}-${Math.random().toString(36).slice(2)}.${format.extension}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(imagePath, badgeImageFile, { contentType: format.contentType });
       if (uploadError) { setBadgeSaving(false); setError("Não foi possível enviar a arte da insígnia: " + uploadError.message); return; }
       imageUrl = supabase.storage.from("avatars").getPublicUrl(imagePath).data.publicUrl;
     }
