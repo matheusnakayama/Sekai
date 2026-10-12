@@ -57,6 +57,22 @@ test("script-src permits unsafe-eval only in development", () => {
   assert.match(nextConfig, /config\.devtool = "source-map"/);
 });
 
+test("platform admins only see their memberships/owned servers and cannot open another by URL", () => {
+  const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+  const loadServersStart = page.indexOf("async function loadServers() {");
+  const loadServersEnd = page.indexOf("async function openRequestedChannelOrDefaultServer", loadServersStart);
+  assert.notEqual(loadServersStart, -1);
+  assert.notEqual(loadServersEnd, -1);
+  const loadServers = page.slice(loadServersStart, loadServersEnd);
+
+  assert.match(loadServers, /from\("members"\)[\s\S]*?\.eq\("user_id", currentUserId\)/);
+  assert.match(loadServers, /\.eq\("is_banned", false\)/);
+  assert.match(loadServers, /\.eq\("owner_id", currentUserId\)/);
+  assert.doesNotMatch(loadServers, /if\s*\(isPlatformAdmin\)/);
+  assert.doesNotMatch(page, /localStorage\.getItem\(`sekai-server-list:/);
+  assert.match(page, /if \(channel && list\.some\(\(server\) => server\.id === channel\.server_id\)\)/);
+});
+
 test("Pusher room authorization validates identity, signed room, and current DM relationship", () => {
   const source = readFileSync(resolve(root, "app/api/pusher/auth/route.ts"), "utf8");
   assert.match(source, /verifyRoomSession\(roomId, userId, roomSession/);

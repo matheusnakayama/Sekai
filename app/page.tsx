@@ -956,30 +956,6 @@ export default function Home() {
     if (!currentUserId) return [];
     const requestSequence = ++serverListRequestSequence.current;
 
-    if (isPlatformAdmin) {
-      let rows: any[] | null = null;
-      let lastError: { message: string } | null = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const result = await supabase.from("servers").select("id, name, icon_url").order("name");
-        if (!result.error) {
-          rows = result.data ?? [];
-          break;
-        }
-        lastError = result.error;
-        if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 180 * (attempt + 1)));
-      }
-      if (!rows) {
-        console.error("Não foi possível carregar os servidores administráveis:", lastError?.message);
-        return serversRef.current;
-      }
-      const list = rows.map((server: any) => ({ id: server.id, name: server.name, iconUrl: server.icon_url }));
-      if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
-      serversRef.current = list;
-      setServers(list);
-      try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(list)); } catch { /* Cache local é apenas uma melhoria de abertura. */ }
-      return list;
-    }
-
     let rows: any[] | null = null;
     let lastError: { message: string } | null = null;
 
@@ -987,7 +963,8 @@ export default function Home() {
       const result = await supabase
         .from("members")
         .select("server_id, servers(id, name, icon_url)")
-        .eq("user_id", currentUserId);
+        .eq("user_id", currentUserId)
+        .eq("is_banned", false);
       if (!result.error) {
         rows = result.data ?? [];
         break;
@@ -1009,14 +986,14 @@ export default function Home() {
       const retry = await supabase
         .from("members")
         .select("server_id, servers(id, name, icon_url)")
-        .eq("user_id", currentUserId);
+        .eq("user_id", currentUserId)
+        .eq("is_banned", false);
       if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
       if (retry.error) {
         console.error("Não foi possível confirmar a lista de servidores:", retry.error.message);
         return serversRef.current;
       }
-      if (retry.data?.length) rows = retry.data;
-      else return serversRef.current;
+      rows = retry.data ?? [];
     }
 
     let list = rows.flatMap((row: any) => {
@@ -1037,36 +1014,45 @@ export default function Home() {
       list = (fallback.data ?? []).map((server: any) => ({ id: server.id, name: server.name, iconUrl: server.icon_url }));
     }
 
+    // Ownership is a real relationship too. Keep it scoped to this account;
+    // platform-admin status must never expand the user's server membership list.
+    const { data: ownedServers, error: ownedServersError } = await supabase
+      .from("servers")
+      .select("id, name, icon_url")
+      .eq("owner_id", currentUserId);
+    if (ownedServersError) {
+      console.warn("Não foi possível carregar os servidores próprios:", ownedServersError.message);
+    } else {
+      const byId = new Map(list.map((server) => [server.id, server]));
+      (ownedServers ?? []).forEach((server: any) => byId.set(server.id, {
+        id: server.id,
+        name: server.name,
+        iconUrl: server.icon_url,
+      }));
+      list = Array.from(byId.values());
+    }
+    list.sort((left, right) => left.name.localeCompare(right.name));
+
     if (requestSequence !== serverListRequestSequence.current) return serversRef.current;
     serversRef.current = list;
     setServers(list);
-    try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(list)); } catch { /* Cache local é apenas uma melhoria de abertura. */ }
+    if (activeServerId && !list.some((server) => server.id === activeServerId)) {
+      setActiveServerId("");
+      setActiveChannelId("");
+      setChannels([]);
+      setMembers([]);
+    }
     return list;
   }
 
   useEffect(() => {
-    if (!currentUserId || !isPlatformAdmin) return;
-    void loadServers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId, isPlatformAdmin]);
-
-  useEffect(() => {
     if (!currentUserId) return;
 
-    let cachedServers: ServerItem[] | null = null;
-    try {
-      const value = JSON.parse(window.localStorage.getItem(`sekai-server-list:${currentUserId}`) || "null");
-      if (Array.isArray(value)) {
-        cachedServers = value.filter((server: any) => server && typeof server.id === "string" && typeof server.name === "string");
-      }
-    } catch { /* Um cache inválido é ignorado e refeito a partir do banco. */ }
-    if (cachedServers) {
-      serversRef.current = cachedServers;
-      setServers(cachedServers);
-    } else {
-      serversRef.current = [];
-      setServers([]);
-    }
+    // Descarta o cache legado, que podia conter a lista global de admins.
+    try { window.localStorage.removeItem(`sekai-server-list:${currentUserId}`); } catch { /* Cache legado opcional. */ }
+    serversRef.current = [];
+    setServers([]);
+    setActiveServerId("");
 
     async function openRequestedChannelOrDefaultServer() {
       const list = await loadServers();
@@ -1079,7 +1065,7 @@ export default function Home() {
           const linkedMessageId = params.get("message");
           if (linkedMessageId) setFocusMessageId(linkedMessageId);
           const { data: inviteRow } = explicitChannelId ? { data: null } : await supabase.from("invites").select("channel_id").ilike("code", inviteCode.trim()).maybeSingle();
-          const requestedChannelId = explicitChannelId || inviteRow?.channel_id || null;
+          const requestedChannelCandidate = explicitChannelId || inviteRow?.channel_id || null;
           const { data: joinedServer } = await supabase.from("servers").select("id, name, icon_url").eq("id", joinedServerId).maybeSingle();
           if (joinedServer) {
             const optimisticList = [...serversRef.current.filter((server) => server.id !== joinedServer.id), {
@@ -1089,10 +1075,16 @@ export default function Home() {
             }];
             serversRef.current = optimisticList;
             setServers(optimisticList);
-            try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(optimisticList)); } catch { /* Cache local opcional. */ }
           }
           setActiveServerId(joinedServerId as string);
-          if (requestedChannelId) setInviteChannelId(requestedChannelId);
+          if (requestedChannelCandidate) {
+            const { data: inviteChannel } = await supabase.from("channels")
+              .select("id")
+              .eq("id", requestedChannelCandidate)
+              .eq("server_id", joinedServerId)
+              .maybeSingle();
+            if (inviteChannel) setInviteChannelId(inviteChannel.id);
+          }
           await loadServers();
           window.history.replaceState({}, "", window.location.pathname);
           return;
@@ -1111,14 +1103,14 @@ export default function Home() {
           .select("id, server_id, type")
           .eq("id", requestedChannelId)
           .maybeSingle();
-        if (channel) {
+        if (channel && list.some((server) => server.id === channel.server_id)) {
           setInviteChannelId(channel.id);
           setActiveServerId(channel.server_id);
           return;
         }
       }
 
-      if (list?.[0]) setActiveServerId((current) => current || list[0].id);
+      if (list[0]) setActiveServerId(list[0].id);
     }
     void openRequestedChannelOrDefaultServer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1901,7 +1893,6 @@ export default function Home() {
         }];
         serversRef.current = optimisticList;
         setServers(optimisticList);
-        try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(optimisticList)); } catch { /* Cache local opcional. */ }
       }
     }
     await loadServers();
@@ -1911,8 +1902,15 @@ export default function Home() {
         const { data: inviteRow } = await supabase.from("invites").select("channel_id").ilike("code", code.trim()).maybeSingle();
         channelId = inviteRow?.channel_id ?? null;
       }
-      if (channelId) setInviteChannelId(channelId);
-      setActiveServerId(serverId as string);
+      if (channelId) {
+        const { data: inviteChannel } = await supabase.from("channels")
+          .select("id")
+          .eq("id", channelId)
+          .eq("server_id", serverId)
+          .maybeSingle();
+        if (inviteChannel) setInviteChannelId(inviteChannel.id);
+      }
+      if (serversRef.current.some((server) => server.id === serverId)) setActiveServerId(serverId as string);
     }
   }
 
@@ -2299,9 +2297,6 @@ export default function Home() {
             const remainingServers = serversRef.current.filter((server) => server.id !== activeServerId);
             serversRef.current = remainingServers;
             setServers(remainingServers);
-            if (currentUserId) {
-              try { window.localStorage.setItem(`sekai-server-list:${currentUserId}`, JSON.stringify(remainingServers)); } catch { /* Cache local opcional. */ }
-            }
             setActiveServerId("");
             setActiveChannelId("");
             setChannels([]);
