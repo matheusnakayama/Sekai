@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, Check, MoreHorizontal, MessageCircle, SendHorizontal, UserPlus, UserMinus, Plus, Search, Users, Pencil, Headphones } from "lucide-react";
+import { Activity, Check, MoreHorizontal, MessageCircle, SendHorizontal, UserPlus, UserMinus, Plus, Search, Users, Pencil, Headphones, ZoomIn } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
@@ -203,6 +203,7 @@ export function UserProfileCard({
   voiceActivity,
   onOpenVoiceActivity,
   onOpenSettings,
+  onOpenFullProfile,
 }: {
   profile: ProfileCardUser;
   position: ProfileCardPosition;
@@ -220,6 +221,7 @@ export function UserProfileCard({
   voiceActivity?: ProfileVoiceActivity;
   onOpenVoiceActivity?: (activity: ProfileVoiceActivity) => void;
   onOpenSettings?: () => void;
+  onOpenFullProfile?: () => void;
 }) {
   const supabase = createClient();
   const cardRef = useRef<HTMLElement>(null);
@@ -488,13 +490,16 @@ export function UserProfileCard({
 
       <div className="px-4 pb-4">
         <div className="relative -mt-9 h-[68px] w-[68px]">
-          <button type="button" onClick={() => { if (!isOtherUser && onOpenSettings) { onClose(); onOpenSettings(); } }} disabled={isOtherUser || !onOpenSettings} aria-label={!isOtherUser && onOpenSettings ? "Editar avatar e perfil" : undefined} title={!isOtherUser && onOpenSettings ? "Editar perfil" : undefined} className={cn("group relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand", !isOtherUser && onOpenSettings && "cursor-pointer")} style={{ borderColor: profilePalette.surface }}>
+          <button type="button" onClick={() => {
+            if (isOtherUser && onOpenFullProfile) { onClose(); onOpenFullProfile(); }
+            else if (!isOtherUser && onOpenSettings) { onClose(); onOpenSettings(); }
+          }} disabled={isOtherUser ? !onOpenFullProfile : !onOpenSettings} aria-label={isOtherUser ? `Abrir perfil completo de ${profile.displayName}` : "Editar avatar e perfil"} title={isOtherUser ? "Abrir perfil completo" : "Editar perfil"} className={cn("group relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand", (isOtherUser && onOpenFullProfile || !isOtherUser && onOpenSettings) && "cursor-pointer")} style={{ borderColor: profilePalette.surface }}>
             {profile.avatarUrl ? (
               <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" pauseGif={false} positionX={Math.min(100, (profile.avatarPositionX ?? 50) + 5)} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
             ) : (
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
-            {!isOtherUser && onOpenSettings && <span className="absolute inset-0 grid place-items-center rounded-full bg-black/0 text-white opacity-0 transition duration-200 group-hover:bg-black/55 group-hover:opacity-100 group-focus-visible:bg-black/55 group-focus-visible:opacity-100"><Pencil size={18}/></span>}
+            {(isOtherUser && onOpenFullProfile || !isOtherUser && onOpenSettings) && <span className="absolute inset-0 grid place-items-center rounded-full bg-black/0 text-white opacity-0 transition duration-200 group-hover:bg-black/55 group-hover:opacity-100 group-focus-visible:bg-black/55 group-focus-visible:opacity-100">{isOtherUser ? <ZoomIn size={18}/> : <Pencil size={18}/>}</span>}
           </button>
           <span className="pointer-events-none absolute -top-2 left-0 z-20 h-16 w-16">
             <PresenceIndicator presence={profile.status} avatarBadge borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} className="scale-110 translate-y-2" />

@@ -8,7 +8,8 @@ import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { GameActivityLine, ListeningLine, useGameActivityByUser, useListeningByUser } from "@/components/NowPlayingCard";
 import { MemberProfileDialog } from "@/components/MemberProfileDialog";
-import type { MutualServer } from "@/components/UserProfileCard";
+import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
+import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { UserPlus } from "lucide-react";
@@ -93,22 +94,34 @@ interface MemberListProps {
 
 export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canDisconnectFromVoice = false, voiceMemberIds = [], canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onDisconnectMemberFromVoice, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects, voiceActivityByUser = {}, onOpenVoiceActivity, onOpenSettings }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem } | null>(null);
+  const [quickProfile, setQuickProfile] = useState<{ member: MemberItem; position: ProfileCardPosition } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; anchor: HTMLElement } | null>(null);
   const listening = useListeningByUser(members.map((member) => member.id));
   const gameActivities = useGameActivityByUser(members.filter((member) => member.status !== "offline").map((member) => member.id));
 
   useEffect(() => {
     setSelected((current) => current ? members.find((member) => member.id === current.id) ?? null : null);
+    setQuickProfile((current) => {
+      if (!current) return null;
+      const member = members.find((item) => item.id === current.member.id);
+      return member ? { ...current, member } : null;
+    });
   }, [members]);
 
-  function openProfile(member: MemberItem) {
+  function openQuickProfile(member: MemberItem, anchor: HTMLElement) {
+    setSelected(null);
+    setQuickProfile({ member, position: getProfileCardPosition(anchor) });
+  }
+
+  function openFullProfile(member: MemberItem) {
+    setQuickProfile(null);
     setSelected(member);
   }
 
   function openMemberContextMenu(member: MemberItem, event: MouseEvent<HTMLDivElement>) {
     event.preventDefault();
     event.stopPropagation();
-    setContextMenu({ x: event.clientX, y: event.clientY, member });
+    setContextMenu({ x: event.clientX, y: event.clientY, member, anchor: event.currentTarget });
   }
   // Online, ausente e não perturbe ficam no cargo. Offline vai todo para o fim.
   const groups = groupByRole(members.filter((member) => member.status !== "offline"));
@@ -129,7 +142,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-px">
             {roleMembers.map((m) => (
-              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openQuickProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
@@ -143,13 +156,32 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-px">
             {offlineMembers.map((m) => (
-              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openQuickProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
       )}
 
     </div>
+      {quickProfile && <UserProfileCard
+        profile={quickProfile.member}
+        position={quickProfile.position}
+        currentUserId={currentUserId}
+        onClose={() => setQuickProfile(null)}
+        onMessage={onMessageMember ? () => onMessageMember(quickProfile.member) : undefined}
+        onQuickMessage={onQuickMessageMember ? (content) => onQuickMessageMember(quickProfile.member, content) : undefined}
+        onAddFriend={() => onAddFriend(quickProfile.member.id)}
+        onKick={canKick && onKickMember ? () => onKickMember(quickProfile.member) : undefined}
+        roles={roles}
+        assignedRoleIds={quickProfile.member.assignedRoles?.map((role) => role.id)}
+        canManageRoles={canManageRoles && (quickProfile.member.id !== currentUserId || canManageSelfRoles)}
+        immediateMutualServer={immediateMutualServer}
+        voiceActivity={voiceActivityByUser[quickProfile.member.id]}
+        onOpenVoiceActivity={onOpenVoiceActivity}
+        onOpenSettings={quickProfile.member.id === currentUserId ? onOpenSettings : undefined}
+        onToggleRole={onToggleRole ? (role, assigned) => onToggleRole(quickProfile.member, role, assigned) : undefined}
+        onOpenFullProfile={() => openFullProfile(quickProfile.member)}
+      />}
       {selected && <MemberProfileDialog
         profile={selected}
         currentUserId={currentUserId}
@@ -183,7 +215,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           canDisconnectFromVoice={canDisconnectFromVoice}
           memberInVoice={voiceMemberIds.includes(contextMember.id)}
           onClose={() => setContextMenu(null)}
-          onOpenProfile={() => openProfile(contextMember)}
+          onOpenProfile={() => openQuickProfile(contextMember, contextMenu.anchor)}
           onMention={() => onMentionMember?.(contextMember)}
           onMessage={onMessageMember ? () => onMessageMember(contextMember) : undefined}
           onAddFriend={() => onAddFriend(contextMember.id)}
@@ -220,7 +252,7 @@ function groupByRole(members: MemberItem[]): { id: string; roleName: string; rol
   return Array.from(map.values()).sort((a, b) => b.rolePosition - a.rolePosition);
 }
 
-function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; gameActivity?: import("@/components/NowPlayingCard").GameActivity; isSelf: boolean; onSelect: (member: MemberItem) => void; onContextMenu: (member: MemberItem, event: MouseEvent<HTMLDivElement>) => void }) {
+function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; gameActivity?: import("@/components/NowPlayingCard").GameActivity; isSelf: boolean; onSelect: (member: MemberItem, anchor: HTMLElement) => void; onContextMenu: (member: MemberItem, event: MouseEvent<HTMLDivElement>) => void }) {
   const [hovered, setHovered] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
@@ -247,12 +279,12 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
   const bannerMask = `linear-gradient(90deg, transparent 0, transparent ${bannerFadeStart}px, rgba(0,0,0,.035) ${bannerStart}px, rgba(0,0,0,.14) ${bannerStart + 14}px, rgba(0,0,0,.46) ${bannerStart + 34}px, black ${bannerStart + 58}px, black 100%)`;
 
   return (
-    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir perfil de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={() => onSelect(member)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
       {member.memberListBannerUrl && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-80" style={{ maskImage: bannerMask, WebkitMaskImage: bannerMask }}>
         <CroppedProfileImage src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} pauseGif isHovered={hovered} />
         <span className="absolute inset-0 bg-gradient-to-l from-black/35 via-black/10 to-transparent" />
       </div>}
-      <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(member); }} aria-label={`Abrir perfil de ${member.displayName}`} title={`Abrir perfil de ${member.displayName}`} className="relative z-10 h-8 w-8 shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
+      <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(member, rowRef.current ?? event.currentTarget); }} aria-label={`Abrir cartão de ${member.displayName}`} title={`Abrir cartão de ${member.displayName}`} className="relative z-10 h-8 w-8 shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
           <CroppedProfileImage src={member.avatarUrl} alt="" className="rounded-full" isHovered={hovered} positionX={member.avatarPositionX} positionY={member.avatarPositionY} zoom={member.avatarZoom} />
