@@ -17,11 +17,23 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     let active = true;
+    const urlParams = new URLSearchParams(`${window.location.search.replace(/^\?/, "")}&${window.location.hash.replace(/^#/, "")}`);
+    const callbackError = urlParams.get("error_code") ?? urlParams.get("error");
+    if (callbackError) {
+      const expired = callbackError.toLowerCase().includes("expired") || callbackError.toLowerCase().includes("otp");
+      setError(expired
+        ? "Este link é inválido, expirou ou já foi usado. Volte ao login e solicite uma nova redefinição."
+        : "Não foi possível validar o link. Volte ao login e solicite uma nova redefinição.");
+      return () => { active = false; };
+    }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (active && (event === "PASSWORD_RECOVERY" || session?.user)) setReady(true);
     });
     void supabase.auth.getUser().then(({ data, error: authError }) => {
       if (active && data.user && !authError) setReady(true);
+      else if (active) setError("Este link é inválido, expirou ou já foi usado. Volte ao login e solicite uma nova redefinição.");
+    }).catch(() => {
+      if (active) setError("Não foi possível validar o link. Volte ao login e solicite uma nova redefinição.");
     });
     return () => {
       active = false;
@@ -39,11 +51,17 @@ export default function ResetPasswordPage() {
       return;
     }
     setSaving(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password: input.data.password });
-    setSaving(false);
-    if (updateError) {
-      setError("Não foi possível atualizar a senha. Solicite um novo link de redefinição.");
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password: input.data.password });
+      if (updateError) {
+        setError("Não foi possível atualizar a senha. O link pode ter expirado ou já ter sido usado; solicite outro.");
+        return;
+      }
+    } catch {
+      setError("Não foi possível atualizar a senha por falha de conexão. Tente novamente.");
       return;
+    } finally {
+      setSaving(false);
     }
     setNotice("Senha atualizada. Faça login novamente.");
     await supabase.auth.signOut();
@@ -56,7 +74,8 @@ export default function ResetPasswordPage() {
         <p className="text-[11px] font-bold uppercase tracking-[.2em] text-discord-text-muted">Sekai</p>
         <h1 className="mt-2 text-2xl font-bold text-discord-header-primary">Defina uma nova senha</h1>
         <p className="mt-2 text-sm text-discord-text-muted">Use pelo menos 12 caracteres. Não exigimos combinações artificiais de símbolos.</p>
-        {!ready && <p role="status" className="mt-5 text-sm text-discord-text-muted">Validando o link de redefinição…</p>}
+        {!ready && !error && <p role="status" className="mt-5 text-sm text-discord-text-muted">Validando o link de redefinição…</p>}
+        {!ready && error && <p role="alert" className="mt-5 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
         {ready && <>
           <label className="mt-5 block text-xs font-semibold text-discord-text-muted">
             Nova senha

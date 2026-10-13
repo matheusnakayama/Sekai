@@ -703,7 +703,16 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     else setNotice("Enviamos uma confirmação para o novo endereço de e-mail.");
   }
 
-  async function handleLogout() { await supabase.auth.signOut(); }
+  async function handleLogout() {
+    setError("");
+    setNotice("");
+    try {
+      const { error: logoutError } = await supabase.auth.signOut({ scope: "local" });
+      if (logoutError) setError("Não foi possível encerrar a sessão neste navegador. Tente novamente.");
+    } catch {
+      setError("Não foi possível encerrar a sessão neste navegador. Tente novamente.");
+    }
+  }
 
   return (
     <div className="settings-backdrop-enter fixed inset-0 z-[100] flex items-stretch justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>

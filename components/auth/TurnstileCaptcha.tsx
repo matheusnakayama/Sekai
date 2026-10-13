@@ -8,7 +8,7 @@ type TurnstileApi = {
     theme?: "light" | "dark" | "auto";
     callback: (token: string) => void;
     "expired-callback": () => void;
-    "error-callback": () => void;
+    "error-callback": (errorCode?: string) => void;
   }) => string;
   reset: (widgetId?: string) => void;
   remove: (widgetId: string) => void;
@@ -26,6 +26,21 @@ type Props = {
 };
 
 const SCRIPT_ID = "sekai-turnstile-script";
+
+function turnstileErrorMessage(errorCode?: string) {
+  if (errorCode === "110200") {
+    return "Hostname não autorizado (110200). No Cloudflare, abra Turnstile > seu widget > Settings e adicione localhost em Hostname Management. Se acessar por 127.0.0.1, adicione esse hostname também.";
+  }
+  if (["110100", "110110", "400020", "400070"].includes(errorCode ?? "")) {
+    return `A chave do Cloudflare Turnstile é inválida, não foi encontrada ou está desativada (${errorCode}).`;
+  }
+  if (errorCode === "200500") {
+    return "O navegador não conseguiu carregar o desafio do Cloudflare. Verifique bloqueadores e conexão.";
+  }
+  return errorCode
+    ? `A verificação falhou (${errorCode}). Tente novamente.`
+    : "A verificação falhou. Tente novamente.";
+}
 
 export function TurnstileCaptcha({ resetKey, onToken }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -68,7 +83,10 @@ export function TurnstileCaptcha({ resetKey, onToken }: Props) {
         theme: "dark",
         callback: (token) => { setMessage(""); onTokenRef.current(token); },
         "expired-callback": () => { setMessage("A verificação expirou. Conclua novamente."); onTokenRef.current(""); },
-        "error-callback": () => { setMessage("A verificação falhou. Tente novamente."); onTokenRef.current(""); },
+        "error-callback": (errorCode) => {
+          setMessage(turnstileErrorMessage(errorCode));
+          onTokenRef.current("");
+        },
       });
       setMessage("Conclua a verificação para continuar.");
     };
@@ -83,7 +101,10 @@ export function TurnstileCaptcha({ resetKey, onToken }: Props) {
       script.async = true;
       script.defer = true;
       script.addEventListener("load", renderWidget, { once: true });
-      script.addEventListener("error", () => setMessage("A verificação anti-bot está indisponível."), { once: true });
+      script.addEventListener("error", () => {
+        setMessage("Não foi possível carregar o Cloudflare Turnstile. Verifique bloqueadores e conexão.");
+        onTokenRef.current("");
+      }, { once: true });
       document.head.appendChild(script);
     }
 

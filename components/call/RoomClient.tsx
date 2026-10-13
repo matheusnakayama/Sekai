@@ -1779,47 +1779,19 @@ export default function RoomClient({
         )}
       </section>
 
-      <footer className="border-t border-white/[0.04] bg-[#111214] px-3 py-2 sm:px-6 sm:py-3">
+      <footer className="z-20 flex shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
         <Controls
           micOn={micOn}
-          deafened={deafened}
-          camOn={camOn}
           sharingScreen={sharingScreen}
-          soundEffects={soundEffects}
-          soundEffectsLoading={soundEffectsLoading}
-          playingSoundId={playingSoundId}
-          callMusicName={callMusicName}
-          onPlayCallMusic={(file) => { void playCallMusic(file); }}
-          onStopCallMusic={releaseCallMusic}
-          onPlaySoundEffect={(effect) => { void playSoundboardEffect(effect); }}
-          participantCount={participantList.length}
-          onToggleMic={toggleMic}
-          onToggleDeafen={toggleDeafen}
+          watchingPresentation={watchingPresentation}
+          micLockedByHost={micLockedByHost}
           inputDevices={inputDevices}
-          outputDevices={outputDevices}
           selectedInputDeviceId={selectedInputDeviceId}
-          selectedOutputDeviceId={selectedOutputDeviceId}
           onSelectInputDevice={selectInputDevice}
-          onSelectOutputDevice={selectOutputDevice}
-          inputVolume={inputVolume}
-          outputVolume={outputVolume}
-          onInputVolumeChange={updateInputVolume}
-          onOutputVolumeChange={updateOutputVolume}
-          voiceProfile={voiceProfile}
-          onVoiceProfileChange={selectVoiceProfile}
-          onOpenVoiceSettings={onOpenVoiceSettings}
-          outputDeviceSelectionSupported={outputDeviceSelectionSupported}
-          onToggleCam={toggleCam}
+          onToggleMic={toggleMic}
           onToggleScreenShare={toggleScreenShare}
           onLeave={handleLeave}
-          watchingPresentation={watchingPresentation}
           onStopWatching={stopWatchingPresentation}
-          onCopyLink={handleCopyLink}
-          onToggleParticipants={toggleParticipantsPanel}
-          onToggleChat={toggleChatPanel}
-          chatUnreadCount={chatUnreadCount}
-          isHost={isHost}
-          micLockedByHost={micLockedByHost}
         />
         <p className="sr-only" aria-live="polite">{sharingScreen && screenCaptureInfo ? `Transmitindo tela: ${screenCaptureInfo}.` : ""}</p>
       </footer>

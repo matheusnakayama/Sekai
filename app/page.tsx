@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Menu, Users, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TurnstileCaptcha } from "@/components/auth/TurnstileCaptcha";
@@ -140,11 +141,6 @@ function LoginScreen() {
       setError("Conclua a verificação anti-bot para continuar.");
       return;
     }
-    if (mode !== "login" && !siteUrl) {
-      setError("O serviço de autenticação está temporariamente indisponível.");
-      return;
-    }
-
     const emailResult = emailInputSchema.safeParse(email);
     if (!emailResult.success) {
       setError("Informe um endereço de e-mail válido.");
@@ -174,10 +170,21 @@ function LoginScreen() {
           setError("Informe um endereço de e-mail válido e conclua a verificação.");
           return;
         }
-        await supabase.auth.resetPasswordForEmail(input.data.email, {
-          redirectTo: new URL("/auth/reset-password", siteUrl).toString(),
+        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(input.data.email, {
+          redirectTo: new URL("/auth/reset-password", siteUrl || window.location.origin).toString(),
           captchaToken: input.data.captchaToken,
         });
+        if (recoveryError) {
+          const message = recoveryError.message.toLowerCase();
+          if (message.includes("captcha")) {
+            setError("A verificação anti-bot foi recusada. Refaça o desafio e tente novamente.");
+          } else if (message.includes("redirect") || message.includes("url")) {
+            setError("O retorno da redefinição não está autorizado. Adicione http://localhost:3000/auth/reset-password em Supabase > Authentication > URL Configuration.");
+          } else {
+            setError("Não foi possível enviar o link de redefinição. Confira a configuração de e-mail do Supabase e tente novamente.");
+          }
+          return;
+        }
         setSuccess("Por segurança, não informamos se esse endereço possui uma conta. Se houver uma conta elegível, as instruções serão enviadas por e-mail.");
         return;
       }
@@ -209,7 +216,7 @@ function LoginScreen() {
         email: input.data.email,
         password: input.data.password,
         options: {
-          emailRedirectTo: new URL("/", siteUrl).toString(),
+          emailRedirectTo: new URL("/", siteUrl || window.location.origin).toString(),
           captchaToken: input.data.captchaToken,
           data: {
             username: input.data.username,
@@ -306,7 +313,7 @@ function LoginScreen() {
 
         <button
           type="submit"
-          disabled={loading || Boolean(success) || !captchaToken || (mode !== "login" && !siteUrl)}
+          disabled={loading || Boolean(success) || !captchaToken}
           className="mt-2 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 transition hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Processando…" : mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Enviar instruções"}
@@ -318,6 +325,7 @@ function LoginScreen() {
 
 export default function Home() {
   const supabase = createClient();
+  const router = useRouter();
   const dialogs = useDialogs();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -851,7 +859,11 @@ export default function Home() {
       setAuthUserCandidateId(candidateId);
       setAuthChecked(true);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        router.replace("/auth/reset-password");
+        return;
+      }
       const candidateId = session?.user?.id ?? null;
       if (authUserCandidateRef.current !== candidateId) {
         authUserCandidateRef.current = candidateId;
@@ -861,7 +873,7 @@ export default function Home() {
       setAuthChecked(true);
     });
     return () => sub.subscription.unsubscribe();
-  }, [supabase]);
+  }, [router, supabase]);
 
   useEffect(() => {
     if (!authChecked) return;
