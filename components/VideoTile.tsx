@@ -257,7 +257,7 @@ export default function VideoTile({
         {isScreenSharePreview && screenShareSnapshot?.trackKey === videoTrackKey && (
           // A prévia mostra um único quadro capturado; o vídeo fica pausado até a pessoa escolher assistir.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={screenShareSnapshot.dataUrl} alt={`Primeiro quadro da apresentação de ${participant.name}`} className="absolute inset-0 h-full w-full scale-105 object-contain blur-md brightness-[0.55]" />
+          <img src={screenShareSnapshot.dataUrl} alt={`Primeiro quadro da apresentação de ${participant.name}`} className="absolute inset-0 h-full w-full object-contain" />
         )}
         <audio ref={voiceAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         <audio ref={soundboardAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
@@ -280,7 +280,7 @@ export default function VideoTile({
       )}
 
       {isScreenSharePreview && (
-        <div className="absolute inset-0 z-[6] flex items-center justify-center bg-black/20 px-3" role="group" aria-label={`Prévia da apresentação de ${participant.name}`}>
+        <div className="absolute inset-0 z-[6] flex items-center justify-center bg-black/5 px-3" role="group" aria-label={`Prévia da apresentação de ${participant.name}`}>
           <div className="flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border border-white/15 bg-black/65 px-3 py-3 text-center text-white shadow-2xl backdrop-blur-sm sm:flex-row sm:gap-3 sm:text-left">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-theme-gradient text-white shadow-lg">
               <ScreenShareIcon active />
