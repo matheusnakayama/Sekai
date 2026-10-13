@@ -725,7 +725,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-theme-gradient text-white"><Settings2 size={18}/></div>
             <div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-discord-text-muted">Sekai</p><h2 id="user-settings-title" className="font-semibold text-discord-header-primary">Configurações</h2></div>
           </div>
-          {(["Conta", "Aplicativo", "Conexões", "Gestão"] as const).map((group) => {
+          {(["Conta", "Aplicativo", "Jogos e apps", "Conexões", "Gestão"] as const).map((group) => {
             const items = visibleNavigation.filter((item) => item.group === group);
             if (!items.length) return null;
             return <div key={group} className="mb-5">
