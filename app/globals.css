@@ -969,6 +969,28 @@ button.inset-0:active {
 @keyframes settings-window-in { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes settings-section-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
+/* ── Channel sidebar transitions ── */
+.group\/channel {
+  transition: background-color 150ms ease, opacity 150ms ease;
+}
+
+.group\/channel > div > button {
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* Smooth category collapse chevron */
+/* (already handled by Tailwind transition-transform on the ChevronDown) */
+
+/* Channel list section border fade */
+.space-y-2\.5 > div {
+  transition: opacity 120ms ease;
+}
+
+/* Voice member list appearance */
+.voice-speaking-avatar {
+  transition: box-shadow 120ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .profile-card-enter,
   .profile-action-menu-enter,

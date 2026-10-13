@@ -74,6 +74,7 @@ export default function Controls({
   onToggleParticipants,
   onToggleChat,
   onPlaySoundEffect,
+  callLayout = false,
 }: {
   micOn: boolean;
   deafened: boolean;
@@ -112,6 +113,7 @@ export default function Controls({
   onToggleParticipants: () => void;
   onToggleChat: () => void;
   onPlaySoundEffect: (effect: SoundboardEffect) => void;
+  callLayout?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [soundboardOpen, setSoundboardOpen] = useState(false);
@@ -145,6 +147,22 @@ export default function Controls({
 
   const presentationActive = sharingScreen || watchingPresentation;
   const togglePresentation = watchingPresentation ? onStopWatching : onToggleScreenShare;
+
+  if (callLayout) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-[#1e1f22]/95 p-1.5 text-white shadow-2xl backdrop-blur-xl sm:gap-2">
+        <button type="button" onClick={onToggleMic} disabled={micLockedByHost} aria-label={micOn ? 'Silenciar microfone' : 'Ativar microfone'} title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : micOn ? 'Silenciar microfone' : 'Ativar microfone'} className={`grid h-12 w-12 place-items-center rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-50 ${micOn ? 'bg-[#2b2d31] text-white/85 hover:bg-[#35373c]' : 'bg-[#4b252b] text-[#f23f43] hover:bg-[#5a2b32]'}`}>
+          <MicIcon off={!micOn} />
+        </button>
+        <button type="button" onClick={togglePresentation} aria-label={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela'} title={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela'} className={`grid h-12 w-12 place-items-center rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${presentationActive ? 'bg-[#214e37] text-[#3ba55d] hover:bg-[#286143]' : 'bg-[#2b2d31] text-white/85 hover:bg-[#35373c]'}`}>
+          <ScreenShareIcon active={sharingScreen} />
+        </button>
+        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="grid h-12 w-14 place-items-center rounded-xl bg-[#da373c] text-white transition hover:bg-[#c63035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+          <HangupIcon />
+        </button>
+      </div>
+    );
+  }
 
   if (minimalMode) {
     return (

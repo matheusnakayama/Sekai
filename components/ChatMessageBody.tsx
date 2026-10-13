@@ -72,9 +72,9 @@ function MarkdownText({ content, emojis, inline }: { content: string; emojis: Ma
   if (!withEmoji.trim()) return null;
   const Tag = inline ? "span" : "div";
   return (
-    <Tag className="prose prose-invert max-w-none text-[15px] leading-6 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm">
+    <Tag className="prose prose-invert max-w-none text-[15px] leading-5 text-discord-text-normal prose-p:my-0 prose-code:text-discord-text-normal sm:text-sm">
       <ReactMarkdown components={{
-        p: ({ children }) => inline ? <span>{children}</span> : <p className="my-0">{children}</p>,
+        p: ({ children }) => inline ? <span>{children}</span> : <p className="m-0 leading-5" style={{ marginBlock: 0, lineHeight: "1.35" }}>{children}</p>,
         img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? "emoji"} loading="lazy" className="mx-0.5 inline-block h-6 w-6 align-[-0.25em] object-contain" />,
         a: ({ href, children }) => {
           if (href === "#sekai-mention" || href === "#sekai-mention-mine") {

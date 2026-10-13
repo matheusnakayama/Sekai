@@ -141,7 +141,7 @@ export default function ChatPanel({
         </button>
       </header>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-4" aria-live="polite">
+      <div className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-live="polite">
         {messages.length === 0 ? (
           <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/30 to-brand-800/30 text-brand-200">

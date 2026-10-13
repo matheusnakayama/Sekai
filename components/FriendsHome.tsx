@@ -482,7 +482,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
               <p className="mt-1 text-sm text-discord-text-muted">@{activeFriend.username}</p>
               <p className="mt-2 text-sm text-discord-text-muted">Esta é sua conversa com <span className="font-medium text-discord-text-normal">{activeFriend.display_name || activeFriend.username}</span>.</p>
             </div>
-            {visibleDmMessages.length ? <div className="space-y-1">
+            {visibleDmMessages.length ? <div className="space-y-0">
               {visibleDmMessages.map((item, index) => {
                 const previous = visibleDmMessages[index - 1];
                 const timestamp = new Date(item.created_at);
@@ -492,7 +492,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
                 const author = item.sender_id === currentUserId ? ownProfile() : activeFriend;
                 return <div key={item.id}>
                   {showDate && <div className="my-5 flex items-center gap-3 text-[11px] font-semibold text-discord-text-muted"><span className="h-px flex-1 bg-white/10"/><span>{formatDirectMessageDate(timestamp)}</span><span className="h-px flex-1 bg-white/10"/></div>}
-                  <article className={`group flex rounded-md px-2 py-1.5 transition hover:bg-white/[0.025] ${chatDisplay.showAvatars ? "gap-3" : ""} ${grouped ? "pt-0.5" : "mt-2"}`}>
+                  <article className={`group flex rounded-md px-2 py-0 transition hover:bg-white/[0.025] ${chatDisplay.showAvatars ? "gap-3" : ""}`}>
                     {chatDisplay.showAvatars && <div className="w-10 shrink-0">{!grouped && <button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} aria-label={`Abrir perfil de ${author.display_name || author.username}`} className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand"><FriendAvatar profile={author} size="md" showStatus={false} isHovered={hoveredDmProfileId === author.id}/></button>}</div>}
                     <div className="min-w-0 flex-1">
                       {!grouped && <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5"><button type="button" onMouseEnter={() => setHoveredDmProfileId(author.id)} onMouseLeave={() => setHoveredDmProfileId((id) => id === author.id ? null : id)} onClick={(event) => openMiniProfile(author, event.currentTarget)} className="rounded-sm text-sm font-semibold text-discord-header-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">{author.display_name || author.username}</button><time className="text-[10px] text-discord-text-muted">{timestamp.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</time></div>}

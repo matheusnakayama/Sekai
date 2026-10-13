@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { PhoneCall } from 'lucide-react';
 import type { Channel } from 'pusher-js';
 import { uploadPresigned } from '@vercel/blob/client';
 import PreJoin from '@/components/PreJoin';
@@ -1721,10 +1722,12 @@ export default function RoomClient({
       style={callFullscreen ? { height: '100vh', width: '100vw', backgroundColor: '#111214' } : undefined}
       className="h-full min-h-0 flex flex-col bg-transparent"
     >
-      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-surface-border">
-        <div className="flex items-center gap-2 text-sm text-white/60">
-          <span className="h-2 w-2 rounded-full bg-success animate-speaking" />
-          Sala <span className="font-medium text-white/80">{roomName}</span>
+      <header className="flex items-center justify-between border-b border-white/[0.06] bg-[#111214]/70 px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2.5 text-sm text-white/60">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-success animate-speaking" />
+          <span className="truncate font-medium text-white/85">{roomName}</span>
+          <span className="hidden text-white/30 sm:inline">·</span>
+          <span className="hidden text-xs text-white/45 sm:inline">Chamada de voz</span>
         </div>
         <div className="flex items-center gap-2">
           <ThemePicker placement="down" align="right" />
@@ -1787,29 +1790,15 @@ export default function RoomClient({
         </div>
       )}
 
-      <section className="relative flex min-h-0 flex-1 overflow-hidden px-3 py-4 sm:px-6">
+      <section className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3 py-4 sm:px-6">
         {isConnecting ? (
-          <div className="h-full flex items-center justify-center">
+          <div className="flex h-full w-full flex-1 items-center justify-center">
             <p className="text-white/60 animate-fadeIn">Conectando à sala…</p>
           </div>
-        ) : participantList.length <= 1 && !focusedParticipantId ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-            <div className="max-w-xs">
-              <ParticipantsGrid
-                participants={participantList}
-                mutedSoundEffectUserIds={mutedSoundEffectUserIds}
-                muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
-                outputDeviceId={selectedOutputDeviceId}
-                masterOutputVolume={outputVolume}
-                focusedParticipantId={focusedParticipantId}
-                revealedScreenShareIds={revealedScreenShareIds}
-                onRevealScreenShare={revealScreenShare}
-                onSelectParticipant={selectParticipant}
-              />
-            </div>
-            <p className="text-white/50 text-sm mt-2">
-              Você é o único aqui até agora. Compartilhe o link para convidar outras pessoas.
-            </p>
+        ) : participantList.length === 0 && !focusedParticipantId ? (
+          <div className="flex h-full w-full flex-1 flex-col items-center justify-center bg-[#111214] text-center">
+            <h1 className="max-w-[min(80vw,640px)] break-words text-xl font-semibold tracking-tight text-white/70 sm:text-2xl">{roomName}</h1>
+            <p className="mt-2 text-sm text-white/40">Ninguém na chamada no momento.</p>
           </div>
         ) : (
           <ParticipantsGrid
@@ -1832,6 +1821,7 @@ export default function RoomClient({
 
       <footer className="z-20 flex shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
         <Controls
+          callLayout
           micOn={micOn}
           deafened={deafened}
           camOn={camOn}
