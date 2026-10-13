@@ -146,6 +146,10 @@ function LoginScreen() {
       setError("Informe um endereço de e-mail válido.");
       return;
     }
+    if (mode !== "login" && !siteUrl) {
+      setError("A configuração do endereço do site ainda está carregando. Tente novamente em instantes.");
+      return;
+    }
     setLoading(true);
 
     try {
@@ -313,7 +317,7 @@ function LoginScreen() {
 
         <button
           type="submit"
-          disabled={loading || Boolean(success) || !captchaToken}
+          disabled={loading || Boolean(success) || !captchaToken || (mode !== "login" && !siteUrl)}
           className="mt-2 w-full rounded-xl bg-theme-gradient py-3 font-semibold text-white shadow-lg shadow-black/20 transition hover:brightness-110 disabled:opacity-60"
         >
           {loading ? "Processando…" : mode === "login" ? "Entrar" : mode === "signup" ? "Criar conta" : "Enviar instruções"}
@@ -500,6 +504,7 @@ export default function Home() {
     let resolveReady: (ready: boolean) => void = () => {};
     const ready = new Promise<boolean>((resolve) => { resolveReady = resolve; });
     let settled = false;
+    let cleanupStarted = false;
     const settle = (value: boolean) => {
       if (settled) return;
       settled = true;
@@ -520,12 +525,21 @@ export default function Home() {
       }, event.senderId);
     });
     channel.subscribe((status, error) => {
-      if (status === "SUBSCRIBED") settle(true);
+      if (status === "SUBSCRIBED") {
+        settle(true);
+        return;
+      }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         settle(false);
-        console.warn(`Não foi possível conectar ao soundboard do servidor ${serverId}:`, error);
+        if (status !== "CLOSED") {
+          console.warn(`Não foi possível conectar ao soundboard do servidor ${serverId}:`, error);
+        }
         if (soundboardChannelsRef.current.get(serverId)?.channel === channel) soundboardChannelsRef.current.delete(serverId);
-        void supabase.removeChannel(channel);
+        // removeChannel() emits CLOSED. Never remove again from that callback.
+        if (status !== "CLOSED" && !cleanupStarted) {
+          cleanupStarted = true;
+          queueMicrotask(() => void supabase.removeChannel(channel));
+        }
       }
     });
     return { channel, ready };
@@ -588,6 +602,7 @@ export default function Home() {
   useEffect(() => {
     if (!currentUserId) return;
     let cancelled = false;
+    const soundboardChannels = soundboardChannelsRef.current;
     void supabase.from("members").select("server_id").eq("user_id", currentUserId).then(({ data, error }) => {
       if (cancelled) return;
       if (error) {
@@ -599,8 +614,8 @@ export default function Home() {
     });
     return () => {
       cancelled = true;
-      soundboardChannelsRef.current.forEach(({ channel }) => { void supabase.removeChannel(channel); });
-      soundboardChannelsRef.current.clear();
+      soundboardChannels.forEach(({ channel }) => { void supabase.removeChannel(channel); });
+      soundboardChannels.clear();
     };
   }, [currentUserId, ensureServerSoundboardChannel, serverListVersion, supabase]);
 

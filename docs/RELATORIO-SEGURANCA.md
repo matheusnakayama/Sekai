@@ -51,10 +51,13 @@ Branch: `seguranca-auth`
 
 ## Verificações executadas
 
-- `npm run test`: **23 testes passaram, 0 falharam**, em quatro arquivos (`auth-validation`, `migration-schema-compat`, `request-body`, `security-boundaries`). Inclui comparação estática de relações/colunas do manifesto com o snapshot e verificações de migrations/handlers; não é teste SQL/RLS contra servidor.
-- `npm run lint`: passou com avisos de hooks e `<img>`.
-- `npx tsc --noEmit --incremental false`: passou.
-- `npm run build`: passou em cópia temporária do repo sem `.env*`. Build gerou páginas e rotas; avisos de cache Webpack e lint não impediram a compilação.
+- `npm test`: **29 testes passaram, 0 falharam**, em quatro arquivos (`auth-validation`, `migration-schema-compat`, `request-body`, `security-boundaries`). Inclui comparação estática de relações/colunas do manifesto com o snapshot e verificações de migrations/handlers; não é teste SQL/RLS contra servidor.
+- `npm run lint`: passou com avisos preexistentes de hooks e `<img>`; `next lint` agora também avisa que será removido no Next 16.
+- `npx tsc --noEmit`: passou.
+- `npm run build`: passou com Next.js 15.5.27; os avisos de lint não impediram a compilação.
+- `npm audit --omit=dev --audit-level=moderate`: **0 vulnerabilidades nas dependências de produção**. A auditoria completa ainda aponta vulnerabilidades em ferramentas de desenvolvimento/build (Tailwind 3 e plugin ESLint do Next); migrar Tailwind para 4 exigiria revisão visual e não foi feito nesta correção.
+- `npm run app -- --smoke`: passou no Electron 44.7.0 com as três janelas sandboxed e captura de tela/janela ativa.
+- Smoke HTTP da build: `/` e `/api/auth/captcha-config` responderam 200; rota de convite inválido redirecionou 307 para `/`.
 - `git diff --check` requer `core.whitespace=cr-at-eol` para respeitar arquivos CRLF; a checagem com essa configuração não encontrou whitespace indevido.
 - Não executei SQL de staging, nem testes com Supabase, Vercel Blob, Pusher, Spotify ou voz.
 

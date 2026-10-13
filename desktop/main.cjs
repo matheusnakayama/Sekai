@@ -121,7 +121,7 @@ function updateOverlayWindow() {
         preload: path.join(__dirname, 'overlay-preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
       },
     });
     overlayWindow.setAlwaysOnTop(true, 'screen-saver');
@@ -302,7 +302,7 @@ function createWindow(targetUrl) {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -413,7 +413,7 @@ async function smoke() {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
       },
     });
     mainWindow = win;

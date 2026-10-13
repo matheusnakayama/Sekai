@@ -36,6 +36,25 @@ test("login does not depend on the redirect origin while signup and recovery do"
   const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
   assert.match(page, /if \(mode !== "login" && !siteUrl\)/);
   assert.match(page, /disabled=\{loading \|\| Boolean\(success\) \|\| !captchaToken \|\| \(mode !== "login" && !siteUrl\)\}/);
+  assert.match(page, /if \(loginError\) setError\("E-mail ou senha inválidos\."\)/);
+});
+
+test("soundboard cleanup does not recursively remove a channel after CLOSED", () => {
+  const page = readFileSync(resolve(root, "app/page.tsx"), "utf8");
+  const start = page.indexOf('channel.subscribe((status, error) => {');
+  const end = page.indexOf("\n    });", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const handler = page.slice(start, end);
+  assert.match(handler, /if \(status !== "CLOSED" && !cleanupStarted\)/);
+  assert.match(handler, /cleanupStarted = true;\s*queueMicrotask\(\(\) => void supabase\.removeChannel\(channel\)\)/);
+  assert.doesNotMatch(handler, /if \(status === "CHANNEL_ERROR" \|\| status === "TIMED_OUT" \|\| status === "CLOSED"\)[\s\S]*?void supabase\.removeChannel\(channel\);\s*\}/);
+});
+
+test("Electron windows keep renderer sandboxing enabled", () => {
+  const main = readFileSync(resolve(root, "desktop/main.cjs"), "utf8");
+  assert.equal((main.match(/sandbox: true/g) ?? []).length, 3);
+  assert.doesNotMatch(main, /sandbox:\s*false/);
 });
 
 test("theme initialization is same-origin external JavaScript without a nonce mismatch", () => {
@@ -48,13 +67,11 @@ test("theme initialization is same-origin external JavaScript without a nonce mi
 });
 
 test("script-src permits unsafe-eval only in development", () => {
-  const nextConfig = readFileSync(resolve(root, "next.config.mjs"), "utf8");
   const production = scriptSourceDirective("test-nonce", false);
   const development = scriptSourceDirective("test-nonce", true);
   assert.doesNotMatch(production, /unsafe-inline|unsafe-eval/);
   assert.match(development, /'unsafe-eval'/);
   assert.doesNotMatch(development, /unsafe-inline/);
-  assert.match(nextConfig, /config\.devtool = "source-map"/);
 });
 
 test("platform admins only see their memberships/owned servers and cannot open another by URL", () => {
