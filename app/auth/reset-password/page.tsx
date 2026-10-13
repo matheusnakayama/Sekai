@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { passwordUpdateSchema } from "@/lib/validation/auth";
 
@@ -91,7 +92,7 @@ export default function ResetPasswordPage() {
             {saving ? "Atualizando…" : "Atualizar senha"}
           </button>
         </>}
-        {!ready && <a href="/" className="mt-5 block text-center text-sm text-discord-text-link hover:underline">Voltar ao login</a>}
+        {!ready && <Link href="/" className="mt-5 block text-center text-sm text-discord-text-link hover:underline">Voltar ao login</Link>}
       </form>
     </main>
   );

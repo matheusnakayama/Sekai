@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ArrowUpRight } from "lucide-react";
+import { Gamepad2 } from "lucide-react";
 import { isFreshActivity, readSpotifySession, safeSpotifyArtUrl, safeSpotifyProfileUrl, type NowPlaying, type PublicConnection } from "@/lib/spotify";
 
 export function SpotifyMark({ className }: { className?: string }) {
@@ -119,6 +120,86 @@ export function ListeningLine({ track, artUrl }: ListeningActivity) {
       <span className="min-w-0 truncate">Escutando {track}</span>
     </span>
   );
+}
+
+export type GameActivity = { gameId: string; gameName: string; startedAt: string; updatedAt: string };
+
+function isFreshGameActivity(updatedAt: string) {
+  const timestamp = Date.parse(updatedAt);
+  return Number.isFinite(timestamp) && Date.now() - timestamp < 45_000;
+}
+
+export function useGameActivity(userId: string, status: string) {
+  const [activity, setActivity] = useState<GameActivity | null>(null);
+  useEffect(() => {
+    if (!userId || status === "offline") { setActivity(null); return; }
+    let cancelled = false;
+    const supabase = createClient();
+    async function load() {
+      const { data, error } = await supabase.from("user_game_activity").select("game_id,game_name,started_at,updated_at").eq("user_id", userId).maybeSingle();
+      if (cancelled) return;
+      const row = data as { game_id: string; game_name: string; started_at: string; updated_at: string } | null;
+      if (error || !row || !isFreshGameActivity(row.updated_at)) { setActivity(null); return; }
+      setActivity({ gameId: row.game_id, gameName: row.game_name, startedAt: row.started_at, updatedAt: row.updated_at });
+    }
+    void load();
+    const channel = supabase.channel(`game-activity-${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_game_activity", filter: `user_id=eq.${userId}` }, () => { void load(); })
+      .subscribe();
+    const timer = window.setInterval(() => void load(), 12_000);
+    return () => { cancelled = true; window.clearInterval(timer); void supabase.removeChannel(channel); };
+  }, [status, userId]);
+  return status === "offline" ? null : activity;
+}
+
+export function useGameActivityByUser(userIds: string[]) {
+  const key = userIds.slice().sort().join(",");
+  const [activities, setActivities] = useState<Record<string, GameActivity>>({});
+  useEffect(() => {
+    const ids = key ? key.split(",") : [];
+    if (!ids.length) { setActivities({}); return; }
+    let cancelled = false;
+    const supabase = createClient();
+    async function load() {
+      const rows: Array<{ user_id: string; game_id: string; game_name: string; started_at: string; updated_at: string }> = [];
+      for (let index = 0; index < ids.length; index += 100) {
+        const { data, error } = await supabase.from("user_game_activity").select("user_id,game_id,game_name,started_at,updated_at").in("user_id", ids.slice(index, index + 100));
+        if (cancelled || error) return;
+        rows.push(...((data ?? []) as typeof rows));
+      }
+      const next: Record<string, GameActivity> = {};
+      for (const row of rows) if (isFreshGameActivity(row.updated_at) && row.game_name) next[row.user_id] = { gameId: row.game_id, gameName: row.game_name, startedAt: row.started_at, updatedAt: row.updated_at };
+      if (!cancelled) setActivities(next);
+    }
+    void load();
+    const channel = supabase.channel("sekai-member-game-activity")
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_game_activity" }, () => { void load(); })
+      .subscribe();
+    const timer = window.setInterval(() => void load(), 12_000);
+    return () => { cancelled = true; window.clearInterval(timer); void supabase.removeChannel(channel); };
+  }, [key]);
+  return activities;
+}
+
+export function GameActivityLine({ activity }: { activity: GameActivity }) {
+  const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(activity.startedAt)) / 1000));
+  return <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]"><Gamepad2 className="h-3.5 w-3.5 shrink-0 text-emerald-400"/><span className="min-w-0 truncate">Jogando {activity.gameName} · {formatElapsed(elapsed)}</span></span>;
+}
+
+export function GameActivityCard({ activity }: { activity: GameActivity }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const elapsed = Math.max(0, Math.floor((now - Date.parse(activity.startedAt)) / 1000));
+  return <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] p-3">
+    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-400/10 text-emerald-300"><Gamepad2 size={24}/></span>
+    <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-emerald-300"><Gamepad2 className="h-3.5 w-3.5"/>Jogando</span><span className="mt-0.5 block truncate text-sm font-semibold text-white">{activity.gameName}</span><span className="mt-0.5 block text-xs text-white/60">Há {formatElapsed(elapsed)}</span></span>
+  </div>;
+}
+
+function formatElapsed(totalSeconds: number) {
+  const seconds = Math.max(0, totalSeconds);
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, "0")}`;
 }
 
 export function useConnections(userId: string, includeLocal: boolean) {

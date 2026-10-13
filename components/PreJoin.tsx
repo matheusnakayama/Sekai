@@ -5,16 +5,21 @@ import { CamIcon, MicIcon } from './icons';
 import ErrorBanner from './ErrorBanner';
 import type { CallError } from '@/lib/types';
 import { readCallAudioPreference, writeCallAudioPreference } from '@/lib/callAudioPreference';
-import { openCallInput, voiceDeviceId } from '@/lib/voiceCapture';
+import { openCallInput, releaseCallInput, voiceDeviceId } from '@/lib/voiceCapture';
+import type { VoiceProfile } from '@/components/Controls';
 
 export default function PreJoin({
   roomId,
   initialName = '',
+  inputDeviceId = '',
+  voiceProfile = 'standard',
   onCancel,
   onJoin,
 }: {
   roomId: string;
   initialName?: string;
+  inputDeviceId?: string;
+  voiceProfile?: VoiceProfile;
   onCancel?: () => void;
   onJoin: (opts: { name: string; stream: MediaStream | null; camOn: boolean; micOn: boolean }) => void;
 }) {
@@ -58,9 +63,9 @@ export default function PreJoin({
       setLoadingDevices(true);
       setDeviceError(null);
       try {
-        localStream = await openCallInput({ video: true });
+        localStream = await openCallInput({ video: true, audioDeviceId: inputDeviceId || undefined, noiseSuppression: voiceProfile === 'noise-suppression' });
         if (cancelled) {
-          localStream.getTracks().forEach((t) => t.stop());
+          releaseCallInput(localStream);
           return;
         }
         activeStreamRef.current = localStream;
@@ -77,7 +82,7 @@ export default function PreJoin({
         try {
           localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           if (cancelled) {
-            localStream.getTracks().forEach((t) => t.stop());
+            releaseCallInput(localStream);
             return;
           }
           activeStreamRef.current = localStream;
@@ -103,11 +108,11 @@ export default function PreJoin({
       // Depois de entrar, a sala passa a ser dona das faixas. Encerrá-las aqui
       // desligaria o microfone e a câmera logo após a entrada.
       if (!streamTransferredRef.current) {
-        activeStreamRef.current?.getTracks().forEach((t) => t.stop());
+        releaseCallInput(activeStreamRef.current);
       }
       activeStreamRef.current = null;
     };
-  }, []);
+  }, [inputDeviceId, voiceProfile]);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -145,7 +150,7 @@ export default function PreJoin({
     if (!deviceId || deviceId === selectedAudioInput) return;
 
     try {
-      const replacement = await openCallInput({ audioDeviceId: deviceId, video: false });
+      const replacement = await openCallInput({ audioDeviceId: deviceId, video: false, noiseSuppression: voiceProfile === 'noise-suppression' });
       const replacementTrack = replacement.getAudioTracks()[0];
       if (!replacementTrack) throw new Error('O navegador não retornou uma faixa de áudio.');
 

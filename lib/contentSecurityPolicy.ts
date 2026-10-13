@@ -6,6 +6,7 @@ export function scriptSourceDirective(nonce: string, development: boolean) {
     "stun:",
     "turn:",
     "turns:",
+    "'wasm-unsafe-eval'",
     ...(development ? ["'unsafe-eval'"] : []),
   ];
   return `script-src ${sources.join(" ")}`;

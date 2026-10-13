@@ -32,6 +32,32 @@ interface SekaiOverlayCallState {
   accentColor?: string;
 }
 
+interface SekaiRegisteredGame {
+  id: string;
+  name: string;
+  processName: string;
+  enabled: boolean;
+}
+
+interface SekaiRunningGameProcess {
+  processName: string;
+  executablePath: string;
+  startedAt: number | null;
+}
+
+interface SekaiGameActivity {
+  gameId: string;
+  gameName: string;
+  startedAt: number;
+  updatedAt: number;
+}
+
+interface SekaiGameActivitySnapshot {
+  registeredGames: SekaiRegisteredGame[];
+  runningProcesses: SekaiRunningGameProcess[];
+  currentGame: SekaiGameActivity | null;
+}
+
 interface SekaiDesktop {
   listSources(kind: 'window' | 'screen'): Promise<SekaiDesktopSource[]>;
   prepareCapture(sourceId: string, shareAudio: boolean): void;
@@ -41,6 +67,9 @@ interface SekaiDesktop {
   updateOverlayCall?(state: SekaiOverlayCallState): void;
   restoreCallFromOverlay?(): void;
   onOverlayState?(callback: (state: { settings: SekaiOverlaySettings; callName: string; participants: SekaiOverlayParticipant[] }) => void): () => void;
+  getGameActivity?(): Promise<SekaiGameActivitySnapshot>;
+  updateRegisteredGames?(games: SekaiRegisteredGame[]): Promise<SekaiGameActivitySnapshot>;
+  onGameActivity?(callback: (snapshot: SekaiGameActivitySnapshot) => void): () => void;
 }
 
 interface Window {

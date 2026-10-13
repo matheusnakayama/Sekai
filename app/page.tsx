@@ -20,7 +20,7 @@ import { ChannelSettingsModal } from "@/components/ChannelSettingsModal";
 import { ChatArea } from "@/components/ChatArea";
 import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
-import { MemberList, MemberItem, ServerRoleOption } from "@/components/MemberList";
+import { MemberList, MemberItem, ServerRoleOption, type MemberVoiceActivity } from "@/components/MemberList";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
@@ -31,6 +31,7 @@ import { executeSlashCommand, SLASH_COMMANDS } from "@/lib/commands/executeSlash
 import { refreshUnlockedThemes } from "@/lib/useTheme";
 import { FriendsHome } from "@/components/FriendsHome";
 import { SpotifyActivityPublisher } from "@/components/SpotifyActivityPublisher";
+import { GameActivityPublisher } from "@/components/GameActivityPublisher";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { getServerTemplate } from "@/lib/serverTemplates";
@@ -380,6 +381,7 @@ export default function Home() {
   const [voiceParticipantsChannelId, setVoiceParticipantsChannelId] = useState<string | null>(null);
   const voiceControlsRef = useRef<VoiceControlHandle | null>(null);
   const [voiceControlState, setVoiceControlState] = useState({ micOn: true, deafened: false, camOn: false, isSpeaking: false });
+  const [voicePingMs, setVoicePingMs] = useState<number | null>(null);
   const [voiceAudioSettings, setVoiceAudioSettings] = useState<VoiceAudioSettings | null>(null);
   const [voiceMembersByChannel, setVoiceMembersByChannel] = useState<Record<string, VoiceMemberPreview[]>>({});
   const [voiceActivityByServer, setVoiceActivityByServer] = useState<Record<string, boolean>>({});
@@ -1808,6 +1810,7 @@ export default function Home() {
     setPendingVoiceJoin(null);
     setCallExpanded(false);
     setVoiceParticipants([]);
+    setVoicePingMs(null);
     voiceControlsRef.current = null;
     setVoiceControlState((current) => ({ ...current, isSpeaking: false }));
   }
@@ -2160,10 +2163,26 @@ export default function Home() {
   const connectedVoiceMembers = voiceSession?.kind === "server"
     ? visibleVoiceMembersByChannel[voiceSession.channelId] ?? liveVoiceMembers
     : liveVoiceMembers;
+  const voiceActivityByUser: Record<string, MemberVoiceActivity> = {};
+  const activeServerName = servers.find((server) => server.id === activeServerId)?.name ?? "Servidor";
+  for (const channel of visibleChannels) {
+    if (channel.type !== "voice") continue;
+    const participants = visibleVoiceMembersByChannel[channel.id] ?? [];
+    if (!participants.length) continue;
+    const activity: MemberVoiceActivity = {
+      serverId: activeServerId,
+      serverName: activeServerName,
+      channelId: channel.id,
+      channelName: channel.name,
+      participants: participants.map((participant) => ({ id: participant.id, name: participant.name, avatarUrl: participant.avatarUrl })),
+    };
+    for (const participant of participants) voiceActivityByUser[participant.id] = activity;
+  }
 
   return (
     <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
+      <GameActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -2213,6 +2232,7 @@ export default function Home() {
         connectedVoiceChannelId={voiceSession?.channelId ?? null}
         connectedVoiceChannelName={voiceSession?.channelName}
         connectedVoiceStartedAt={voiceSession?.startedAt}
+        connectedVoicePingMs={voicePingMs}
         connectedVoiceServerId={voiceSession?.kind === "server" ? voiceSession.serverId : undefined}
         connectedVoiceMembers={connectedVoiceMembers}
         voiceMembersByChannel={visibleVoiceMembersByChannel}
@@ -2367,6 +2387,7 @@ export default function Home() {
             onParticipantsChange={handleVoiceParticipantsChange}
             onControlsReady={handleVoiceControlsReady}
             onControlStateChange={handleVoiceControlStateChange}
+            onConnectionQualityChange={setVoicePingMs}
             onAddFriend={handleAddFriend}
             onClose={disconnectVoice}
             onMinimize={() => setCallExpanded(false)}
@@ -2541,6 +2562,9 @@ export default function Home() {
         onToggleRole={handleToggleMemberRole}
         mutedSoundEffectUserIds={mutedSoundEffectUserIds}
         onToggleSoundEffects={handleToggleSoundEffects}
+        voiceActivityByUser={voiceActivityByUser}
+        onOpenVoiceActivity={(activity) => { if (activity.serverId !== activeServerId) setActiveServerId(activity.serverId); handleSelectChannel(activity.channelId); setMobileMembersOpen(false); }}
+        onOpenSettings={() => { setSettingsSection("perfil"); setShowUserSettings(true); }}
       /></div>}
       {mentionToast && <button onClick={() => { setInviteChannelId(mentionToast.channelId); setActiveServerId(mentionToast.serverId); setCallExpanded(false); setMentionToast(null); }} className={`fixed left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary ${dmToast ? "bottom-28" : "bottom-5"}`}>
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-discord-danger text-sm font-bold text-white">@</span>

@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import type { Participant } from '@/lib/types';
-import { FocusIcon, MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
+import { MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 
 export default function VideoTile({
   participant,
@@ -14,7 +15,8 @@ export default function VideoTile({
   screenShareRevealed = false,
   onRevealScreenShare,
   onFocusParticipant,
-  onExitPresentationFocus,
+  onToggleFullscreen,
+  fullscreenActive = false,
 }: {
   participant: Participant;
   muteRemoteAudio?: boolean;
@@ -25,19 +27,22 @@ export default function VideoTile({
   screenShareRevealed?: boolean;
   onRevealScreenShare: (participantId: string) => void;
   onFocusParticipant?: () => void;
-  onExitPresentationFocus?: () => void;
+  onToggleFullscreen?: () => void;
+  fullscreenActive?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const voiceAudioRef = useRef<HTMLAudioElement>(null);
   const soundboardAudioRef = useRef<HTMLAudioElement>(null);
   const screenAudioRef = useRef<HTMLAudioElement>(null);
   const voiceTrackKey = (participant.stream?.getAudioTracks() ?? []).map((track) => track.id).join(',');
+  const videoTrackKey = (participant.stream?.getVideoTracks() ?? []).map((track) => track.id).join(',');
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
   const [screenVolume, setScreenVolume] = useState(1);
   const [showScreenVolume, setShowScreenVolume] = useState(false);
   const [videoLive, setVideoLive] = useState(false);
+  const [screenShareSnapshot, setScreenShareSnapshot] = useState<{ trackKey: string; dataUrl: string } | null>(null);
   const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
   const isScreenSharePreview = participant.isSharingScreen && !participant.isLocal && !screenShareRevealed;
 
@@ -87,6 +92,10 @@ export default function VideoTile({
   }, [participant.stream]);
 
   useEffect(() => {
+    setScreenShareSnapshot(null);
+  }, [videoTrackKey]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     // A faixa de voz não pode ir para este vídeo: ele fica mudo para não
@@ -98,10 +107,31 @@ export default function VideoTile({
     if (!sameTracks) video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
     video.muted = true;
     if (!videoTracks.length) return;
+    if (isScreenSharePreview) {
+      let captured = false;
+      const freezeFirstFrame = () => {
+        if (captured || video.videoWidth <= 0 || video.videoHeight <= 0) return;
+        captured = true;
+        const scale = Math.min(1, 1280 / video.videoWidth, 720 / video.videoHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        const context = canvas.getContext('2d');
+        if (context) {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          setScreenShareSnapshot({ trackKey: videoTrackKey, dataUrl: canvas.toDataURL('image/jpeg', 0.76) });
+        }
+        video.pause();
+      };
+      video.addEventListener('loadeddata', freezeFirstFrame);
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) freezeFirstFrame();
+      else void video.play().catch(() => {});
+      return () => video.removeEventListener('loadeddata', freezeFirstFrame);
+    }
     void video.play().catch(() => {
       if (!participant.isLocal && (participant.camOn || participant.isSharingScreen)) setPlaybackBlocked(true);
     });
-  }, [participant.camOn, participant.isLocal, participant.isSharingScreen, participant.stream, showVideo]);
+  }, [isScreenSharePreview, participant.camOn, participant.isLocal, participant.isSharingScreen, participant.stream, videoTrackKey]);
 
   useEffect(() => {
     const retryPlayback = () => {
@@ -196,7 +226,7 @@ export default function VideoTile({
 
   async function enablePlayback() {
     const video = videoRef.current;
-    if (video?.srcObject) void video.play().catch(() => undefined);
+    if (video?.srcObject && !isScreenSharePreview) void video.play().catch(() => undefined);
 
     const audioElements = [voiceAudioRef.current, soundboardAudioRef.current, screenAudioRef.current]
       .filter((audio): audio is HTMLAudioElement => Boolean(audio?.srcObject && !audio.muted));
@@ -221,13 +251,18 @@ export default function VideoTile({
             autoPlay
             playsInline
             muted
-            className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''} ${isScreenSharePreview ? 'blur-xl brightness-[0.4] scale-105' : ''} transition-[filter,transform] duration-500`}
+            className={`absolute inset-0 h-full w-full ${participant.isSharingScreen ? 'object-contain' : 'object-cover'} ${showVideo && !isScreenSharePreview ? '' : 'invisible'} ${participant.isLocal && !participant.isSharingScreen ? 'scale-x-[-1]' : ''}`}
           />
+        )}
+        {isScreenSharePreview && screenShareSnapshot?.trackKey === videoTrackKey && (
+          // A prévia mostra um único quadro capturado; o vídeo fica pausado até a pessoa escolher assistir.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={screenShareSnapshot.dataUrl} alt={`Primeiro quadro da apresentação de ${participant.name}`} className="absolute inset-0 h-full w-full scale-105 object-contain blur-md brightness-[0.55]" />
         )}
         <audio ref={voiceAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         <audio ref={soundboardAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         <audio ref={screenAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
-        {!showVideo && (
+        {!showVideo && !isScreenSharePreview && (
           <div className="absolute inset-0 flex items-center justify-center">
             <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />
           </div>
@@ -252,7 +287,7 @@ export default function VideoTile({
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold">{participant.name} começou a apresentar</p>
-              <p className="mt-1 text-[11px] text-white/65">A imagem está desfocada até você abrir a apresentação.</p>
+            <p className="mt-1 text-[11px] text-white/65">Prévia estática do primeiro quadro. A transmissão ao vivo começa quando você abrir.</p>
             </div>
             <button
               type="button"
@@ -266,15 +301,15 @@ export default function VideoTile({
         </div>
       )}
 
-      {participant.isSharingScreen && !isScreenSharePreview && (focused ? onExitPresentationFocus : onFocusParticipant) && (
+      {focused && onToggleFullscreen && (
         <button
           type="button"
-          onClick={focused ? onExitPresentationFocus : onFocusParticipant}
-          aria-label={focused ? 'Voltar à grade de participantes' : 'Destacar apresentação'}
-          className="absolute right-3 top-3 z-10 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/70 px-3 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur transition hover:bg-black/90"
+          onClick={(event) => { event.stopPropagation(); onToggleFullscreen(); }}
+          aria-label={fullscreenActive ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
+          title={fullscreenActive ? 'Sair da tela cheia' : 'Tela cheia'}
+          className="absolute right-3 top-3 z-20 grid h-10 w-10 place-items-center rounded-xl border border-white/15 bg-black/70 text-white shadow-lg backdrop-blur transition hover:scale-105 hover:bg-black/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
         >
-          <FocusIcon />
-          {focused ? 'Voltar à grade' : 'Destacar'}
+          {fullscreenActive ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>
       )}
 

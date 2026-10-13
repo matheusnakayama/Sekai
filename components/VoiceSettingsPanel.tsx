@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Headphones, Mic, Play, Square, Volume2 } from "lucide-react";
-import { voiceInputConstraints } from "@/lib/voiceCapture";
+import { openCallInput, releaseCallInput } from "@/lib/voiceCapture";
 import { readVoicePreferences, saveVoicePreferences, type VoicePreferences } from "@/lib/voicePreferences";
 
 interface AudioDeviceOption {
@@ -48,7 +48,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
         cancelAnimationFrame(session.frame);
         session.recorder.onstop = null;
         if (session.recorder.state !== "inactive") session.recorder.stop();
-        session.stream.getTracks().forEach((track) => track.stop());
+        releaseCallInput(session.stream);
         void session.context.close().catch(() => undefined);
       }
       playerRef.current?.pause();
@@ -151,12 +151,13 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
         await context.close().catch(() => undefined);
         return;
       }
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: voiceInputConstraints(preferences.inputDeviceId || undefined, preferences.voiceProfile === "noise-suppression"),
+      stream = await openCallInput({
         video: false,
+        audioDeviceId: preferences.inputDeviceId || undefined,
+        noiseSuppression: preferences.voiceProfile === "noise-suppression",
       });
       if (!mountedRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
+        releaseCallInput(stream);
         await context.close().catch(() => undefined);
         return;
       }
@@ -189,7 +190,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
         if (sessionRef.current !== session) return;
         sessionRef.current = null;
         cancelAnimationFrame(session.frame);
-        session.stream.getTracks().forEach((track) => track.stop());
+        releaseCallInput(session.stream);
         void session.context.close().catch(() => undefined);
         if (!session.chunks.length) {
           if (mountedRef.current) {
@@ -228,7 +229,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
       };
       measure();
     } catch (cause) {
-      stream?.getTracks().forEach((track) => track.stop());
+      releaseCallInput(stream);
       if (context) await context.close().catch(() => undefined);
       if (!mountedRef.current) return;
       setTestState("idle");
@@ -250,7 +251,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
       session.recorder.onstop = null;
       sessionRef.current = null;
       cancelAnimationFrame(session.frame);
-      session.stream.getTracks().forEach((track) => track.stop());
+      releaseCallInput(session.stream);
       void session.context.close().catch(() => undefined);
       setTestState("idle");
       setInputLevel(0);
@@ -295,8 +296,9 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
         <label className="block text-sm font-semibold text-discord-text-normal">Perfil de entrada
           <select aria-label="Perfil de entrada do microfone" value={preferences.voiceProfile} onChange={(event) => updatePreferences({ voiceProfile: event.target.value as VoicePreferences["voiceProfile"] })} className={selectClass}>
             <option value="standard">Padrão</option>
-            <option value="noise-suppression">Supressão de ruído</option>
+            <option value="noise-suppression">Supressão neural (RNNoise)</option>
           </select>
+          <span className="mt-1 block text-xs font-normal leading-5 text-discord-text-muted">Processa a voz no dispositivo. Se o filtro neural não estiver disponível, o Sekai usa a supressão de ruído do navegador.</span>
         </label>
 
         <label className="block text-sm font-semibold text-discord-text-normal">Volume de entrada <span className="float-right font-normal text-discord-text-muted">{Math.round(preferences.inputVolume * 100)}%</span>

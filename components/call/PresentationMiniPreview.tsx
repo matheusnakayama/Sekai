@@ -117,20 +117,8 @@ export default function PresentationMiniPreview({
     setDragging(false);
     if (!drag.moved) return;
 
-    const margin = 12;
-    const maxX = Math.max(margin, drag.view.innerWidth - drag.width - margin);
-    const maxY = Math.max(margin, drag.view.innerHeight - drag.height - margin);
-    const corners = [
-      { x: margin, y: margin },
-      { x: maxX, y: margin },
-      { x: margin, y: maxY },
-      { x: maxX, y: maxY },
-    ];
-    const nearest = corners.reduce<{ x: number; y: number; distance: number }>((best, corner) => {
-      const distance = Math.hypot(corner.x - drag.x, corner.y - drag.y);
-      return distance < best.distance ? { ...corner, distance } : best;
-    }, { ...corners[0], distance: Number.POSITIVE_INFINITY });
-    updatePosition({ x: nearest.x, y: nearest.y });
+    // Mantém a posição exata escolhida; a miniatura pode ficar em qualquer ponto da tela.
+    updatePosition({ x: drag.x, y: drag.y });
     suppressOpenClickRef.current = true;
     drag.view.setTimeout(() => { suppressOpenClickRef.current = false; }, 350);
   }
@@ -166,6 +154,7 @@ export default function PresentationMiniPreview({
         type="button"
         onClick={openCallFromPreview}
         aria-label={`Voltar à chamada e ver a apresentação de ${participant.name}`}
+        data-no-drag
         className="group relative block aspect-video w-full overflow-hidden bg-black text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
       >
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-contain" />

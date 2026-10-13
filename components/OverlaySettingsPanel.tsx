@@ -62,7 +62,7 @@ export function OverlaySettingsPanel() {
       <section className="settings-section-enter">
         <div className="mb-7">
           <p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Somente no aplicativo</p>
-          <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Sobreposição de voz</h1>
+          <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Sobreposição de jogo</h1>
         </div>
         <div className="rounded-xl border border-amber-400/20 bg-amber-400/[.06] p-4 text-sm leading-6 text-discord-text-normal" role="status">
           Este aplicativo ainda não tem suporte à sobreposição. Atualize ou reinstale o Sekai para usar esse recurso.
@@ -75,7 +75,7 @@ export function OverlaySettingsPanel() {
     <section className="settings-section-enter">
       <div className="mb-7">
         <p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Somente no aplicativo</p>
-        <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Sobreposição de voz</h1>
+        <h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Sobreposição de jogo</h1>
         <p className="mt-2 text-sm leading-6 text-discord-text-muted">Veja quem está na chamada e quem está falando por cima do jogo ou de outros programas.</p>
       </div>
 

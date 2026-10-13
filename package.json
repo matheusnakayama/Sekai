@@ -1,20 +1,25 @@
 {
   "name": "sekai",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
+    "predev": "node scripts/copy-audio-worklets.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-audio-worklets.mjs",
     "build": "next build",
+    "prestart": "node scripts/copy-audio-worklets.mjs",
     "start": "next start",
     "lint": "next lint",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "preapp": "node scripts/copy-audio-worklets.mjs",
     "app": "electron desktop/main.cjs"
   },
   "eslintConfig": {
     "extends": "next/core-web-vitals"
   },
   "dependencies": {
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.0",
     "@vercel/blob": "2.8.0",

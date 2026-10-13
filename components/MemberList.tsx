@@ -6,7 +6,7 @@ import { RoleInsignia } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
-import { ListeningLine, useListeningByUser } from "@/components/NowPlayingCard";
+import { GameActivityLine, ListeningLine, useGameActivityByUser, useListeningByUser } from "@/components/NowPlayingCard";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import type { MutualServer, ProfileCardPosition } from "@/components/UserProfileCard";
 import type { CustomBadge } from "@/lib/badges";
@@ -53,6 +53,14 @@ export interface ServerRoleOption extends RoleBadge {
   position: number;
 }
 
+export interface MemberVoiceActivity {
+  serverId: string;
+  serverName: string;
+  channelId: string;
+  channelName: string;
+  participants: Array<{ id: string; name: string; avatarUrl?: string | null }>;
+}
+
 interface MemberListProps {
   members: MemberItem[];
   currentUserId: string;
@@ -78,13 +86,17 @@ interface MemberListProps {
   onToggleRole?: (member: MemberItem, role: ServerRoleOption, assigned: boolean) => void;
   mutedSoundEffectUserIds?: string[];
   onToggleSoundEffects?: (userId: string, muted: boolean) => void;
+  voiceActivityByUser?: Record<string, MemberVoiceActivity>;
+  onOpenVoiceActivity?: (activity: MemberVoiceActivity) => void;
+  onOpenSettings?: () => void;
 }
 
-export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canDisconnectFromVoice = false, voiceMemberIds = [], canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onDisconnectMemberFromVoice, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects }: MemberListProps) {
+export function MemberList({ members, currentUserId, onAddFriend, canKick = false, canBan = false, canTimeout = false, canDisconnectFromVoice = false, voiceMemberIds = [], canManageNicknames = false, onKickMember, onBanMember, onTimeoutMember, onDisconnectMemberFromVoice, onChangeNickname, onMentionMember, onMessageMember, onQuickMessageMember, immediateMutualServer, roles = [], canManageRoles = false, canManageSelfRoles = false, onToggleRole, mutedSoundEffectUserIds = [], onToggleSoundEffects, voiceActivityByUser = {}, onOpenVoiceActivity, onOpenSettings }: MemberListProps) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
   const [profilePosition, setProfilePosition] = useState<ProfileCardPosition>({ left: 12, top: 12 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; member: MemberItem; trigger: HTMLButtonElement } | null>(null);
   const listening = useListeningByUser(members.map((member) => member.id));
+  const gameActivities = useGameActivityByUser(members.filter((member) => member.status !== "offline").map((member) => member.id));
 
   useEffect(() => {
     setSelected((current) => current ? members.find((member) => member.id === current.id) ?? null : null);
@@ -119,7 +131,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-px">
             {roleMembers.map((m) => (
-              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
@@ -133,7 +145,7 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
           </div>
           <div className="space-y-px">
             {offlineMembers.map((m) => (
-              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
+              <MemberRow key={m.id} member={m} listening={m.status === "offline" ? undefined : listening[m.id]} gameActivity={m.status === "offline" ? undefined : gameActivities[m.id]} isSelf={m.id === currentUserId} onSelect={openProfile} onContextMenu={openMemberContextMenu} />
             ))}
           </div>
         </section>
@@ -147,6 +159,9 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         onClose={() => setSelected(null)}
         onMessage={onMessageMember ? () => onMessageMember(selected) : undefined}
         onQuickMessage={onQuickMessageMember ? (content) => onQuickMessageMember(selected, content) : undefined}
+        onOpenSettings={selected.id === currentUserId ? onOpenSettings : undefined}
+        voiceActivity={voiceActivityByUser[selected.id]}
+        onOpenVoiceActivity={onOpenVoiceActivity}
         onAddFriend={() => onAddFriend(selected.id)}
         onKick={canKick && onKickMember ? () => onKickMember(selected) : undefined}
         roles={roles}
@@ -209,7 +224,7 @@ function groupByRole(members: MemberItem[]): { id: string; roleName: string; rol
   return Array.from(map.values()).sort((a, b) => b.rolePosition - a.rolePosition);
 }
 
-function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
+function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContextMenu }: { member: MemberItem; listening?: { track: string; artUrl: string }; gameActivity?: import("@/components/NowPlayingCard").GameActivity; isSelf: boolean; onSelect: (member: MemberItem, trigger: HTMLButtonElement) => void; onContextMenu: (member: MemberItem, trigger: HTMLButtonElement, event: MouseEvent<HTMLButtonElement>) => void }) {
   const [hovered, setHovered] = useState(false);
   const rowRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
@@ -259,7 +274,7 @@ function MemberRow({ member, listening, isSelf, onSelect, onContextMenu }: { mem
           <span ref={nameRef} className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
           {member.showBadgesInMemberList !== false && <CustomBadgeList badges={member.badges} limit={3} respectMemberListVisibility />}
         </span>
-        {listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
+        {gameActivity ? <GameActivityLine activity={gameActivity} /> : listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}
       </span>
       {!isSelf && <UserPlus className="absolute right-1.5 z-10 h-3.5 w-3.5 text-discord-text-muted opacity-0 transition group-hover:opacity-100" />}
     </button>

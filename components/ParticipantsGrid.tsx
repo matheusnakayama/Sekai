@@ -1,6 +1,7 @@
 'use client';
 
 import type { Participant } from '@/lib/types';
+import { ChevronDown, ChevronUp, Users } from 'lucide-react';
 import VideoTile from './VideoTile';
 
 export default function ParticipantsGrid({
@@ -13,7 +14,10 @@ export default function ParticipantsGrid({
   revealedScreenShareIds,
   onRevealScreenShare,
   onSelectParticipant,
-  onExitParticipantFocus,
+  hideOtherParticipants = false,
+  onToggleOtherParticipants,
+  onToggleFullscreen,
+  fullscreenActive = false,
 }: {
   participants: Participant[];
   muteRemoteAudio?: boolean;
@@ -24,7 +28,10 @@ export default function ParticipantsGrid({
   revealedScreenShareIds: ReadonlySet<string>;
   onRevealScreenShare: (participantId: string) => void;
   onSelectParticipant?: (participantId: string) => void;
-  onExitParticipantFocus?: () => void;
+  hideOtherParticipants?: boolean;
+  onToggleOtherParticipants?: () => void;
+  onToggleFullscreen?: () => void;
+  fullscreenActive?: boolean;
 }) {
   const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId);
   if (focusedParticipant) {
@@ -41,10 +48,24 @@ export default function ParticipantsGrid({
             onRevealScreenShare={onRevealScreenShare}
             focused
             onFocusParticipant={onSelectParticipant ? () => onSelectParticipant(focusedParticipant.id) : undefined}
-            onExitPresentationFocus={onExitParticipantFocus}
+            onToggleFullscreen={onToggleFullscreen}
+            fullscreenActive={fullscreenActive}
           />
         </div>
-        {participants.length > 1 && (
+        {participants.length > 1 && onToggleOtherParticipants && (
+          <button
+            type="button"
+            onClick={onToggleOtherParticipants}
+            aria-label={hideOtherParticipants ? 'Mostrar membros' : 'Ocultar membros'}
+            aria-expanded={!hideOtherParticipants}
+            title={hideOtherParticipants ? 'Mostrar membros' : 'Ocultar membros'}
+            className={`absolute left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/15 bg-black/75 px-3 py-2 text-white shadow-lg backdrop-blur transition hover:scale-105 hover:bg-black ${hideOtherParticipants ? 'bottom-3' : 'bottom-[6.75rem]'}`}
+          >
+            {hideOtherParticipants ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            <Users className="h-4 w-4" />
+          </button>
+        )}
+        {participants.length > 1 && !hideOtherParticipants && (
           <div className="w-full shrink-0 overflow-x-auto pb-1" aria-label="Outros participantes da chamada">
             <div className="mx-auto flex w-max gap-3">
               {participants.filter((participant) => participant.id !== focusedParticipant.id).map((participant) => (

@@ -10,6 +10,23 @@ type VoiceConstraints = MediaTrackConstraints & { voiceIsolation?: boolean };
 const MAKEUP_GAIN = 2.6;
 const sourceDeviceIds = new WeakMap<MediaStreamTrack, string>();
 const voiceInputGains = new WeakMap<MediaStreamTrack, GainNode>();
+const voiceInputReleases = new WeakMap<MediaStreamTrack, () => void>();
+
+export function releaseCallInputTrack(track: MediaStreamTrack): void {
+  const release = voiceInputReleases.get(track);
+  voiceInputReleases.delete(track);
+  if (release) release();
+  else if (track.readyState === "live") track.stop();
+}
+
+/** Encerra as faixas e libera o processamento de áudio associado à captura. */
+export function releaseCallInput(stream: MediaStream | null | undefined): void {
+  if (!stream) return;
+  stream.getAudioTracks().forEach(releaseCallInputTrack);
+  stream.getVideoTracks().forEach((track) => {
+    if (track.readyState === "live") track.stop();
+  });
+}
 
 export function voiceDeviceId(track: MediaStreamTrack | undefined): string | undefined {
   if (!track) return undefined;
@@ -115,13 +132,25 @@ async function requestUserMedia(audio: VoiceConstraints, video: boolean): Promis
   }
 }
 
-export async function amplifyMicrophone(track: MediaStreamTrack): Promise<{ track: MediaStreamTrack; stop: () => void; amplified: boolean }> {
+async function applyNativeNoiseSuppression(track: MediaStreamTrack) {
+  try {
+    await track.applyConstraints({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  } catch {
+    // Usa o filtro de captura nativo quando o navegador aceitar; mantém o áudio mesmo sem ele.
+  }
+}
+
+export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSuppression = false): Promise<{ track: MediaStreamTrack; stop: () => void; amplified: boolean }> {
   const AudioContextCtor = window.AudioContext;
-  if (!AudioContextCtor) return { track, stop() {}, amplified: false };
+  if (!AudioContextCtor) {
+    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
+    return { track, stop() {}, amplified: false };
+  }
   let context: AudioContext;
   try {
-    context = new AudioContextCtor({ latencyHint: "interactive" });
+    context = new AudioContextCtor(advancedNoiseSuppression ? { latencyHint: "interactive", sampleRate: 48000 } : { latencyHint: "interactive" });
   } catch {
+    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
   try {
@@ -131,51 +160,78 @@ export async function amplifyMicrophone(track: MediaStreamTrack): Promise<{ trac
   }
   if (context.state !== "running") {
     await context.close().catch(() => undefined);
+    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
 
-  const source = context.createMediaStreamSource(new MediaStream([track]));
-  const gain = context.createGain();
-  gain.gain.value = MAKEUP_GAIN;
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -18;
-  compressor.knee.value = 16;
-  compressor.ratio.value = 3.5;
-  compressor.attack.value = 0.003;
-  compressor.release.value = 0.24;
-  const destination = context.createMediaStreamDestination();
-  source.connect(gain);
-  gain.connect(compressor);
-  compressor.connect(destination);
-  const amplified = destination.stream.getAudioTracks()[0];
-  if (!amplified) {
-    source.disconnect();
+  let source: MediaStreamAudioSourceNode | null = null;
+  let suppressor: (AudioWorkletNode & { destroy?: () => void }) | null = null;
+  let gain: GainNode | null = null;
+  let amplified: MediaStreamTrack | null = null;
+  try {
+    source = context.createMediaStreamSource(new MediaStream([track]));
+    if (advancedNoiseSuppression) {
+      if (context.sampleRate !== 48000 || !context.audioWorklet) throw new Error("O navegador não oferece AudioWorklet em 48 kHz.");
+      const { RnnoiseWorkletNode, loadRnnoise } = await import("@sapphi-red/web-noise-suppressor");
+      await context.audioWorklet.addModule("/audio-worklets/rnnoiseWorklet.js");
+      const wasmBinary = await loadRnnoise({ url: "/audio-worklets/rnnoise.wasm", simdUrl: "/audio-worklets/rnnoise_simd.wasm" });
+      suppressor = new RnnoiseWorkletNode(context, { wasmBinary, maxChannels: 1 });
+    }
+    gain = context.createGain();
+    gain.gain.value = MAKEUP_GAIN;
+    const compressor = context.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 16;
+    compressor.ratio.value = 3.5;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.24;
+    const destination = context.createMediaStreamDestination();
+    if (suppressor) {
+      source.connect(suppressor);
+      suppressor.connect(gain);
+    } else {
+      source.connect(gain);
+    }
+    gain.connect(compressor);
+    compressor.connect(destination);
+    amplified = destination.stream.getAudioTracks()[0] ?? null;
+    if (!amplified) throw new Error("O processamento de áudio não criou uma faixa de microfone.");
+    voiceInputGains.set(amplified, gain);
+    amplified.contentHint = "speech";
+
+    let stopped = false;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      window.removeEventListener("pointerdown", resume);
+      source?.disconnect();
+      suppressor?.disconnect();
+      suppressor?.destroy?.();
+      if (amplified?.readyState === "live") amplified.stop();
+      void context.close().catch(() => undefined);
+    };
+    const resume = () => {
+      if (context.state === "suspended") void context.resume().catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", resume);
+    amplified.addEventListener("ended", stop);
+    return { track: amplified, stop, amplified: true };
+  } catch (error) {
+    console.warn("Não foi possível iniciar o filtro de ruído avançado:", error);
+    source?.disconnect();
+    suppressor?.disconnect();
+    suppressor?.destroy?.();
+    if (amplified?.readyState === "live") amplified.stop();
     await context.close().catch(() => undefined);
+    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
-  voiceInputGains.set(amplified, gain);
-  amplified.contentHint = "speech";
-
-  let stopped = false;
-  const stop = () => {
-    if (stopped) return;
-    stopped = true;
-    window.removeEventListener("pointerdown", resume);
-    source.disconnect();
-    if (amplified.readyState === "live") amplified.stop();
-    void context.close().catch(() => undefined);
-  };
-  const resume = () => {
-    if (context.state === "suspended") void context.resume().catch(() => undefined);
-  };
-  window.addEventListener("pointerdown", resume);
-  amplified.addEventListener("ended", stop);
-  return { track: amplified, stop, amplified: true };
 }
 
 /** Abre câmera e microfone. Se a câmera falhar, devolve só o microfone. */
 export async function openCallInput(options: { video: boolean; audioDeviceId?: string; noiseSuppression?: boolean } = { video: false }): Promise<MediaStream> {
-  const audio = voiceInputConstraints(options.audioDeviceId, options.noiseSuppression);
+  // O modo avançado faz a supressão neural depois da captura; evita aplicar dois filtros em série.
+  const audio = voiceInputConstraints(options.audioDeviceId, false);
   let raw: MediaStream;
   try {
     raw = await requestUserMedia(audio, options.video);
@@ -187,11 +243,11 @@ export async function openCallInput(options: { video: boolean; audioDeviceId?: s
   if (!microphone) return raw;
   microphone.contentHint = "speech";
   try {
-    await microphone.applyConstraints(voiceInputConstraints(options.audioDeviceId, options.noiseSuppression));
+    await microphone.applyConstraints(voiceInputConstraints(options.audioDeviceId, false));
   } catch {
     // O navegador ficou com o melhor ajuste que aceitou na abertura.
   }
-  const boosted = await amplifyMicrophone(microphone);
+  const boosted = await amplifyMicrophone(microphone, options.noiseSuppression);
   if (!boosted.amplified) return raw;
   const deviceId = microphone.getSettings().deviceId;
   if (deviceId) sourceDeviceIds.set(boosted.track, deviceId);
@@ -201,11 +257,13 @@ export async function openCallInput(options: { video: boolean; audioDeviceId?: s
   const release = () => {
     if (released) return;
     released = true;
+    voiceInputReleases.delete(boosted.track);
     boosted.stop();
     raw.getAudioTracks().forEach((track) => {
       if (track.readyState === "live") track.stop();
     });
   };
+  voiceInputReleases.set(boosted.track, release);
   boosted.track.addEventListener("ended", release);
   return stream;
 }

@@ -24,4 +24,15 @@ contextBridge.exposeInMainWorld('sekaiDesktop', {
     ipcRenderer.on('sekai:overlay-state', listener);
     return () => ipcRenderer.removeListener('sekai:overlay-state', listener);
   },
+  getGameActivity() {
+    return ipcRenderer.invoke('sekai:games:get-activity');
+  },
+  updateRegisteredGames(games) {
+    return ipcRenderer.invoke('sekai:games:update-registered', games);
+  },
+  onGameActivity(callback) {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on('sekai:games:activity', listener);
+    return () => ipcRenderer.removeListener('sekai:games:activity', listener);
+  },
 });

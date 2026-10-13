@@ -66,10 +66,11 @@ test("theme initialization is same-origin external JavaScript without a nonce mi
   assert.match(themeRoute, /Content-Type": "application\/javascript/);
 });
 
-test("script-src permits unsafe-eval only in development", () => {
+test("script-src permits WebAssembly in production and JavaScript eval only in development", () => {
   const production = scriptSourceDirective("test-nonce", false);
   const development = scriptSourceDirective("test-nonce", true);
-  assert.doesNotMatch(production, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(production, /'unsafe-inline'|'unsafe-eval'/);
+  assert.match(production, /'wasm-unsafe-eval'/);
   assert.match(development, /'unsafe-eval'/);
   assert.doesNotMatch(development, /unsafe-inline/);
 });

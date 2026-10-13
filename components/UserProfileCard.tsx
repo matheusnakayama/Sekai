@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, Check, MoreHorizontal, MessageCircle, SendHorizontal, UserPlus, UserMinus, Plus, Search, Users } from "lucide-react";
+import { Activity, Check, MoreHorizontal, MessageCircle, SendHorizontal, UserPlus, UserMinus, Plus, Search, Users, Pencil, Headphones } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
@@ -12,6 +12,7 @@ import type { CustomBadge } from "@/lib/badges";
 import { cn, getProfilePalette } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { NowPlayingCard, ProfileConnections, useConnections, useNowPlaying } from "@/components/NowPlayingCard";
+import { GameActivityCard, useGameActivity } from "@/components/NowPlayingCard";
 
 export interface ProfileCardUser {
   id: string;
@@ -50,6 +51,14 @@ export interface MutualServer {
   id: string;
   name: string;
   iconUrl?: string | null;
+}
+
+export interface ProfileVoiceActivity {
+  serverId: string;
+  serverName: string;
+  channelId: string;
+  channelName: string;
+  participants: Array<{ id: string; name: string; avatarUrl?: string | null }>;
 }
 
 const MUTUAL_SERVERS_CACHE_TTL_MS = 60_000;
@@ -191,6 +200,9 @@ export function UserProfileCard({
   canManageRoles = false,
   onToggleRole,
   immediateMutualServer,
+  voiceActivity,
+  onOpenVoiceActivity,
+  onOpenSettings,
 }: {
   profile: ProfileCardUser;
   position: ProfileCardPosition;
@@ -205,6 +217,9 @@ export function UserProfileCard({
   canManageRoles?: boolean;
   onToggleRole?: (role: ProfileRoleOption, assigned: boolean) => void;
   immediateMutualServer?: MutualServer | null;
+  voiceActivity?: ProfileVoiceActivity;
+  onOpenVoiceActivity?: (activity: ProfileVoiceActivity) => void;
+  onOpenSettings?: () => void;
 }) {
   const supabase = createClient();
   const cardRef = useRef<HTMLElement>(null);
@@ -223,7 +238,11 @@ export function UserProfileCard({
   const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
   const [resolvedPosition, setResolvedPosition] = useState(position);
   const listening = useNowPlaying(profile.id, profile.status);
+  const gameActivity = useGameActivity(profile.id, profile.status);
   const isOtherUser = profile.id !== currentUserId;
+  const [profileTab, setProfileTab] = useState<"atividade" | "amigos" | "servidores">("atividade");
+  const [mutualFriends, setMutualFriends] = useState<Array<{ id: string; name: string; avatarUrl?: string | null }>>([]);
+  const [mutualFriendsLoaded, setMutualFriendsLoaded] = useState(false);
   const connections = useConnections(profile.id, !isOtherUser);
   const username = profile.username || profile.id.slice(0, 8);
   const profilePalette = getProfilePalette(profile.profileCardColor);
@@ -236,6 +255,31 @@ export function UserProfileCard({
     mutualServerState.userId === profile.id ? mutualServerState.items : [],
     cachedMutualServers && cachedMutualServers.expiresAt > Date.now() ? cachedMutualServers.items : [],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMutualFriends() {
+      setMutualFriendsLoaded(false);
+      const { data: ownEdges, error: ownError } = await supabase.from("friendships").select("sender_id, receiver_id").eq("status", "accepted").or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+      if (ownError || cancelled) { setMutualFriendsLoaded(true); return; }
+      const friendIds = (ownEdges ?? []).map((edge: any) => edge.sender_id === currentUserId ? edge.receiver_id : edge.sender_id).filter((id: string) => id !== profile.id);
+      let mutualIds = friendIds;
+      if (isOtherUser) {
+        const { data: theirEdges, error: theirError } = await supabase.from("friendships").select("sender_id, receiver_id").eq("status", "accepted").or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`);
+        if (theirError || cancelled) { setMutualFriendsLoaded(true); return; }
+        const theirs = new Set((theirEdges ?? []).map((edge: any) => edge.sender_id === profile.id ? edge.receiver_id : edge.sender_id));
+        mutualIds = friendIds.filter((id: string) => theirs.has(id));
+      }
+      const { data: profiles } = mutualIds.length
+        ? await supabase.from("profiles").select("id, display_name, username, avatar_url").in("id", mutualIds.slice(0, 40))
+        : { data: [] };
+      if (cancelled) return;
+      setMutualFriends((profiles ?? []).map((item: any) => ({ id: item.id, name: item.display_name || item.username || "Usuário", avatarUrl: item.avatar_url })));
+      setMutualFriendsLoaded(true);
+    }
+    void loadMutualFriends();
+    return () => { cancelled = true; };
+  }, [currentUserId, isOtherUser, profile.id, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -362,6 +406,7 @@ export function UserProfileCard({
   useEffect(() => {
     setActionsOpen(false);
     setRolePickerOpen(false);
+    setProfileTab("atividade");
   }, [profile.id]);
 
   async function submitQuickMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -443,13 +488,14 @@ export function UserProfileCard({
 
       <div className="px-4 pb-4">
         <div className="relative -mt-9 h-[68px] w-[68px]">
-          <div className="relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand" style={{ borderColor: profilePalette.surface }}>
+          <button type="button" onClick={() => { if (!isOtherUser && onOpenSettings) { onClose(); onOpenSettings(); } }} disabled={isOtherUser || !onOpenSettings} aria-label={!isOtherUser && onOpenSettings ? "Editar avatar e perfil" : undefined} title={!isOtherUser && onOpenSettings ? "Editar perfil" : undefined} className={cn("group relative h-full w-full overflow-hidden rounded-full border-4 bg-discord-brand", !isOtherUser && onOpenSettings && "cursor-pointer")} style={{ borderColor: profilePalette.surface }}>
             {profile.avatarUrl ? (
               <CroppedProfileImage src={profile.avatarUrl} alt="" className="rounded-full" pauseGif={false} positionX={Math.min(100, (profile.avatarPositionX ?? 50) + 5)} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} />
             ) : (
               <span className="grid h-full place-items-center text-2xl font-bold text-white">{profile.displayName[0]?.toUpperCase()}</span>
             )}
-          </div>
+            {!isOtherUser && onOpenSettings && <span className="absolute inset-0 grid place-items-center rounded-full bg-black/0 text-white opacity-0 transition duration-200 group-hover:bg-black/55 group-hover:opacity-100 group-focus-visible:bg-black/55 group-focus-visible:opacity-100"><Pencil size={18}/></span>}
+          </button>
           <span className="pointer-events-none absolute -top-2 left-0 z-20 h-16 w-16">
             <PresenceIndicator presence={profile.status} avatarBadge borderColor={profilePalette.surface} cutoutColor={profilePalette.surface} className="scale-110 translate-y-2" />
           </span>
@@ -463,7 +509,32 @@ export function UserProfileCard({
             <CustomBadgeList badges={profile.badges} limit={5} size="medium" />
           </div>
 
-          {mutualServers.length > 0 && (
+          <div role="tablist" aria-label="Seções do perfil" className="mt-3 flex gap-1 overflow-x-auto border-b border-white/[0.12]">
+            {([ ["atividade", "Atividade"], ["amigos", isOtherUser ? "Amigos mútuos" : "Amigos"], ["servidores", "Servidores mútuos"] ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={profileTab === id} onClick={() => setProfileTab(id)} className={cn("shrink-0 border-b-2 px-2 py-2 text-[11px] font-semibold transition", profileTab === id ? "border-discord-brand text-white" : "border-transparent text-white/55 hover:text-white/85")}>{label}{id === "amigos" && <span className="ml-1 text-white/45">{mutualFriendsLoaded ? mutualFriends.length : "…"}</span>}{id === "servidores" && <span className="ml-1 text-white/45">{mutualServers.length}</span>}</button>)}
+          </div>
+
+          {profileTab === "atividade" && <>
+          {gameActivity && <GameActivityCard activity={gameActivity} />}
+          {listening && <NowPlayingCard activity={listening} />}
+          {voiceActivity && <div className="mt-3 rounded-xl border border-white/[0.07] bg-[#1a1a1d] p-3">
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.12em] text-white/65"><Headphones size={14}/>Em voz</div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-14 shrink-0 flex-wrap content-center justify-center gap-0.5 rounded-lg border border-white/[0.08] bg-black/20 p-1">{voiceActivity.participants.slice(0,4).map((person) => <span key={person.id} className="h-5 w-5 overflow-hidden rounded-full bg-white/10">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-[9px]">{person.name.slice(0,1)}</span>}</span>)}</span>
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{voiceActivity.channelName}</span><span className="block truncate text-xs text-white/55">em {voiceActivity.serverName} · {voiceActivity.participants.length} na chamada</span></span>
+            </div>
+            {onOpenVoiceActivity && <button type="button" onClick={() => { onClose(); onOpenVoiceActivity(voiceActivity); }} className="mt-2 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold hover:bg-white/10">Abrir chamada</button>}
+          </div>}
+          {profile.customStatus && <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] px-3 py-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: profilePalette.inset, color: profilePalette.muted }}><Activity size={16}/></span><span className="min-w-0 truncate text-xs font-semibold">{profile.customStatus}</span></div>}
+          {profile.bio && <div className="mt-3"><p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{renderProfileBio(profile.bio, profilePalette.muted)}</p></div>}
+          </>}
+
+          {profileTab === "amigos" && <div className="mt-2">
+            {!mutualFriendsLoaded ? <p className="py-4 text-center text-xs text-white/50">Carregando amigos…</p> : mutualFriends.length ? mutualFriends.map((friend) => <div key={friend.id} className="flex items-center gap-2 rounded-lg px-1.5 py-2"><span className="h-8 w-8 overflow-hidden rounded-full bg-white/10">{friend.avatarUrl ? <img src={friend.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center text-xs">{friend.name.slice(0,1)}</span>}</span><span className="truncate text-xs font-semibold">{friend.name}</span></div>) : <p className="py-4 text-center text-xs text-white/50">Nenhum amigo mútuo</p>}
+          </div>}
+
+          {profileTab === "servidores" && <div className="mt-2">{mutualServers.length ? mutualServers.map((server) => <div key={server.id} className="flex items-center gap-2 rounded-lg px-1.5 py-2"><span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/10 text-xs font-bold">{server.iconUrl ? <img src={server.iconUrl} alt="" className="h-full w-full object-cover"/> : server.name.slice(0,1)}</span><span className="truncate text-xs font-semibold">{server.name}</span></div>) : <p className="py-4 text-center text-xs text-white/50">Nenhum servidor em comum</p>}</div>}
+
+          {mutualServers.length > 0 && profileTab === "atividade" && (
             <div className="mt-3 flex min-w-0 items-center gap-2 text-[11px]" style={{ color: profilePalette.muted }} aria-label={`${mutualServers.length} servidores em comum`}>
               <span className="flex shrink-0 -space-x-1.5">
                 {mutualServers.slice(0, 3).map((server) => (
@@ -477,21 +548,7 @@ export function UserProfileCard({
             </div>
           )}
 
-          {profile.customStatus && (
-            <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] px-3 py-2.5">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: profilePalette.inset, color: profilePalette.muted }}><Activity size={16} /></span>
-              <span className="min-w-0 truncate text-xs font-semibold">{profile.customStatus}</span>
-            </div>
-          )}
-          {listening && <NowPlayingCard activity={listening} />}
-
-          {profile.bio && (
-            <div className="mt-3">
-              <p className="whitespace-pre-wrap break-words text-[13px] leading-5" style={{ color: profilePalette.muted }}>{renderProfileBio(profile.bio, profilePalette.muted)}</p>
-            </div>
-          )}
-
-          <ProfileConnections connections={connections} showAdd={!isOtherUser} />
+          {profileTab === "atividade" && <ProfileConnections connections={connections} showAdd={!isOtherUser} />}
 
           {profile.assignedRoles?.length ? (
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Cargos deste membro">

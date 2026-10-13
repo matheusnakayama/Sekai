@@ -4,5 +4,6 @@ node_modules
 node_modules/
 .next/
 .next-codex-build/
+public/audio-worklets/
 backup-*.sql
 supabase/.temp/

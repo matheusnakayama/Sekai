@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import type { Channel } from 'pusher-js';
 import { uploadPresigned } from '@vercel/blob/client';
 import PreJoin from '@/components/PreJoin';
@@ -19,7 +20,7 @@ import { WebRTCManager, type VideoSenderProfile } from '@/lib/webrtc';
 import { microphoneEnabledOnJoin, readCallAudioPreference, writeCallAudioPreference, type CallAudioPreference } from '@/lib/callAudioPreference';
 import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, type CallMusicPlayback } from '@/lib/callMusic';
 import { buildDisplayMediaRequest, prepareScreenAudioTrack, screenShareFailureMessage } from '@/lib/screenShare';
-import { advanceVoiceGate, createVoiceGate, openCallInput, setVoiceInputVolume, voiceDeviceId } from '@/lib/voiceCapture';
+import { advanceVoiceGate, createVoiceGate, openCallInput, releaseCallInput, releaseCallInputTrack, setVoiceInputVolume, voiceDeviceId } from '@/lib/voiceCapture';
 import { readVoicePreferences, saveVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT, type VoicePreferences } from '@/lib/voicePreferences';
 import { inviteUrl } from '@/lib/invites';
 import type {
@@ -64,6 +65,7 @@ export default function RoomClient({
   onAddFriend,
   onControlsReady,
   onControlStateChange,
+  onConnectionQualityChange,
   mutedSoundEffectUserIds = [],
   autoJoin = false,
   userId,
@@ -97,6 +99,7 @@ export default function RoomClient({
     setVoiceProfile: (profile: VoiceProfile) => void;
   } | null) => void;
   onControlStateChange?: (state: { micOn: boolean; deafened: boolean; camOn: boolean; isSpeaking: boolean }) => void;
+  onConnectionQualityChange?: (pingMs: number | null) => void;
   mutedSoundEffectUserIds?: string[];
   onOpenVoiceSettings?: () => void;
   /** Entra direto, sem a tela de pré-visualização. A câmera começa desligada e o microfone segue o último estado da call. */
@@ -136,12 +139,15 @@ export default function RoomClient({
   const [focusedParticipantId, setFocusedParticipantId] = useState<string | null>(null);
   const [revealedScreenShareIds, setRevealedScreenShareIds] = useState<Set<string>>(() => new Set());
   const [presentationPipWindow, setPresentationPipWindow] = useState<Window | null>(null);
+  const [hideOtherParticipants, setHideOtherParticipants] = useState(false);
+  const [callFullscreen, setCallFullscreen] = useState(false);
   const [fatalError, setFatalError] = useState<CallError | null>(null);
   const [banner, setBanner] = useState<{ message: string; connection: boolean; persistent?: boolean } | null>(null);
   const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
   const [pendingPrankPrompt, setPendingPrankPrompt] = useState<{ senderName: string } | null>(null);
 
   const localIdRef = useRef<string>('');
+  const callRootRef = useRef<HTMLElement | null>(null);
   const localNameRef = useRef<string>('');
   const onCloseRef = useRef(onClose);
   const roomSessionRef = useRef('');
@@ -231,6 +237,25 @@ export default function RoomClient({
   }, [micOn, deafened, camOn, localSpeaking, phase, onControlStateChange]);
 
   useEffect(() => {
+    if (phase !== 'in-call') {
+      onConnectionQualityChange?.(null);
+      return;
+    }
+    let cancelled = false;
+    const updatePing = async () => {
+      const ping = await managerRef.current?.getMedianRoundTripTimeMs().catch(() => null) ?? null;
+      if (!cancelled) onConnectionQualityChange?.(ping);
+    };
+    void updatePing();
+    const timer = window.setInterval(() => void updatePing(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      onConnectionQualityChange?.(null);
+    };
+  }, [onConnectionQualityChange, phase]);
+
+  useEffect(() => {
     const track = cameraStreamRef.current?.getAudioTracks()[0];
     if (track) setVoiceInputVolume(track, inputVolume);
   }, [inputVolume, phase]);
@@ -273,7 +298,7 @@ export default function RoomClient({
     channelRef.current?.unbind('client-moderation');
     channelRef.current?.unbind('server-moderation');
     channelRef.current = null;
-    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    releaseCallInput(cameraStreamRef.current);
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     releaseCallMusicRef.current();
     cameraStreamRef.current = null;
@@ -979,13 +1004,13 @@ export default function RoomClient({
         const local = previous[localIdRef.current];
         return local ? { ...previous, [localIdRef.current]: { ...local, stream: nextStream } } : previous;
       });
-      previousAudioTracks.forEach((track) => { if (track !== nextTrack && track.readyState === 'live') track.stop(); });
+      previousAudioTracks.forEach((track) => { if (track !== nextTrack) releaseCallInputTrack(track); });
       setSelectedInputDeviceId(deviceId || voiceDeviceId(nextTrack) || '');
       setVoiceProfile(profile);
       if (userId) saveVoicePreferences(userId, { inputDeviceId: deviceId || voiceDeviceId(nextTrack) || '', voiceProfile: profile }, false);
       replacement = null; // A faixa agora pertence à sessão da chamada.
     } catch (error) {
-      replacement?.getTracks().forEach((track) => { if (track.readyState === 'live') track.stop(); });
+      releaseCallInput(replacement);
       console.error('Não foi possível trocar o dispositivo de entrada:', error);
       showProblem(error instanceof Error ? error.message : 'Não foi possível trocar o microfone.');
     }
@@ -1409,7 +1434,9 @@ export default function RoomClient({
   }
 
   function selectParticipant(participantId: string) {
-    setFocusedParticipantId((current) => current === participantId ? null : participantId);
+    const isUnfocusing = focusedParticipantId === participantId;
+    setFocusedParticipantId(isUnfocusing ? null : participantId);
+    if (!isUnfocusing) setHideOtherParticipants(false);
     setShowChat(false);
     chatOpenRef.current = false;
     setShowParticipants(false);
@@ -1423,13 +1450,21 @@ export default function RoomClient({
       return next;
     });
     setFocusedParticipantId(participantId);
+    setHideOtherParticipants(false);
     setShowChat(false);
     chatOpenRef.current = false;
     setShowParticipants(false);
   }
 
-  function exitPresentationFocus() {
-    setFocusedParticipantId(null);
+  async function toggleCallFullscreen() {
+    const root = callRootRef.current;
+    if (!root) return;
+    try {
+      if (root.ownerDocument.fullscreenElement === root) await root.ownerDocument.exitFullscreen();
+      else await root.requestFullscreen();
+    } catch (error) {
+      console.warn('Não foi possível alternar para tela cheia:', error);
+    }
   }
 
   function stopWatchingPresentation() {
@@ -1537,7 +1572,7 @@ export default function RoomClient({
       }).catch(() => null);
 
       if (cancelled) {
-        stream?.getTracks().forEach((track) => track.stop());
+        releaseCallInput(stream);
         return;
       }
       if (!stream) {
@@ -1577,6 +1612,15 @@ export default function RoomClient({
   const isHost = Boolean(localIdRef.current) && hostId === localIdRef.current;
 
   useEffect(() => {
+    const root = callRootRef.current;
+    const doc = root?.ownerDocument;
+    if (!doc) return;
+    const updateFullscreen = () => setCallFullscreen(doc.fullscreenElement === root);
+    doc.addEventListener('fullscreenchange', updateFullscreen);
+    return () => doc.removeEventListener('fullscreenchange', updateFullscreen);
+  }, []);
+
+  useEffect(() => {
     if (!presentationPipWindow) return;
     const pipWindow = presentationPipWindow;
     const handlePageHide = () => {
@@ -1604,7 +1648,8 @@ export default function RoomClient({
   }
 
   if (phase === 'pre-join') {
-    return <PreJoin roomId={roomName} initialName={initialName} onCancel={onClose} onJoin={handleJoin} />;
+    const savedVoicePreferences = readVoicePreferences(userId ?? '');
+    return <PreJoin roomId={roomName} initialName={initialName} inputDeviceId={savedVoicePreferences.inputDeviceId} voiceProfile={savedVoicePreferences.voiceProfile} onCancel={onClose} onJoin={handleJoin} />;
   }
 
   if (phase === 'fatal-error') {
@@ -1639,18 +1684,18 @@ export default function RoomClient({
           continuarem nela.
         </p>
         <div className="flex gap-3">
-          <a
+          <Link
             href={`/sala/${roomId}`}
             className="rounded-xl bg-theme-gradient transition hover:brightness-110 px-5 py-3 font-semibold text-white"
           >
             Entrar novamente
-          </a>
-          <a
+          </Link>
+          <Link
             href="/"
             className="rounded-xl bg-surface-card hover:bg-surface-border border border-surface-border transition-colors px-5 py-3 font-semibold text-white"
           >
             Página inicial
-          </a>
+          </Link>
         </div>
       </main>
     );
@@ -1671,7 +1716,11 @@ export default function RoomClient({
   const isConnecting = phase === 'connecting';
 
   return (
-    <main className="h-full min-h-0 flex flex-col bg-transparent">
+    <main
+      ref={callRootRef}
+      style={callFullscreen ? { height: '100vh', width: '100vw', backgroundColor: '#111214' } : undefined}
+      className="h-full min-h-0 flex flex-col bg-transparent"
+    >
       <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-surface-border">
         <div className="flex items-center gap-2 text-sm text-white/60">
           <span className="h-2 w-2 rounded-full bg-success animate-speaking" />
@@ -1756,7 +1805,6 @@ export default function RoomClient({
                 revealedScreenShareIds={revealedScreenShareIds}
                 onRevealScreenShare={revealScreenShare}
                 onSelectParticipant={selectParticipant}
-                onExitParticipantFocus={exitPresentationFocus}
               />
             </div>
             <p className="text-white/50 text-sm mt-2">
@@ -1774,7 +1822,10 @@ export default function RoomClient({
             revealedScreenShareIds={revealedScreenShareIds}
             onRevealScreenShare={revealScreenShare}
             onSelectParticipant={selectParticipant}
-            onExitParticipantFocus={exitPresentationFocus}
+            hideOtherParticipants={hideOtherParticipants}
+            onToggleOtherParticipants={() => setHideOtherParticipants((hidden) => !hidden)}
+            onToggleFullscreen={toggleCallFullscreen}
+            fullscreenActive={callFullscreen}
           />
         )}
       </section>

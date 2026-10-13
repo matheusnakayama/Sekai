@@ -183,6 +183,28 @@ export class WebRTCManager {
     if (servers.length) this.iceServers = servers;
   }
 
+  async getMedianRoundTripTimeMs(): Promise<number | null> {
+    const samples: number[] = [];
+    const connected = Array.from(this.peers.values()).filter((peer) => peer.connection.connectionState === 'connected');
+    const reports = await Promise.allSettled(connected.map((peer) => peer.connection.getStats()));
+    for (const result of reports) {
+      if (result.status !== 'fulfilled') continue;
+      const rows = Array.from(result.value.values()) as Array<Record<string, unknown>>;
+      const selectedPairId = rows.find((row) => row.type === 'transport' && typeof row.selectedCandidatePairId === 'string')?.selectedCandidatePairId;
+      const candidatePairs = rows.filter((row) => row.type === 'candidate-pair');
+      const selectedPair = typeof selectedPairId === 'string' ? candidatePairs.find((row) => row.id === selectedPairId) : undefined;
+      const pair = selectedPair ?? candidatePairs.find((row) => row.selected === true)
+        ?? candidatePairs.find((row) => row.nominated === true && row.state === 'succeeded');
+      const rttSeconds = Number(pair?.currentRoundTripTime);
+      if (Number.isFinite(rttSeconds) && rttSeconds >= 0) samples.push(rttSeconds * 1000);
+    }
+    if (!samples.length) return null;
+    samples.sort((a, b) => a - b);
+    const middle = Math.floor(samples.length / 2);
+    const median = samples.length % 2 ? samples[middle] : (samples[middle - 1] + samples[middle]) / 2;
+    return Math.round(median);
+  }
+
   setLocalStream(stream: MediaStream) {
     this.localStream = stream;
     this.localMicOn = stream.getAudioTracks()[0]?.enabled ?? false;

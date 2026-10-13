@@ -14,6 +14,7 @@ import {
   Plus,
   PhoneOff,
   X,
+  Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ThemePicker from "@/components/ThemePicker";
@@ -109,6 +110,7 @@ interface ChannelSidebarProps {
   connectedVoiceChannelId?: string | null;
   connectedVoiceChannelName?: string;
   connectedVoiceStartedAt?: number;
+  connectedVoicePingMs?: number | null;
   connectedVoiceServerId?: string;
   connectedVoiceMembers?: VoiceMemberPreview[];
   voiceMembersByChannel?: Record<string, VoiceMemberPreview[]>;
@@ -151,6 +153,7 @@ export function ChannelSidebar({
   connectedVoiceChannelId,
   connectedVoiceChannelName,
   connectedVoiceStartedAt,
+  connectedVoicePingMs,
   connectedVoiceServerId,
   connectedVoiceMembers = [],
   voiceMembersByChannel = {},
@@ -453,6 +456,9 @@ export function ChannelSidebar({
               <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold" style={{ color: "var(--sekai-detail-accent, var(--sekai-logo-accent))" }}>
                 <Volume2 className="h-3.5 w-3.5 shrink-0" />
                 <span>Voz conectada</span>
+                <span title={connectedVoicePingMs == null ? "Medindo a latência da chamada" : `Latência da chamada: ${connectedVoicePingMs} ms`} aria-label={connectedVoicePingMs == null ? "Ping da chamada sendo medido" : `Ping da chamada: ${connectedVoicePingMs} milissegundos`} className={cn("ml-auto inline-flex items-center gap-1 text-[10px] font-medium", connectedVoicePingMs == null ? "text-discord-text-muted" : connectedVoicePingMs < 100 ? "text-emerald-400" : connectedVoicePingMs < 200 ? "text-amber-300" : "text-rose-400")}>
+                  <Wifi className="h-3.5 w-3.5" />{connectedVoicePingMs == null ? "— ms" : `${connectedVoicePingMs} ms`}
+                </span>
               </p>
               <p className="truncate pl-5 text-[11px] text-discord-text-muted">{connectedVoiceChannelName ?? "Canal de voz"}</p>
             </div>
@@ -471,11 +477,11 @@ export function ChannelSidebar({
                   </div>
                   <div className="my-3 border-t border-white/10" />
                   <button type="button" onClick={() => setVoiceProfileMenuOpen((open) => !open)} aria-expanded={voiceProfileMenuOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition hover:bg-white/[0.06]">
-                    <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceAudioSettings?.voiceProfile === "noise-suppression" ? "Supressão de ruído" : "Padrão"}</span></span><Settings className="h-4 w-4 text-white/55" />
+                    <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceAudioSettings?.voiceProfile === "noise-suppression" ? "Supressão neural (RNNoise)" : "Padrão"}</span></span><Settings className="h-4 w-4 text-white/55" />
                   </button>
                   {voiceProfileMenuOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1">
                     <VoiceAudioOption label="Padrão" selected={voiceAudioSettings?.voiceProfile === "standard"} onClick={() => { onVoiceProfileChange?.("standard"); setVoiceProfileMenuOpen(false); }} />
-                    <VoiceAudioOption label="Supressão de ruído" selected={voiceAudioSettings?.voiceProfile === "noise-suppression"} onClick={() => { onVoiceProfileChange?.("noise-suppression"); setVoiceProfileMenuOpen(false); }} />
+                    <VoiceAudioOption label="Supressão neural (RNNoise)" selected={voiceAudioSettings?.voiceProfile === "noise-suppression"} onClick={() => { onVoiceProfileChange?.("noise-suppression"); setVoiceProfileMenuOpen(false); }} />
                   </div>}
                   <label className="mt-3 block border-t border-white/10 pt-3">
                     <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span>

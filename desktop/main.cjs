@@ -1,5 +1,5 @@
 const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, session, shell } = require('electron');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -20,6 +20,12 @@ let overlayAccentColor = '#22c55e';
 let overlayHiddenByShortcut = false;
 let overlayInteractive = false;
 let registeredOverlayShortcut = '';
+let registeredGames = [];
+let currentGameActivity = null;
+let runningGameProcesses = [];
+let gameScanBusy = false;
+let gameActivityTimer = null;
+const gameProcessStartedAt = new Map();
 
 const DEFAULT_OVERLAY_SETTINGS = {
   enabled: false,
@@ -71,6 +77,95 @@ function persistOverlaySettings() {
   } catch (error) {
     console.error('Não foi possível salvar as preferências da sobreposição:', error);
   }
+}
+
+function registeredGamesPath() {
+  return path.join(app.getPath('userData'), 'registered-games.json');
+}
+
+function sanitizeRegisteredGames(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value.slice(0, 100).flatMap((entry) => {
+    const processName = path.basename(String(entry?.processName || '')).replace(/\.exe$/i, '').trim().slice(0, 120);
+    const id = processName.toLowerCase();
+    const name = String(entry?.name || processName).trim().slice(0, 80);
+    if (!id || !name || seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, name, processName, enabled: entry?.enabled !== false }];
+  });
+}
+
+function readRegisteredGames() {
+  try {
+    return sanitizeRegisteredGames(JSON.parse(fs.readFileSync(registeredGamesPath(), 'utf8')));
+  } catch {
+    return [];
+  }
+}
+
+function persistRegisteredGames() {
+  try {
+    fs.mkdirSync(path.dirname(registeredGamesPath()), { recursive: true });
+    fs.writeFileSync(registeredGamesPath(), JSON.stringify(registeredGames, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Não foi possível salvar os jogos registrados:', error);
+  }
+}
+
+function getRunningGameProcesses() {
+  if (process.platform !== 'win32') return Promise.resolve([]);
+  const script = '$ErrorActionPreference="SilentlyContinue"; Get-Process | ForEach-Object { if ($_.Path -and $_.Path -notlike "$env:WINDIR\\System32\\*" -and $_.Path -notlike "$env:WINDIR\\SysWOW64\\*") { $started=$null; try { $started=$_.StartTime.ToUniversalTime().ToString("o") } catch {}; [pscustomobject]@{ processName=$_.ProcessName; executablePath=$_.Path; startedAt=$started } } } | ConvertTo-Json -Compress';
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 8000, maxBuffer: 2 * 1024 * 1024 }, (error, stdout) => {
+      if (error || !stdout.trim()) return resolve([]);
+      try {
+        const parsed = JSON.parse(stdout);
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        resolve(rows.flatMap((row) => {
+          const processName = String(row?.processName || '').trim().slice(0, 120);
+          const executablePath = String(row?.executablePath || '').slice(0, 1024);
+          if (!processName || !executablePath) return [];
+          const startedAt = Date.parse(String(row?.startedAt || ''));
+          return [{ processName, executablePath, startedAt: Number.isFinite(startedAt) ? startedAt : null }];
+        }));
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
+function buildGameActivitySnapshot() {
+  return { registeredGames, runningProcesses: runningGameProcesses, currentGame: currentGameActivity };
+}
+
+async function refreshGameActivity() {
+  if (gameScanBusy) return buildGameActivitySnapshot();
+  gameScanBusy = true;
+  try {
+    runningGameProcesses = await getRunningGameProcesses();
+    const active = [];
+    const liveKeys = new Set();
+    for (const game of registeredGames.filter((item) => item.enabled)) {
+      const process = runningGameProcesses.find((item) => item.processName.toLowerCase() === game.processName.toLowerCase());
+      if (!process) continue;
+      const key = `${game.id}:${process.processName.toLowerCase()}`;
+      liveKeys.add(key);
+      const startedAt = process.startedAt || gameProcessStartedAt.get(key) || Date.now();
+      gameProcessStartedAt.set(key, startedAt);
+      active.push({ gameId: game.id, gameName: game.name, startedAt, updatedAt: Date.now() });
+    }
+    for (const key of gameProcessStartedAt.keys()) if (!liveKeys.has(key)) gameProcessStartedAt.delete(key);
+    active.sort((a, b) => b.startedAt - a.startedAt);
+    const next = active[0] || null;
+    const changed = (next?.gameId ?? '') !== (currentGameActivity?.gameId ?? '') || (next?.startedAt ?? 0) !== (currentGameActivity?.startedAt ?? 0);
+    currentGameActivity = next;
+    if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sekai:games:activity', buildGameActivitySnapshot());
+  } finally {
+    gameScanBusy = false;
+  }
+  return buildGameActivitySnapshot();
 }
 
 function overlayBounds() {
@@ -263,6 +358,16 @@ function attachIpc() {
     sendOverlayState();
     return overlaySettings;
   });
+  ipcMain.handle('sekai:games:get-activity', async (event) => {
+    if (event.sender !== mainWindow?.webContents) return { registeredGames: [], runningProcesses: [], currentGame: null };
+    return refreshGameActivity();
+  });
+  ipcMain.handle('sekai:games:update-registered', async (event, nextGames) => {
+    if (event.sender !== mainWindow?.webContents) return buildGameActivitySnapshot();
+    registeredGames = sanitizeRegisteredGames(nextGames);
+    persistRegisteredGames();
+    return refreshGameActivity();
+  });
   ipcMain.on('sekai:overlay:update-call', (_event, state) => {
     if (_event.sender !== mainWindow?.webContents) return;
     const next = Array.isArray(state?.participants) ? state.participants : [];
@@ -438,8 +543,10 @@ app.setName('Sekai');
 
 app.whenReady().then(async () => {
   overlaySettings = readOverlaySettings();
+  registeredGames = readRegisteredGames();
   installCaptureHandler();
   attachIpc();
+  gameActivityTimer = setInterval(() => { void refreshGameActivity(); }, 5000);
   registerOverlayShortcuts();
   if (process.argv.includes('--smoke')) {
     await smoke();
@@ -461,6 +568,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (gameActivityTimer) clearInterval(gameActivityTimer);
   globalShortcut.unregisterAll();
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy();
   stopServer();
