@@ -177,8 +177,6 @@ export function MemberList({ members, currentUserId, onAddFriend, canKick = fals
         assignedRoleIds={quickProfile.member.assignedRoles?.map((role) => role.id)}
         canManageRoles={canManageRoles && (quickProfile.member.id !== currentUserId || canManageSelfRoles)}
         immediateMutualServer={immediateMutualServer}
-        voiceActivity={voiceActivityByUser[quickProfile.member.id]}
-        onOpenVoiceActivity={onOpenVoiceActivity}
         onOpenSettings={quickProfile.member.id === currentUserId ? onOpenSettings : undefined}
         onToggleRole={onToggleRole ? (role, assigned) => onToggleRole(quickProfile.member, role, assigned) : undefined}
         onOpenFullProfile={() => openFullProfile(quickProfile.member)}
