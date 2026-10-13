@@ -567,17 +567,15 @@ button.bg-theme-gradient {
 
 /* Fundo da tela de chamada: duas cores do tema sobre a superfície escura. */
 .call-bg {
-  background-color: rgb(var(--surface));
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--bg-gradient-start) 30%, rgb(var(--surface))),
-    color-mix(in srgb, var(--bg-gradient-end) 34%, rgb(var(--surface)))
-  );
+  /* Fundo neutro e escuro, sem degradê do tema (referência: chamada do Discord). */
+  background-color: #111214;
 }
 
 /* A chamada agora vive dentro do Sekai: ocupa a área principal, não a janela inteira */
-.call-host main {
-  min-height: 100%;
+.call-host > main {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
 }
 
 /* Desenho exclusivo de cada tema de Bankai, só no fundo do chat. */
@@ -1014,4 +1012,134 @@ button.inset-0:active {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Chat: ritmo compacto de mensagens.
+   O reset mobile acima força button { min-height: 40px }, o que inflava a linha do autor
+   e as reações. Controles inline do chat voltam à altura natural. */
+button.chat-inline-control { min-height: 0; }
+
+.chat-markdown > * + * { margin-top: 0.25rem; }
+.chat-markdown p { margin: 0; }
+.chat-markdown pre { margin: 0; }
+
+/* Botões da barra da chamada: estados claros, resposta ao clique e foco visível. */
+.call-control {
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+}
+.call-control:hover:not(:disabled) { transform: translateY(-1px); }
+.call-control:active:not(:disabled) { transform: scale(0.94); }
+.call-control:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.call-control:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* ── Navegação do servidor: interações discretas e consistentes ──
+   Só transform/opacity (sem saltos de layout). O bloco de reduced-motion abaixo as desliga. */
+@keyframes channel-list-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes menu-pop-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.channel-list-enter { animation: channel-list-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+.sidebar-press {
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms ease, opacity 150ms ease;
+}
+.sidebar-press:active:not(:disabled) { transform: scale(0.98); }
+.sidebar-press:focus-visible,
+.server-icon-button:focus-visible {
+  outline: 2px solid rgb(var(--d-brand, 255 255 255));
+  outline-offset: 2px;
+}
+.server-icon-button:active { transform: scale(0.95); }
+
+/* Menus e popovers do servidor */
+.profile-action-menu-enter,
+.server-name-tooltip-enter { transform-origin: top left; }
+
+@media (prefers-reduced-motion: reduce) {
+  .channel-list-enter,
+  .sidebar-press,
+  .call-control,
+  .call-controls * {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}
+.menu-pop-enter { animation: menu-pop-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: top left; }
+@media (prefers-reduced-motion: reduce) { .menu-pop-enter { animation: none !important; } }
+
+/* ── Reordenação por arraste (canais e servidores), estilo Discord ── */
+.channel-row,
+.server-row { position: relative; touch-action: manipulation; }
+[data-reorder-id][data-dragging="true"] { z-index: 30; cursor: grabbing; will-change: transform; }
+[data-reorder-id][data-dragging="true"] * { pointer-events: none; }
+.channel-row[data-dragging="true"] {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455)) 10%, rgba(30, 31, 34, 0.86));
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: box-shadow 160ms ease, opacity 160ms ease;
+}
+.server-row[data-dragging="true"] .server-icon-button {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455));
+}
+/* Item que será substituído: realce na cor de detalhe. */
+.channel-row[data-drop-target] {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455)) 12%, transparent);
+}
+.server-row[data-drop-target] .server-icon-button {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455)) 70%, transparent);
+}
+body.list-reordering { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+body.list-reordering * { cursor: grabbing !important; }
+
+/* Faixinha que mostra onde o item vai cair: usa a cor de detalhe configurável. */
+.reorder-drop-indicator {
+  top: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--sekai-detail-accent, var(--sekai-logo-accent, #f2e455)) 75%, transparent);
+  transition: transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1), width 110ms ease;
+  animation: reorder-drop-in 120ms ease both;
+}
+@keyframes reorder-drop-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .reorder-drop-indicator { animation: none !important; transition: none !important; }
+  .channel-row[data-dragging="true"] { transition: none !important; }
+}
+
+/* ── Cabeçalho do servidor com banner (GIF) ── */
+.server-header { transition: height 360ms cubic-bezier(0.22, 1, 0.36, 1); }
+.server-banner-image {
+  animation: server-banner-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center;
+  transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1), filter 300ms ease;
+  filter: saturate(1.02);
+}
+.server-header:hover .server-banner-image,
+.server-header:focus-within .server-banner-image { transform: scale(1.035); filter: saturate(1.12); }
+.server-banner-scrim {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.42) 40%, rgba(0, 0, 0, 0) 78%);
+}
+.server-header-button { transition: background-color 150ms ease, transform 120ms ease; }
+.server-header-banner .server-header-button:hover { background: rgba(255, 255, 255, 0.12); }
+.server-header-button:active { transform: scale(0.985); }
+.server-header-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.server-header-chevron { transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.server-header-button[aria-expanded="true"] .server-header-chevron,
+.server-header-button:hover .server-header-chevron { transform: translateY(1px); }
+@keyframes server-banner-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: scale(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .server-header { transition: none; }
+  .server-banner-image { animation: none; transition: none; }
+  .server-header:hover .server-banner-image,
+  .server-header:focus-within .server-banner-image { transform: none; }
 }

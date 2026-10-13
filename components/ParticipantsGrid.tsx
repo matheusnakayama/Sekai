@@ -93,7 +93,7 @@ export default function ParticipantsGrid({
   const cols = count <= 1 ? 'grid-cols-1' : count <= 4 ? 'grid-cols-2' : count <= 9 ? 'grid-cols-3' : 'grid-cols-4';
 
   return (
-    <div className={`grid ${cols} gap-3 auto-rows-fr w-full h-full content-center`}>
+    <div className={`mx-auto grid ${cols} h-full w-full ${count <= 1 ? 'max-w-4xl' : 'max-w-[1600px]'} auto-rows-fr content-center gap-3`}>
       {participants.map((p) => (
         <VideoTile
           key={p.id}

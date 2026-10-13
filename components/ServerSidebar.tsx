@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import { SEKAI_LOGO_MONOCHROME } from "@/lib/brandAssets";
 import { cn } from "@/lib/utils";
+import { useChannelReorder } from "@/lib/useChannelReorder";
 
 export interface ServerItem {
   id: string;
@@ -128,7 +129,6 @@ export function ServerSidebar({
   onServerContext,
 }: ServerSidebarProps) {
   const [serverOrder, setServerOrder] = useState<string[]>([]);
-  const [draggedServerId, setDraggedServerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -153,25 +153,17 @@ export function ServerSidebar({
     return [...saved, ...servers.filter((server) => !savedIds.has(server.id))];
   }, [servers, serverOrder]);
 
-  function reorderServer(targetId: string, event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const sourceId = event.dataTransfer.getData("text/plain") || draggedServerId;
-    if (!sourceId || sourceId === targetId || !orderedServers.some((server) => server.id === sourceId)) return;
-
-    const next = orderedServers.map((server) => server.id).filter((id) => id !== sourceId);
-    const targetIndex = next.indexOf(targetId);
-    if (targetIndex < 0) return;
-    const targetBounds = event.currentTarget.getBoundingClientRect();
-    const insertAfter = event.clientY > targetBounds.top + targetBounds.height / 2;
-    next.splice(targetIndex + (insertAfter ? 1 : 0), 0, sourceId);
-    setServerOrder(next);
+  function commitServerOrder(next: ServerItem[]) {
+    const ids = next.map((server) => server.id);
+    setServerOrder(ids);
     try {
-      localStorage.setItem(`sekai-server-order:${currentUserId}`, JSON.stringify(next));
+      localStorage.setItem(`sekai-server-order:${currentUserId}`, JSON.stringify(ids));
     } catch {
       // Keep the in-memory order if browser storage is unavailable.
     }
-    setDraggedServerId(null);
   }
+
+  const reorder = useChannelReorder({ enabled: true, channels: orderedServers, onReorder: commitServerOrder, gap: 8, indicatorWidth: 48 });
 
   return (
     <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
@@ -195,16 +187,12 @@ export function ServerSidebar({
 
       <div className="mx-auto my-1 h-[2px] w-8 rounded-full bg-discord-bg-dark" />
 
-      <div className="flex w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto">
+      <div ref={reorder.containerRef} data-reorder-scroll className="relative flex w-full flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto">
         {orderedServers.map((server) => (
           <div
             key={server.id}
-            draggable
-            onDragStart={(event) => { setDraggedServerId(server.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", server.id); }}
-            onDragEnd={() => setDraggedServerId(null)}
-            onDragOver={(event) => { if (draggedServerId) event.preventDefault(); }}
-            onDrop={(event) => reorderServer(server.id, event)}
-            className={cn("w-full cursor-grab active:cursor-grabbing", draggedServerId === server.id && "opacity-40")}
+            {...reorder.rowProps(server.id)}
+            className="server-row w-full cursor-pointer"
             onContextMenu={(event) => { event.preventDefault(); onServerContext?.(server.id); }}
           >
           <ServerIcon
@@ -232,6 +220,7 @@ export function ServerSidebar({
           </ServerIcon>
           </div>
         ))}
+        {reorder.indicator && <div aria-hidden="true" className="reorder-drop-indicator pointer-events-none absolute z-40" style={{ margin: 0, transform: `translate3d(${reorder.indicator.left}px, ${reorder.indicator.top}px, 0)`, width: reorder.indicator.width }} />}
       </div>
 
       <ServerIcon onClick={onCreateServer} label="Adicionar servidor">

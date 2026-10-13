@@ -149,15 +149,18 @@ export default function Controls({
   const togglePresentation = watchingPresentation ? onStopWatching : onToggleScreenShare;
 
   if (callLayout) {
+    const micLabel = micLockedByHost ? 'O anfitrião bloqueou seu microfone' : micOn ? 'Silenciar microfone' : 'Ativar microfone';
+    const presentationLabel = watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela';
     return (
-      <div className="flex items-center gap-1.5 rounded-2xl border border-white/[0.08] bg-[#1e1f22]/95 p-1.5 text-white shadow-2xl backdrop-blur-xl sm:gap-2">
-        <button type="button" onClick={onToggleMic} disabled={micLockedByHost} aria-label={micOn ? 'Silenciar microfone' : 'Ativar microfone'} title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : micOn ? 'Silenciar microfone' : 'Ativar microfone'} className={`grid h-12 w-12 place-items-center rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-50 ${micOn ? 'bg-[#2b2d31] text-white/85 hover:bg-[#35373c]' : 'bg-[#4b252b] text-[#f23f43] hover:bg-[#5a2b32]'}`}>
+      <div role="toolbar" aria-label="Controles da chamada" className="call-controls flex items-center gap-2 rounded-[18px] bg-[#1e1f22] p-1.5 text-white shadow-[0_6px_24px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.06]">
+        <button type="button" onClick={onToggleMic} disabled={micLockedByHost} aria-pressed={!micOn} aria-label={micLabel} title={micLabel} className={`call-control grid h-11 w-11 place-items-center rounded-xl ${micOn ? 'bg-[#2b2d31] text-white/90 hover:bg-[#383a40]' : 'bg-[#f23f43]/15 text-[#f23f43] hover:bg-[#f23f43]/25'}`}>
           <MicIcon off={!micOn} />
         </button>
-        <button type="button" onClick={togglePresentation} aria-label={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela'} title={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela'} className={`grid h-12 w-12 place-items-center rounded-xl transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${presentationActive ? 'bg-[#214e37] text-[#3ba55d] hover:bg-[#286143]' : 'bg-[#2b2d31] text-white/85 hover:bg-[#35373c]'}`}>
+        <button type="button" onClick={togglePresentation} aria-pressed={presentationActive} aria-label={presentationLabel} title={presentationLabel} className={`call-control grid h-11 w-11 place-items-center rounded-xl ${presentationActive ? 'bg-[#23a559] text-white hover:bg-[#1f9250]' : 'bg-[#2b2d31] text-white/90 hover:bg-[#383a40]'}`}>
           <ScreenShareIcon active={sharingScreen} />
         </button>
-        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="grid h-12 w-14 place-items-center rounded-xl bg-[#da373c] text-white transition hover:bg-[#c63035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+        <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-white/10" />
+        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="call-control grid h-11 w-14 place-items-center rounded-xl bg-[#da373c] text-white hover:bg-[#f23f43]">
           <HangupIcon />
         </button>
       </div>

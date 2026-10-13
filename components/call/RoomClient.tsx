@@ -1642,7 +1642,7 @@ export default function RoomClient({
 
   if (phase === 'pre-join' && autoJoining) {
     return (
-      <main className="flex flex-col items-center justify-center px-6 text-center">
+      <main className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center px-6 text-center">
         <p className="animate-fadeIn text-white/60">Entrando na chamada…</p>
       </main>
     );
@@ -1655,7 +1655,7 @@ export default function RoomClient({
 
   if (phase === 'fatal-error') {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-4">
+      <main className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-4 px-6">
         <ErrorBanner
           title="Não foi possível entrar na sala"
           message={fatalError?.message ?? 'Tente novamente em instantes.'}
@@ -1678,7 +1678,7 @@ export default function RoomClient({
 
   if (phase === 'left') {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-5 text-center">
+      <main className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         <h1 className="text-2xl font-bold">Você saiu da sala</h1>
         <p className="text-white/60 max-w-sm">
           Você pode voltar a qualquer momento usando o mesmo link, enquanto outras pessoas
@@ -1704,7 +1704,7 @@ export default function RoomClient({
 
   if (phase === 'kicked') {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-5 text-center">
+      <main className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         <h1 className="text-2xl font-bold">Você foi removido da sala</h1>
         <p className="max-w-sm text-white/60">O anfitrião encerrou sua participação nesta chamada.</p>
         <button type="button" onClick={onClose} className="rounded-xl bg-theme-gradient px-5 py-3 font-semibold text-white transition hover:brightness-110">
@@ -1720,9 +1720,9 @@ export default function RoomClient({
     <main
       ref={callRootRef}
       style={callFullscreen ? { height: '100vh', width: '100vw', backgroundColor: '#111214' } : undefined}
-      className="h-full min-h-0 flex flex-col bg-transparent"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent"
     >
-      <header className="flex items-center justify-between border-b border-white/[0.06] bg-[#111214]/70 px-4 py-3 sm:px-6">
+      <header className="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#111214]/70 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2.5 text-sm text-white/60">
           <span className="h-2 w-2 shrink-0 rounded-full bg-success animate-speaking" />
           <span className="truncate font-medium text-white/85">{roomName}</span>
@@ -1790,15 +1790,14 @@ export default function RoomClient({
         </div>
       )}
 
-      <section className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-3 py-4 sm:px-6">
+      <section className="relative flex min-h-0 w-full min-w-0 flex-1 items-center justify-center overflow-hidden px-3 py-4 sm:px-6">
         {isConnecting ? (
           <div className="flex h-full w-full flex-1 items-center justify-center">
             <p className="text-white/60 animate-fadeIn">Conectando à sala…</p>
           </div>
         ) : participantList.length === 0 && !focusedParticipantId ? (
-          <div className="flex h-full w-full flex-1 flex-col items-center justify-center bg-[#111214] text-center">
-            <h1 className="max-w-[min(80vw,640px)] break-words text-xl font-semibold tracking-tight text-white/70 sm:text-2xl">{roomName}</h1>
-            <p className="mt-2 text-sm text-white/40">Ninguém na chamada no momento.</p>
+          <div className="flex h-full w-full flex-1 flex-col items-center justify-center bg-[#111214] px-4 text-center">
+            <h1 className="max-w-[min(80vw,640px)] break-words text-xl font-semibold tracking-tight text-white/75 sm:text-2xl">{roomName}</h1>
           </div>
         ) : (
           <ParticipantsGrid
@@ -1819,7 +1818,7 @@ export default function RoomClient({
         )}
       </section>
 
-      <footer className="z-20 flex shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
+      <footer className="z-20 flex w-full shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
         <Controls
           callLayout
           micOn={micOn}

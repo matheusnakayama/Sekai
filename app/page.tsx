@@ -2375,7 +2375,7 @@ export default function Home() {
         {activeServerId && <button type="button" onClick={() => { setMobileNavigationOpen(false); setMobileMembersOpen(true); }} aria-label="Ver membros do servidor" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-text-normal active:scale-95"><Users className="h-5 w-5"/></button>}
       </header>}
       {voiceSession && (
-        <div className={callOpenHere ? "call-host call-bg relative h-full min-h-0 min-w-0 flex-1 overflow-y-auto" : "hidden"}>
+        <div className={callOpenHere ? "call-host call-bg relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto" : "hidden"}>
           <RoomClient
             key={voiceSession.channelId}
             userId={currentUserId ?? undefined}

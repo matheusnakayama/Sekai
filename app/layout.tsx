@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { Viewport } from "next";
 import type { ReactNode } from "react";
-import Script from "next/script";
 import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
@@ -35,8 +34,11 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <head>
-        {/* Aplica o tema salvo antes da primeira pintura, para não piscar a cor padrão. */}
-        <Script src="/theme-init.js" strategy="beforeInteractive" />
+        {/* Aplica o tema salvo antes da primeira pintura, para não piscar a cor padrão.
+            Script síncrono comum (permitido pelo CSP via 'self'): o next/script com
+            beforeInteractive injeta `nonce` e o navegador o esconde no DOM (nonce=""),
+            causando o erro de hidratação. */}
+        <script src="/theme-init.js" suppressHydrationWarning />
       </head>
       <body className="h-[100dvh] w-full overflow-hidden bg-discord-bg-primary">
         <DialogProvider>

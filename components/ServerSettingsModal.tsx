@@ -290,9 +290,15 @@ function GeralTab({
 
   async function persistBanner(nextBannerUrl: string | null) {
     const { error } = await supabase.rpc("set_server_banner", { p_server_id: serverId, p_banner_url: nextBannerUrl });
-    if (!error) return null;
+    if (!error) { announceBanner(nextBannerUrl); return null; }
     const fallback = await supabase.from("servers").update({ banner_url: nextBannerUrl }).eq("id", serverId);
-    return fallback.error?.message || error.message;
+    if (!fallback.error) { announceBanner(nextBannerUrl); return null; }
+    return fallback.error.message || error.message;
+  }
+
+  /** Avisa a barra lateral para atualizar o banner sem recarregar. */
+  function announceBanner(url: string | null) {
+    window.dispatchEvent(new CustomEvent("sekai-server-banner-change", { detail: { serverId, url } }));
   }
 
   async function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {

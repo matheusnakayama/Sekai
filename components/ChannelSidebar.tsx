@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import ThemePicker from "@/components/ThemePicker";
 import AnchoredPopover from "@/components/AnchoredPopover";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
+import { moveChannel, useChannelReorder } from "@/lib/useChannelReorder";
+import { HoverGifImage } from "@/components/HoverGifImage";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 import type { CustomBadge } from "@/lib/badges";
@@ -27,6 +29,10 @@ import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import { CamIcon, MicIcon, ScreenShareIcon } from "@/components/icons";
 import packageJson from "../package.json";
+
+/** Banners já resolvidos por servidor: trocar de servidor não pisca nem refaz a consulta. */
+const serverBannerCache = new Map<string, string | null>();
+const decodedBannerUrls = new Set<string>();
 
 export interface Channel {
   id: string;
@@ -192,7 +198,45 @@ export function ChannelSidebar({
   ].sort((a, b) => a.position - b.position);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; channel: Channel } | null>(null);
-  const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+  const reorder = useChannelReorder({ enabled: Boolean(canManageChannels), channels: orderedChannels, onReorder: onReorderChannels, move: moveChannel, gap: 2 });
+  const [bannerUrl, setBannerUrl] = useState<string | null>(() => serverBannerCache.get(serverId) ?? null);
+  const [bannerReady, setBannerReady] = useState(() => { const cached = serverBannerCache.get(serverId); return Boolean(cached && decodedBannerUrls.has(cached)); });
+  const [headerHover, setHeaderHover] = useState(false);
+
+  useEffect(() => {
+    if (!serverId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.from("servers").select("banner_url").eq("id", serverId).maybeSingle();
+      if (cancelled) return;
+      // Coluna ausente (migração não aplicada) ou sem permissão: segue sem banner.
+      const url = error ? null : ((data?.banner_url as string | null | undefined) ?? null);
+      serverBannerCache.set(serverId, url);
+      setBannerUrl(url);
+    })();
+    const onBannerChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ serverId?: string; url?: string | null }>).detail;
+      if (detail?.serverId !== serverId) return;
+      serverBannerCache.set(serverId, detail.url ?? null);
+      setBannerUrl(detail.url ?? null);
+    };
+    window.addEventListener("sekai-server-banner-change", onBannerChange);
+    return () => { cancelled = true; window.removeEventListener("sekai-server-banner-change", onBannerChange); };
+  }, [serverId, supabase]);
+
+  // Só expande o cabeçalho depois que a imagem decodificou: sem salto nem quadro vazio.
+  useEffect(() => {
+    if (!bannerUrl) { setBannerReady(false); return; }
+    if (decodedBannerUrls.has(bannerUrl)) { setBannerReady(true); return; }
+    setBannerReady(false);
+    let cancelled = false;
+    const probe = new window.Image();
+    probe.onload = () => { decodedBannerUrls.add(bannerUrl); if (!cancelled) setBannerReady(true); };
+    probe.onerror = () => { if (!cancelled) setBannerUrl(null); };
+    probe.src = bannerUrl;
+    return () => { cancelled = true; probe.onload = null; probe.onerror = null; };
+  }, [bannerUrl]);
+  const hasBanner = Boolean(bannerUrl) && bannerReady;
   const [soundboardOpen, setSoundboardOpen] = useState(false);
   const [soundboardEffects, setSoundboardEffects] = useState<SoundboardEffect[]>([]);
   const [soundboardLoading, setSoundboardLoading] = useState(false);
@@ -238,19 +282,6 @@ export function ChannelSidebar({
     return () => { cancelled = true; };
   }, [serverId, supabase]);
 
-  function dropChannel(target: Channel, event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const source = channels.find((channel) => channel.id === draggedChannelId);
-    if (!source || source.id === target.id || !canManageChannels) return;
-    const moved = { ...source, categoryId: target.categoryId, categoryName: target.categoryName, categoryPosition: target.categoryPosition };
-    const next = channels.filter((channel) => channel.id !== source.id);
-    const targetIndex = next.findIndex((channel) => channel.id === target.id);
-    const insertIndex = targetIndex + (event.clientY > event.currentTarget.getBoundingClientRect().top + event.currentTarget.clientHeight / 2 ? 1 : 0);
-    next.splice(Math.max(0, insertIndex), 0, moved);
-    onReorderChannels?.(next);
-    setDraggedChannelId(null);
-  }
-
   async function playSoundboardEffect(effect: SoundboardEffect) {
     if (!onPlaySoundEffect) return;
     setSoundboardMessage(`Enviando “${effect.name}”…`);
@@ -266,17 +297,30 @@ export function ChannelSidebar({
 
   return (
     <div className="server-view-enter flex h-full w-[min(15rem,calc(100vw-6rem))] shrink-0 flex-col bg-discord-bg-dark md:w-60">
-      {/* Cabeçalho do servidor */}
-      <div className="bg-theme-wash flex h-12 shrink-0 items-center border-b border-black/20 px-3 shadow-sm">
-        <button onClick={onOpenServerMenu} className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left hover:brightness-125">
-          <span className="truncate font-semibold text-discord-header-primary">{serverName}</span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-discord-text-muted" />
-        </button>
-        {onCloseMobileNav && <button type="button" onClick={onCloseMobileNav} aria-label="Fechar navegação" className="ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/10 hover:text-white md:hidden"><X className="h-5 w-5"/></button>}
+      {/* Cabeçalho do servidor: com banner (GIF anima ao passar o mouse), como no Discord */}
+      <div
+        data-has-banner={hasBanner || undefined}
+        onMouseEnter={() => setHeaderHover(true)}
+        onMouseLeave={() => setHeaderHover(false)}
+        onFocusCapture={() => setHeaderHover(true)}
+        onBlurCapture={() => setHeaderHover(false)}
+        className={cn("server-header relative shrink-0 overflow-hidden border-b border-black/20 shadow-sm", hasBanner ? "server-header-banner h-[6.5rem]" : "bg-theme-wash h-12")}
+      >
+        {hasBanner && bannerUrl && <>
+          <HoverGifImage src={bannerUrl} alt="" isHovered={headerHover} className="server-banner-image absolute inset-0 h-full w-full object-cover" />
+          <div aria-hidden="true" className="server-banner-scrim pointer-events-none absolute inset-0" />
+        </>}
+        <div className={cn("relative z-10 flex items-center px-3", hasBanner ? "absolute inset-x-0 top-0 h-12" : "h-12")}>
+          <button onClick={onOpenServerMenu} aria-haspopup="menu" className={cn("server-header-button flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md py-2 text-left", hasBanner ? "-mx-1 px-1 text-white" : "hover:brightness-125")}>
+            <span className={cn("truncate font-semibold", hasBanner ? "text-[15px] font-bold text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]" : "text-discord-header-primary")}>{serverName}</span>
+            <ChevronDown className={cn("server-header-chevron h-4 w-4 shrink-0", hasBanner ? "text-white drop-shadow" : "text-discord-text-muted")} />
+          </button>
+          {onCloseMobileNav && <button type="button" onClick={onCloseMobileNav} aria-label="Fechar navegação" className="ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-discord-text-muted hover:bg-white/10 hover:text-white md:hidden"><X className="h-5 w-5"/></button>}
+        </div>
       </div>
 
       {/* Lista de canais */}
-      <div className="flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
+      <div ref={reorder.containerRef} data-reorder-scroll className="relative flex-1 space-y-2.5 overflow-y-auto px-2 py-3">
         {categorySections.map((category) => {
           const sectionKey = category.id || "__uncategorized__";
           const isCollapsed = collapsed[sectionKey];
@@ -290,10 +334,10 @@ export function ChannelSidebar({
                   onClick={() =>
                     setCollapsed((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }))
                   }
-                  className="flex min-h-10 flex-1 items-center gap-1 text-sm font-semibold uppercase tracking-wide text-discord-text-muted hover:text-discord-header-primary md:min-h-0 md:text-xs"
+                  className="sidebar-press flex min-h-10 flex-1 items-center gap-1 rounded-sm text-sm font-semibold uppercase tracking-wide text-discord-text-muted transition-colors hover:text-discord-header-primary md:min-h-0 md:text-xs"
                 >
                   <ChevronDown
-                    className={cn("h-3 w-3 transition-transform", isCollapsed && "-rotate-90")}
+                    className={cn("h-3 w-3 transition-transform duration-200", isCollapsed && "-rotate-90")}
                   />
                   {category.name}
                 </button>
@@ -309,7 +353,7 @@ export function ChannelSidebar({
               </div>
 
               {!isCollapsed && (
-                <div className="mt-1 space-y-[2px]">
+                <div className="channel-list-enter mt-1 space-y-[2px]">
                   {categoryChannels.map((channel) => {
                     const active = channel.id === activeChannelId;
                     const savedVoiceMembers = voiceMembersByChannel[channel.id] ?? [];
@@ -330,19 +374,15 @@ export function ChannelSidebar({
                     return (
                       <div
                         key={channel.id}
-                        draggable={canManageChannels}
-                        onDragStart={(event) => { setDraggedChannelId(channel.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", channel.id); }}
-                        onDragEnd={() => setDraggedChannelId(null)}
-                        onDragOver={(event) => { if (canManageChannels && draggedChannelId) event.preventDefault(); }}
-                        onDrop={(event) => dropChannel(channel, event)}
-                        onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, channel }); }}
-                        className={cn("group/channel flex min-w-0 flex-col rounded-md transition", draggedChannelId === channel.id && "opacity-40", canManageChannels && "cursor-grab active:cursor-grabbing")}
+                        {...reorder.rowProps(channel.id)}
+                        className={cn("channel-row group/channel flex min-w-0 flex-col rounded-md", canManageChannels && "cursor-pointer")}
                       >
                         <div className="flex min-w-0 items-center rounded-md">
                           <button
                             onClick={() => onSelectChannel(channel.id)}
+                            onKeyDown={(event) => reorder.onKeyboardMove(event, channel.id)}
                             className={cn(
-                              "flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-[15px] font-medium md:min-h-0 md:gap-1.5 md:py-1.5 md:text-sm",
+                              "sidebar-press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-[15px] font-medium md:min-h-0 md:gap-1.5 md:py-1.5 md:text-sm",
                               active
                                 ? "bg-discord-bg-modifier-hover text-discord-header-primary"
                                 : channel.unread || channel.mentionCount
@@ -361,7 +401,7 @@ export function ChannelSidebar({
                               {channel.mentionCount ? <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-discord-danger px-1 text-[10px] font-bold leading-none text-white">{channel.mentionCount > 99 ? "99+" : channel.mentionCount}</span> : channel.unread ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
                             </span>}
                           </button>
-                          {(canCreateInvite || canManageChannels) && <div className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
+                          {(canCreateInvite || canManageChannels) && <div data-no-drag className={cn("flex shrink-0 items-center gap-0.5 pr-1", active ? "opacity-100" : "opacity-0 transition-opacity group-hover/channel:opacity-100 focus-within:opacity-100")}>
                             {canCreateInvite && <button type="button" onClick={() => onCreateChannelInvite?.(channel)} title="Convidar para este canal" aria-label={`Convidar para ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><UserPlus className="h-3.5 w-3.5"/></button>}
                             {canManageChannels && <button type="button" onClick={() => onEditChannel?.(channel)} title="Configurações do canal" aria-label={`Configurações de ${channel.name}`} className="rounded p-1 text-discord-text-muted hover:bg-discord-bg-modifier-hover hover:text-discord-header-primary"><Settings className="h-3.5 w-3.5"/></button>}
                           </div>}
@@ -373,7 +413,7 @@ export function ChannelSidebar({
                                 <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
                                   {member.avatarUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
+                                    <img src={member.avatarUrl} alt="" draggable={false} className="h-full w-full object-cover" />
                                   ) : member.name[0]?.toUpperCase()}
                                 </div>
                                 <span className="min-w-0 flex-1 truncate text-xs text-discord-text-normal md:text-[11px]">{member.name}</span>
@@ -410,7 +450,7 @@ export function ChannelSidebar({
               left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 200)),
               top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 176)),
             }}
-            className="fixed z-[300] max-h-[calc(100dvh-16px)] w-[min(192px,calc(100vw-16px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"
+            className="menu-pop-enter fixed z-[300] max-h-[calc(100dvh-16px)] w-[min(192px,calc(100vw-16px))] overflow-y-auto rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl"
           >
             <p className="px-3 py-2 text-xs font-semibold text-discord-text-muted">#{contextMenu.channel.name}</p>
             {canCreateInvite && <button onClick={() => { onCreateChannelInvite?.(contextMenu.channel); setContextMenu(null); }} className="w-full rounded-lg px-3 py-2 text-left text-sm text-discord-text-normal hover:bg-discord-bg-modifier-hover">Criar convite do canal</button>}
@@ -446,6 +486,7 @@ export function ChannelSidebar({
           {soundboardMessage && <p role="status" className="mt-2 px-1 text-[10px] text-emerald-300">{soundboardMessage}</p>}
           <p className="mt-2 px-1 text-[10px] leading-relaxed text-discord-text-muted">O som chega aos membros online com o Sekai aberto, dentro ou fora da chamada. {soundboardAudioReady ? "Áudio liberado neste navegador." : "Cada pessoa precisa interagir com o Sekai uma vez para liberar áudio no navegador."}</p>
         </div>}
+        {reorder.indicator && <div aria-hidden="true" className="reorder-drop-indicator pointer-events-none absolute z-40" style={{ margin: 0, transform: `translate3d(${reorder.indicator.left}px, ${reorder.indicator.top}px, 0)`, width: reorder.indicator.width }} />}
       </div>
 
       {/* Barra de chamada conectada */}

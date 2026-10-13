@@ -675,7 +675,7 @@ export function ChatArea({
           const element = event.currentTarget;
           wasAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96;
         }}
-        className="min-h-0 flex-1 space-y-0 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4"
+        className="chat-message-feed min-h-0 flex-1 overflow-y-auto px-2 py-3 sm:px-4 sm:py-4"
       >
         {loading && !messages.length ? (
           <div role="status" className="server-view-enter space-y-3 py-2">
@@ -709,7 +709,7 @@ export function ChatArea({
                 ? "foi expulso do servidor."
                 : "foi banido do servidor.";
           return (
-          <div key={message.id} id={`message-${message.id}`} className={!isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-3" : undefined}>
+          <div key={message.id} id={`message-${message.id}`} className={!isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-5" : undefined}>
           {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
           {message.systemType ? (
             <div className="my-1 flex items-center gap-2 rounded-xl border border-discord-brand/20 bg-discord-brand/[0.06] px-3 py-2 text-sm text-discord-text-normal">
@@ -721,12 +721,12 @@ export function ChatArea({
           <div onContextMenu={(event) => {
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, message });
-          }} className={`group relative flex rounded-xl px-1 py-0 transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
-            {editing?.id !== message.id && <div className="pointer-events-none absolute right-2 top-1 z-10 hidden items-center gap-0.5 rounded-full border border-white/[0.06] bg-[#18191c]/95 p-0.5 shadow-md backdrop-blur group-hover:pointer-events-auto group-hover:flex">
-              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-75 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
-              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="grid h-6 w-6 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
+          }} className={`group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+            {editing?.id !== message.id && <div className="pointer-events-none absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-full border border-white/[0.06] bg-[#18191c]/95 p-0.5 shadow-md backdrop-blur group-hover:pointer-events-auto group-hover:flex">
+              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-75 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
+              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
             </div>}
-            {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-10 w-10 shrink-0" />}
+            {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-0 w-10 shrink-0" />}
             {chatDisplay.showAvatars && !isGroupedMessage && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
                 {message.authorAvatarUrl ? (
@@ -749,7 +749,7 @@ export function ChatArea({
 
             <div className="min-w-0 flex-1">
               {!isGroupedMessage && <div className="flex items-center gap-2" onMouseEnter={() => setHoveredAuthorMessageId(message.id)} onMouseLeave={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)} onFocusCapture={() => setHoveredAuthorMessageId(message.id)} onBlurCapture={() => setHoveredAuthorMessageId((current) => current === message.id ? null : current)}>
-                <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
+                <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} className="chat-inline-control cursor-pointer rounded-sm text-left font-medium text-discord-header-primary transition-colors hover:text-white hover:underline hover:decoration-white/50 hover:underline-offset-4 disabled:cursor-default disabled:no-underline">{message.authorName}</button>
                 <CustomBadgeList badges={memberById.get(message.authorId)?.badges} limit={2} />
                 <span className="text-xs text-discord-text-muted">{formatTime(message.createdAt)}</span>
                 {pinnedIds.has(message.id) && <Pin size={12} className="text-discord-text-muted" aria-label="Mensagem fixada" />}
@@ -791,7 +791,7 @@ export function ChatArea({
                       key={r.emoji}
                       onClick={() => onToggleReaction?.(message.id, r.emoji)}
                       className={cn(
-                        "flex h-6 items-center gap-1 rounded-full border px-1.5 text-[11px] transition",
+                        "chat-inline-control flex h-6 items-center gap-1 rounded-full border px-1.5 text-[11px] transition",
                         r.reactedByMe
                           ? "border-discord-brand/40 bg-discord-brand/15 text-discord-brand"
                           : "border-white/[0.06] bg-[#1b1d21] text-discord-text-muted hover:border-white/15 hover:bg-white/[0.06] hover:text-discord-text-normal"
