@@ -145,7 +145,7 @@ export default function PresentationMiniPreview({
         right: 'auto',
         bottom: 'auto',
         transition: dragging
-          ? 'left 90ms cubic-bezier(.2,.8,.2,1), top 90ms cubic-bezier(.2,.8,.2,1), transform 160ms ease-out'
+          ? 'transform 160ms ease-out'
           : 'left 420ms cubic-bezier(.22,1,.36,1), top 420ms cubic-bezier(.22,1,.36,1), transform 420ms cubic-bezier(.22,1,.36,1)',
       } : undefined}
       className={`fixed bottom-4 right-4 z-[240] w-[min(360px,calc(100vw-2rem))] touch-none select-none overflow-hidden rounded-2xl border border-white/15 bg-[#111214] shadow-2xl ring-1 ring-black/40 will-change-[left,top,transform] sm:bottom-6 sm:right-6 ${dragging ? 'scale-[1.02] cursor-grabbing' : 'cursor-grab'}`}
@@ -154,7 +154,6 @@ export default function PresentationMiniPreview({
         type="button"
         onClick={openCallFromPreview}
         aria-label={`Voltar à chamada e ver a apresentação de ${participant.name}`}
-        data-no-drag
         className="group relative block aspect-video w-full overflow-hidden bg-black text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
       >
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-contain" />

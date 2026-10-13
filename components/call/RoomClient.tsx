@@ -1833,16 +1833,42 @@ export default function RoomClient({
       <footer className="z-20 flex shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
         <Controls
           micOn={micOn}
+          deafened={deafened}
+          camOn={camOn}
           sharingScreen={sharingScreen}
           watchingPresentation={watchingPresentation}
+          participantCount={participantList.length}
+          chatUnreadCount={chatUnreadCount}
           micLockedByHost={micLockedByHost}
+          soundEffects={soundEffects}
+          soundEffectsLoading={soundEffectsLoading}
+          playingSoundId={playingSoundId}
+          callMusicName={callMusicName}
+          onPlayCallMusic={(file) => { void playCallMusic(file); }}
+          onStopCallMusic={releaseCallMusic}
+          onPlaySoundEffect={(effect) => { void playSoundboardEffect(effect); }}
           inputDevices={inputDevices}
+          outputDevices={outputDevices}
           selectedInputDeviceId={selectedInputDeviceId}
+          selectedOutputDeviceId={selectedOutputDeviceId}
           onSelectInputDevice={selectInputDevice}
+          onSelectOutputDevice={selectOutputDevice}
+          inputVolume={inputVolume}
+          outputVolume={outputVolume}
+          onInputVolumeChange={updateInputVolume}
+          onOutputVolumeChange={updateOutputVolume}
+          voiceProfile={voiceProfile}
+          onVoiceProfileChange={selectVoiceProfile}
+          outputDeviceSelectionSupported={outputDeviceSelectionSupported}
           onToggleMic={toggleMic}
+          onToggleDeafen={toggleDeafen}
+          onToggleCam={toggleCam}
           onToggleScreenShare={toggleScreenShare}
           onLeave={handleLeave}
           onStopWatching={stopWatchingPresentation}
+          onCopyLink={handleCopyLink}
+          onToggleParticipants={toggleParticipantsPanel}
+          onToggleChat={toggleChatPanel}
         />
         <p className="sr-only" aria-live="polite">{sharingScreen && screenCaptureInfo ? `Transmitindo tela: ${screenCaptureInfo}.` : ""}</p>
       </footer>
