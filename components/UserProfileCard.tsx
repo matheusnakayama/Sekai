@@ -9,7 +9,7 @@ import { RoleBadgeList, RoleIcon } from "@/components/RoleBadgeList";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import type { RoleBadge } from "@/components/RoleBadgeList";
 import type { CustomBadge } from "@/lib/badges";
-import { cn, getProfilePalette } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { NowPlayingCard, ProfileConnections, useConnections, useNowPlaying } from "@/components/NowPlayingCard";
 import { GameActivityCard, useGameActivity } from "@/components/NowPlayingCard";
@@ -247,7 +247,15 @@ export function UserProfileCard({
   const [mutualFriendsLoaded, setMutualFriendsLoaded] = useState(false);
   const connections = useConnections(profile.id, !isOtherUser);
   const username = profile.username || profile.id.slice(0, 8);
-  const profilePalette = getProfilePalette(profile.profileCardColor);
+  const profilePalette = {
+    surface: "#202127",
+    background: "#202127",
+    isLight: false,
+    text: "#f2f3f5",
+    muted: "rgba(242,243,245,.68)",
+    inset: "#18191c",
+    border: "rgba(255,255,255,.1)",
+  };
   const cachedMutualServers = isOtherUser && currentUserId
     ? mutualServersCache.get(`${currentUserId}:${profile.id}`)
     : undefined;
@@ -433,14 +441,15 @@ export function UserProfileCard({
       role="dialog"
       aria-label={`Perfil de ${profile.displayName}`}
       style={{ left: resolvedPosition.left, top: resolvedPosition.top, background: profilePalette.background, color: profilePalette.text, borderColor: profilePalette.border }}
-      className="user-profile-card-scroll profile-card-enter fixed z-[150] max-h-[calc(100dvh-24px)] w-[min(300px,calc(100vw-24px))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[22px] border shadow-[0_24px_80px_rgba(0,0,0,.62)]"
+      className="user-profile-card-scroll profile-card-enter fixed z-[150] max-h-[min(680px,calc(100dvh-24px))] w-[min(292px,calc(100vw-24px))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[18px] border shadow-[0_20px_64px_rgba(0,0,0,.58)]"
     >
       <ProfileBanner
         src={profile.bannerUrl}
         positionX={profile.bannerPositionX}
         positionY={profile.bannerPositionY}
         zoom={profile.bannerZoom}
-        className="h-24"
+        className="h-20"
+        style={{ background: "#2b2d31" }}
       >
         <div className="absolute right-3 top-3 flex items-center gap-2">
           {isOtherUser && onAddFriend && (
@@ -489,7 +498,7 @@ export function UserProfileCard({
       )}
 
       <div className="px-4 pb-4">
-        <div className="relative -mt-9 h-[68px] w-[68px]">
+        <div className="relative -mt-8 h-16 w-16">
           <button type="button" onClick={() => {
             if (isOtherUser && onOpenFullProfile) { onClose(); onOpenFullProfile(); }
             else if (!isOtherUser && onOpenSettings) { onClose(); onOpenSettings(); }

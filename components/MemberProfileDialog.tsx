@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Gamepad2, Headphones, MessageCircle, MoreHorizontal, Music2, Pencil, SendHorizontal, Users, UserPlus, ZoomIn, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { cn, getProfilePalette } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
@@ -48,7 +48,15 @@ export function MemberProfileDialog({
 }) {
   const supabase = createClient();
   const isSelf = profile.id === currentUserId;
-  const palette = getProfilePalette(profile.profileCardColor);
+  const palette = {
+    surface: "#202127",
+    background: "#202127",
+    isLight: false,
+    text: "#f2f3f5",
+    muted: "rgba(242,243,245,.68)",
+    inset: "#18191c",
+    border: "rgba(255,255,255,.1)",
+  };
   const gameActivity = useGameActivity(profile.id, profile.status);
   const listening = useNowPlaying(profile.id, profile.status);
   const connections = useConnections(profile.id, isSelf);
@@ -143,11 +151,11 @@ export function MemberProfileDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-label={`Perfil de ${profile.displayName}`} className="relative flex h-[min(780px,calc(100dvh-24px))] w-[min(1040px,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-white/10 shadow-[0_28px_100px_rgba(0,0,0,.72)] md:flex-row" style={{ background: palette.background, color: palette.text, borderColor: palette.border }}>
+      <section role="dialog" aria-modal="true" aria-label={`Perfil de ${profile.displayName}`} className="relative flex h-[min(720px,calc(100dvh-32px))] w-[min(940px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#202127] text-[#f2f3f5] shadow-[0_28px_100px_rgba(0,0,0,.72)] md:flex-row">
         <button type="button" onClick={onClose} aria-label="Fechar perfil" className="absolute right-3 top-3 z-30 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/50 text-white/80 backdrop-blur transition hover:bg-black/75 hover:text-white"><X size={18}/></button>
 
-        <aside className="flex max-h-[42dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-white/10 md:max-h-full md:w-[330px] md:border-b-0 md:border-r" style={{ borderColor: palette.border }}>
-          <ProfileBanner src={profile.bannerUrl} positionX={profile.bannerPositionX} positionY={profile.bannerPositionY} zoom={profile.bannerZoom} className="h-32 shrink-0">
+        <aside className="flex max-h-[40dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-white/10 bg-[#232428] md:max-h-full md:w-[340px] md:border-b-0 md:border-r">
+          <ProfileBanner src={profile.bannerUrl} positionX={profile.bannerPositionX} positionY={profile.bannerPositionY} zoom={profile.bannerZoom} className="h-28 shrink-0" style={{ background: "#2b2d31" }}>
             <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.13em] text-white/80 backdrop-blur"><Activity size={12}/>{profile.status === "offline" ? "Offline" : profile.status === "dnd" ? "Não perturbe" : profile.status === "idle" ? "Ausente" : "Online"}</div>
             {onKick && <><button type="button" onClick={() => setActionsOpen((open) => !open)} aria-label="Mais ações do perfil" aria-expanded={actionsOpen} className="absolute right-14 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/45 text-white/85 transition hover:bg-black/70"><MoreHorizontal size={19}/></button>{actionsOpen && <div role="menu" className="absolute right-14 top-14 z-20 min-w-40 rounded-lg border border-white/10 bg-[#18191c] p-1.5 shadow-xl"><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); onClose(); onKick(); }} className="w-full rounded-md px-3 py-2 text-left text-xs font-semibold text-red-300 transition hover:bg-red-500/10">Expulsar do servidor</button></div>}</>}
           </ProfileBanner>
@@ -190,7 +198,12 @@ export function MemberProfileDialog({
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202127]">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+            {profile.bannerUrl && <CroppedProfileImage src={profile.bannerUrl} positionX={profile.bannerPositionX} positionY={profile.bannerPositionY} zoom={profile.bannerZoom} pauseGif={false} className="opacity-[.18] saturate-[.72]" />}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#202127]/95 via-[#202127]/90 to-[#202127]/85" />
+          </div>
+          <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-white/10 px-5 pr-14 sm:px-7 sm:pr-16" style={{ borderColor: palette.border }}>
             <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-discord-brand">Perfil</p><p className="truncate text-sm font-semibold">{profile.displayName}</p></div>
             <div className="hidden items-center gap-2 text-[11px] text-white/50 sm:flex"><Users size={14}/>{mutualServers.length} servidor{mutualServers.length === 1 ? "" : "es"} em comum</div>
@@ -216,6 +229,7 @@ export function MemberProfileDialog({
             {tab === "amigos" && <div className="mx-auto max-w-2xl"><h2 className="mb-4 text-base font-bold">Amigos mútuos <span className="text-white/40">{mutualFriends.length}</span></h2>{mutualDataLoading ? <LoadingState/> : mutualFriends.length ? <div className="grid gap-2 sm:grid-cols-2">{mutualFriends.map((friend) => <div key={friend.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/[.07] bg-black/15 p-3"><ProfileAvatar src={friend.avatarUrl} name={friend.name} size="h-10 w-10"/><span className="truncate text-sm font-semibold">{friend.name}</span></div>)}</div> : <EmptyState title="Nenhum amigo mútuo" description="Vocês ainda não têm amigos em comum."/>}</div>}
 
             {tab === "servidores" && <div className="mx-auto max-w-2xl"><h2 className="mb-4 text-base font-bold">Servidores mútuos <span className="text-white/40">{mutualServers.length}</span></h2>{mutualDataLoading ? <LoadingState/> : mutualServers.length ? <div className="grid gap-2 sm:grid-cols-2">{mutualServers.map((server) => <div key={server.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/[.07] bg-black/15 p-3"><ProfileAvatar src={server.iconUrl} name={server.name} size="h-10 w-10" rounded="rounded-xl"/><span className="truncate text-sm font-semibold">{server.name}</span></div>)}</div> : <EmptyState title="Nenhum servidor mútuo" description="Vocês não compartilham nenhum servidor."/>}</div>}
+          </div>
           </div>
         </main>
       </section>
