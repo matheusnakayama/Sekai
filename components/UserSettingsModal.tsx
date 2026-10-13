@@ -47,6 +47,7 @@ interface UserSettingsModalProps {
     bannerPositionX?: number | null;
     bannerPositionY?: number | null;
     bannerZoom?: number | null;
+    activityBannerUrl?: string | null;
     memberListBannerUrl?: string | null;
     memberListBannerPositionX?: number | null;
     memberListBannerPositionY?: number | null;
@@ -75,6 +76,7 @@ const NAV: { id: Section; label: string; icon: typeof UserRound; group: string }
 ];
 
 const PROFILE_CARD_COLORS = ["#111216", "#202127", "#292d46", "#40244f", "#173c38", "#4a2632"];
+const DEFAULT_PROFILE_CARD_COLOR = "#202127";
 
 function readProfileCardColors(value?: string | null) {
   const colors = value?.match(/#[\da-f]{6}/gi)?.slice(0, 3) ?? [];
@@ -140,7 +142,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [presence, setPresence] = useState<Presence>(initial.presence ?? "online");
   const [showBadgesInMemberList, setShowBadgesInMemberList] = useState(initial.showBadgesInMemberList !== false);
   const [profileBadges, setProfileBadges] = useState<CustomBadge[]>(initial.badges ?? []);
-  const [profileCardMode, setProfileCardMode] = useState<"solid" | "gradient">(() => initial.profileCardColor?.startsWith("linear-gradient(") ? "gradient" : "solid");
+  const [profileCardMode, setProfileCardMode] = useState<"default" | "solid" | "gradient">(() => !initial.profileCardColor || initial.profileCardColor.trim().toLowerCase() === DEFAULT_PROFILE_CARD_COLOR ? "default" : initial.profileCardColor.startsWith("linear-gradient(") ? "gradient" : "solid");
   const [profileCardColors, setProfileCardColors] = useState(() => readProfileCardColors(initial.profileCardColor));
   const [activeColorStop, setActiveColorStop] = useState(0);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -149,6 +151,9 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [removeBanner, setRemoveBanner] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState(initial.avatarUrl ?? "");
   const [bannerPreview, setBannerPreview] = useState(initial.bannerUrl ?? "");
+  const [activityBannerFile, setActivityBannerFile] = useState<File | null>(null);
+  const [removeActivityBanner, setRemoveActivityBanner] = useState(false);
+  const [activityBannerPreview, setActivityBannerPreview] = useState(initial.activityBannerUrl ?? "");
   const [memberListBannerFile, setMemberListBannerFile] = useState<File | null>(null);
   const [removeMemberListBanner, setRemoveMemberListBanner] = useState(false);
   const [memberListBannerPreview, setMemberListBannerPreview] = useState(initial.memberListBannerUrl ?? "");
@@ -167,6 +172,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [serverMemberListBannerCrop, setServerMemberListBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [serverProfileLoadError, setServerProfileLoadError] = useState("");
   const [imagePicker, setImagePicker] = useState<{ kind: ProfileImageKind; scope: ImageScope } | null>(null);
+  const activityBannerInput = useRef<HTMLInputElement>(null);
   const [imageEditor, setImageEditor] = useState<ImageEditorTarget | null>(null);
   const [recentImages, setRecentImages] = useState<string[]>([]);
   const temporaryImageUrls = useRef(new Set<string>());
@@ -204,21 +210,35 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [badgeEditName, setBadgeEditName] = useState("");
   const [badgeEditIcon, setBadgeEditIcon] = useState("");
   const [badgeVisibilitySavingId, setBadgeVisibilitySavingId] = useState<string | null>(null);
-  const profileCardColor = profileCardMode === "gradient" && profileCardColors.length > 1
+  const profileCardColor = profileCardMode === "default" ? null : profileCardMode === "gradient" && profileCardColors.length > 1
     ? `linear-gradient(135deg, ${profileCardColors.join(", ")})`
-    : profileCardColors[0] ?? "#202127";
-  const profileCardBaseColor = profileCardColors[0] ?? "#202127";
+    : profileCardColors[0] ?? DEFAULT_PROFILE_CARD_COLOR;
+  const profileCardPreviewColor = profileCardColor ?? DEFAULT_PROFILE_CARD_COLOR;
+  const profileCardBaseColor = profileCardMode === "default" ? DEFAULT_PROFILE_CARD_COLOR : profileCardColors[0] ?? DEFAULT_PROFILE_CARD_COLOR;
 
   function updateActiveProfileCardColor(color: string) {
     setProfileCardColors((current) => current.map((value, index) => index === activeColorStop ? color : value));
   }
 
-  function setProfileCardModeWithDefaults(mode: "solid" | "gradient") {
+  function setProfileCardModeWithDefaults(mode: "default" | "solid" | "gradient") {
     setProfileCardMode(mode);
     setActiveColorStop(0);
     if (mode === "gradient" && profileCardColors.length === 1) {
       setProfileCardColors((current) => [...current, "#5865f2"]);
     }
+  }
+
+  function selectActivityBanner(file?: File) {
+    if (!file) return;
+    const format = profileImageUploadFormat(file);
+    if (!format) { setError("Formato não suportado. Use PNG, JPG, WebP ou GIF."); return; }
+    if (file.size > 8 * 1024 * 1024) { setError("A imagem de fundo deve ter no máximo 8 MB."); return; }
+    const previewUrl = URL.createObjectURL(file);
+    temporaryImageUrls.current.add(previewUrl);
+    setActivityBannerFile(file);
+    setActivityBannerPreview(previewUrl);
+    setRemoveActivityBanner(false);
+    setError("");
   }
 
   useEffect(() => {
@@ -484,6 +504,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     setSaving(true); setError(""); setNotice("");
     let avatarUrl = removeAvatar ? null : (avatarPreview || initial.avatarUrl || null);
     let bannerUrl = removeBanner ? null : (bannerPreview || initial.bannerUrl || null);
+    let activityBannerUrl = removeActivityBanner ? null : (activityBannerPreview || initial.activityBannerUrl || null);
     let memberListBannerUrl = removeMemberListBanner ? null : (memberListBannerPreview || initial.memberListBannerUrl || null);
 
     for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }, { file: memberListBannerFile, kind: "memberListBanner" as const }]) {
@@ -497,6 +518,15 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
     }
 
+    if (activityBannerFile) {
+      const format = profileImageUploadFormat(activityBannerFile);
+      if (!format) { setSaving(false); setError("Formato não suportado. Use PNG, JPG, WebP ou GIF."); return; }
+      const path = `${userId}/activity-banner-${crypto.randomUUID()}.${format.extension}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, activityBannerFile, { upsert: false, contentType: format.contentType });
+      if (uploadError) { setSaving(false); setError(`Falha ao enviar imagem de fundo: ${uploadError.message}`); return; }
+      activityBannerUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+    }
+
     const { error: updateError } = await supabase.from("profiles").update({
       display_name: displayName.trim(), username: username.trim().toLowerCase(), pronouns: pronouns.trim() || null, bio: bio.trim() || null, custom_status: customStatus.trim() || null,
       avatar_url: avatarUrl,
@@ -507,6 +537,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       banner_position_x: removeBanner ? 50 : bannerCrop.x,
       banner_position_y: removeBanner ? 50 : bannerCrop.y,
       banner_zoom: removeBanner ? 100 : bannerCrop.zoom,
+      activity_banner_url: activityBannerUrl,
       member_list_banner_url: memberListBannerUrl,
       member_list_banner_position_x: removeMemberListBanner ? 50 : memberListBannerCrop.x,
       member_list_banner_position_y: removeMemberListBanner ? 50 : memberListBannerCrop.y,
@@ -750,7 +781,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                 {serverId && <div className="settings-segment mb-6"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")}>Perfil global</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")}>Neste servidor</button></div>}
                 <div hidden={profileScope !== "user"}>
                 <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai. Este é seu perfil global; você pode substituí-lo em um servidor específico.</p></div>
-                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
+                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardPreviewColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
                   <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
                     {bannerPreview && <CroppedProfileImage src={bannerPreview} alt="" positionX={bannerCrop.x} positionY={bannerCrop.y} zoom={bannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
                     <div className="absolute right-3 top-3 flex gap-2"><button type="button" onClick={() => openImagePicker("banner")} className="settings-upload-control flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>{bannerPreview ? "Trocar banner" : "Adicionar banner"}</button>{bannerPreview && <><button type="button" onClick={() => openCropEditor("banner", "user")} className="rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/70">Ajustar recorte</button><button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setBannerCrop(DEFAULT_CROP); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button></>}</div>
@@ -780,8 +811,9 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                 </div>
                 <Field label="Sobre você" hint={`${bio.length}/190 caracteres`}><textarea value={bio} maxLength={190} onChange={(e) => setBio(e.target.value)} rows={4} placeholder="Conte um pouco sobre você..." className={`${inputClass} resize-y`}/></Field>
                 <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Use uma cor sólida ou combine até três cores em um gradiente.</p></div><span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[11px] text-discord-text-muted"><i className="h-3 w-3 rounded-full border border-white/20" style={{ background: profileCardColor }}/>{profileCardMode === "gradient" ? `Gradiente · ${profileCardColors.length} cores` : profileCardBaseColor.toUpperCase()}</span></div>
-                  <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-discord-bg-secondary p-1">
+                  <div className="mb-3 flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Escolha o padrão cinza, uma cor sólida ou um gradiente.</p></div><span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[11px] text-discord-text-muted"><i className="h-3 w-3 rounded-full border border-white/20" style={{ background: profileCardPreviewColor }}/>{profileCardMode === "default" ? "Padrão" : profileCardMode === "gradient" ? `Gradiente · ${profileCardColors.length} cores` : profileCardBaseColor.toUpperCase()}</span></div>
+                  <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-discord-bg-secondary p-1">
+                    <button type="button" onClick={() => setProfileCardModeWithDefaults("default")} aria-pressed={profileCardMode === "default"} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${profileCardMode === "default" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-white"}`}>Padrão</button>
                     <button type="button" onClick={() => setProfileCardModeWithDefaults("solid")} aria-pressed={profileCardMode === "solid"} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${profileCardMode === "solid" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-white"}`}>Cor sólida</button>
                     <button type="button" onClick={() => setProfileCardModeWithDefaults("gradient")} aria-pressed={profileCardMode === "gradient"} className={`rounded-md px-3 py-2 text-xs font-semibold transition ${profileCardMode === "gradient" ? "bg-discord-bg-modifier-hover text-discord-header-primary" : "text-discord-text-muted hover:text-white"}`}>Gradiente</button>
                   </div>
@@ -790,10 +822,19 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                     {profileCardColors.length < 3 && <button type="button" onClick={() => { setProfileCardColors((current) => [...current, current.length === 1 ? "#5865f2" : "#20b8a6"]); setActiveColorStop(profileCardColors.length); }} className="rounded-lg border border-dashed border-white/20 px-2.5 py-1.5 text-xs text-discord-text-muted transition hover:border-white/40 hover:text-white">+ Adicionar cor</button>}
                     {profileCardColors.length > 2 && <button type="button" onClick={() => { setProfileCardColors((current) => current.slice(0, -1)); setActiveColorStop((current) => Math.min(current, profileCardColors.length - 2)); }} aria-label="Remover a última cor do gradiente" className="grid h-8 w-8 place-items-center rounded-lg text-discord-text-muted hover:bg-white/5 hover:text-white"><X size={14}/></button>}
                   </div>}
-                  <div className="flex flex-wrap items-center gap-2.5">
+                  {profileCardMode !== "default" && <div className="flex flex-wrap items-center gap-2.5">
                     {PROFILE_CARD_COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color} na cor ${activeColorStop + 1}`} aria-pressed={profileCardColors[activeColorStop]?.toLowerCase() === color} onClick={() => updateActiveProfileCardColor(color)} className={`h-9 w-9 rounded-full border transition ${profileCardColors[activeColorStop]?.toLowerCase() === color ? "scale-110 border-white ring-2 ring-discord-brand ring-offset-2 ring-offset-discord-bg-primary" : "border-white/15 hover:scale-105 hover:border-white/50"}`} style={{ backgroundColor: color }}/>) }
                     <label className="ml-1 flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-medium text-discord-text-normal transition hover:bg-discord-bg-modifier-hover">Personalizada<input aria-label={`Escolher cor ${activeColorStop + 1} personalizada do perfil`} type="color" value={profileCardColors[activeColorStop] ?? profileCardBaseColor} onChange={(event) => updateActiveProfileCardColor(event.target.value)} className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"/></label>
+                  </div>}
+                </div>
+                <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
+                  <div className="mb-3"><h4 className="text-sm font-semibold text-discord-header-primary">Imagem/GIF do painel de atividade</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">É independente do banner e da cor do cartão. Ela aparece no topo da área de atividade e desaparece em degradê. PNG, JPG, WebP ou GIF · até 8 MB.</p></div>
+                  <div className="relative mb-3 h-24 overflow-hidden rounded-lg bg-discord-bg-secondary">
+                    {activityBannerPreview && <div aria-hidden="true" className="absolute inset-0" style={{ maskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)" }}><CroppedProfileImage src={activityBannerPreview} pauseGif={false} className="opacity-[.42] saturate-[.85]"/><div className="absolute inset-0 bg-gradient-to-b from-[#202127]/20 via-[#202127]/35 to-[#202127]"/></div>}
+                    {!activityBannerPreview && <span className="absolute inset-0 grid place-items-center text-xs text-discord-text-muted">Prévia do fundo da atividade</span>}
                   </div>
+                  <input ref={activityBannerInput} type="file" accept="image/gif,image/png,image/jpeg,image/webp" onChange={(event) => { selectActivityBanner(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }} className="hidden"/>
+                  <div className="flex flex-wrap gap-2"><button type="button" onClick={() => activityBannerInput.current?.click()} className="settings-upload-control inline-flex items-center gap-2 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal"><ImagePlus size={14}/>{activityBannerPreview ? "Trocar imagem/GIF" : "Adicionar imagem/GIF"}</button>{activityBannerPreview && <button type="button" onClick={() => { setActivityBannerFile(null); setActivityBannerPreview(""); setRemoveActivityBanner(true); }} aria-label="Remover imagem/GIF do painel de atividade" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button>}</div>
                 </div>
                 <ToggleRow title="Mostrar insígnias na lista de membros" description="Ative para exibir as insígnias selecionadas abaixo, ao lado do seu nome." checked={showBadgesInMemberList} onChange={setShowBadgesInMemberList} />
                 <div className="mt-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">

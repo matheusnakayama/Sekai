@@ -423,7 +423,7 @@ export default function Home() {
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
@@ -805,7 +805,7 @@ export default function Home() {
     if (!currentUserId) return;
     const { data } = await supabase
       .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status")
+      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status")
       .eq("id", currentUserId)
       .single();
     if (data) {
@@ -828,6 +828,7 @@ export default function Home() {
         bannerPositionX: data.banner_position_x ?? 50,
         bannerPositionY: data.banner_position_y ?? 50,
         bannerZoom: data.banner_zoom ?? 100,
+        activityBannerUrl: data.activity_banner_url,
         memberListBannerUrl: data.member_list_banner_url,
         memberListBannerPositionX: data.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: data.member_list_banner_position_y ?? 50,
@@ -1213,7 +1214,7 @@ export default function Home() {
     const [serverResult, categoryResult, memberResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)").eq("server_id", serverId),
+      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)").eq("server_id", serverId),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1294,6 +1295,7 @@ export default function Home() {
         bannerPositionX: m.banner_url ? m.banner_position_x ?? 50 : m.profiles?.banner_position_x ?? 50,
         bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
         bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
+        activityBannerUrl: m.profiles?.activity_banner_url,
         memberListBannerUrl: m.member_list_banner_url || m.profiles?.member_list_banner_url,
         memberListBannerPositionX: m.member_list_banner_url ? m.member_list_banner_position_x ?? 50 : m.profiles?.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,

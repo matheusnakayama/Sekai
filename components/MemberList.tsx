@@ -27,6 +27,7 @@ export interface MemberItem {
   bannerPositionX?: number | null;
   bannerPositionY?: number | null;
   bannerZoom?: number | null;
+  activityBannerUrl?: string | null;
   memberListBannerUrl?: string | null;
   memberListBannerPositionX?: number | null;
   memberListBannerPositionY?: number | null;
