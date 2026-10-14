@@ -456,9 +456,28 @@ function createWindow(targetUrl) {
     }
   });
 
+  mainWindow.on('close', () => { void flushSessionData(); });
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow?.webContents.executeJavaScript('navigator.storage?.persist?.()').catch(() => {});
+  });
+  if (!sessionFlushTimer) sessionFlushTimer = setInterval(() => { void flushSessionData(); }, 15000);
+
   mainWindow.on('focus', () => updateOverlayWindow());
   mainWindow.on('blur', () => updateOverlayWindow());
 
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
+    console.error(`[Sekai] falha ao carregar ${url}: ${desc} (${code})`);
+    setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(targetUrl); }, 1500);
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[Sekai] renderer encerrou:', details.reason);
+  });
+  mainWindow.webContents.on('console-message', (event, legacyLevel, legacyMessage) => {
+    const level = event?.level ?? legacyLevel;
+    const message = event?.message ?? legacyMessage;
+    if (level === 'error' || level === 3) console.error('[Sekai][console]', message);
+  });
   mainWindow.loadURL(targetUrl);
 }
 
@@ -569,6 +588,35 @@ async function smoke() {
 }
 
 app.setName('Sekai');
+// Perfil dedicado: o antigo estava com cache/storage bloqueado ("Acesso negado"), o que
+// quebrava o localStorage (login e Spotify). Precisa ser definido antes do app ficar pronto.
+app.setPath('userData', path.join(app.getPath('appData'), 'Sekai-perfil'));
+app.commandLine.appendSwitch('disk-cache-dir', path.join(app.getPath('temp'), 'sekai-cache'));
+
+// Evita duas instâncias disputando o mesmo perfil (corrompe localStorage/cookies e desloga).
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+// Grava em disco o localStorage (sessão do Supabase, token do Spotify) e os cookies.
+// Sem isso, fechar o app pode descartar o que ainda estava só em memória.
+let sessionFlushTimer = null;
+let quitFlushed = false;
+async function flushSessionData() {
+  try {
+    session.defaultSession.flushStorageData();
+    await session.defaultSession.cookies.flushStore();
+  } catch (error) {
+    console.error('Falha ao gravar sessão:', error);
+  }
+}
 
 app.whenReady().then(async () => {
   overlaySettings = readOverlaySettings();
@@ -596,7 +644,14 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!quitFlushed) {
+    event.preventDefault();
+    quitFlushed = true;
+    if (sessionFlushTimer) clearInterval(sessionFlushTimer);
+    flushSessionData().finally(() => app.quit());
+    return;
+  }
   if (gameActivityTimer) clearInterval(gameActivityTimer);
   globalShortcut.unregisterAll();
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.destroy();

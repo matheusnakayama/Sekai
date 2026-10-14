@@ -874,12 +874,21 @@ export default function Home() {
   }, [currentUserId]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const candidateId = data.user?.id ?? null;
+    // getSession lê a sessão salva localmente (rápido) e não trava a tela se a rede
+    // ou o lock do navegador demorarem; o timeout garante que a tela nunca fique em branco.
+    let settled = false;
+    const settle = (candidateId: string | null) => {
+      if (settled) return;
+      settled = true;
       authUserCandidateRef.current = candidateId;
       setAuthUserCandidateId(candidateId);
       setAuthChecked(true);
-    });
+    };
+    const fallbackTimer = window.setTimeout(() => settle(null), 8000);
+    supabase.auth.getSession()
+      .then(({ data }) => settle(data.session?.user?.id ?? null))
+      .catch(() => settle(null))
+      .finally(() => window.clearTimeout(fallbackTimer));
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY") {
         router.replace("/auth/reset-password");
