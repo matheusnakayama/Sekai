@@ -227,5 +227,11 @@ export const THEMES: ThemeOption[] = [
   { id: "champanhe", name: "Champanhe", stops: ["#fff7ed", "#fed7aa", "#fbbf24", "#d97706", "#a55b2a", "#693f36", "#2a2932"], backgroundStops: ["#42322b", "#1e1d20"] },
   { id: "tropical", name: "Tropical", stops: ["#d1fae5", "#6ee7b7", "#34d399", "#14b8a6", "#0e7490", "#1d4ed8", "#312e81"], backgroundStops: ["#164a52", "#171a35"] },
   { id: "neon-cereja", name: "Neon cereja", stops: ["#ffe4e6", "#fda4af", "#fb7185", "#e11d48", "#c026d3", "#7e22ce", "#32185a"], backgroundStops: ["#4b2039", "#1b1423"] },
+  { id: "nebulosa", name: "Nebulosa", stops: ["#f5d0fe", "#e879f9", "#c026d3", "#a21caf", "#86198f", "#581c52", "#241326"], backgroundStops: ["#3e2148", "#17121e"] },
+  { id: "jade-imperial", name: "Jade imperial", stops: ["#d1fae5", "#99f6e4", "#5eead4", "#2dd4bf", "#0f766e", "#115e59", "#103b39"], backgroundStops: ["#17443f", "#111b1e"] },
+  { id: "duna", name: "Duna", stops: ["#fef3c7", "#fde68a", "#fbbf24", "#d97706", "#a16207", "#713f12", "#33220f"], backgroundStops: ["#49351b", "#1e1a16"] },
+  { id: "prisma-artico", name: "Prisma ártico", stops: ["#e0f2fe", "#bae6fd", "#7dd3fc", "#22d3ee", "#6366f1", "#4338ca", "#1e1b4b"], backgroundStops: ["#25394d", "#171721"] },
+  { id: "vinho", name: "Vinho", stops: ["#fce7f3", "#f9a8d4", "#f472b6", "#db2777", "#9d174d", "#6b214f", "#32172a"], backgroundStops: ["#482539", "#1b141d"] },
+  { id: "aco-lunar", name: "Aço lunar", stops: ["#f8fafc", "#e2e8f0", "#cbd5e1", "#94a3b8", "#64748b", "#475569", "#1e293b"], backgroundStops: ["#303b4c", "#171b23"] },
   ...BANKAI_THEMES,
 ];
