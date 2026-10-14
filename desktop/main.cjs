@@ -3,6 +3,7 @@ const { spawn, execFile } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { catalogGameName, isCatalogGame } = require('../lib/gameCatalog.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
@@ -38,24 +39,6 @@ const NON_GAME_PROCESSES = new Set([
   'discord', 'discordcanary', 'discordptb', 'steam', 'steamwebhelper', 'steamservice',
   'epicgameslauncher', 'riotclientservices', 'ubisoftconnect', 'upc', 'eadesktop',
   'battle.net', 'battle.net helper', 'gog galaxy',
-]);
-const KNOWN_GAME_PROCESSES = new Map([
-  ['rainbowsix', 'Rainbow Six Siege'], ['rainbowsix_vulkan', 'Rainbow Six Siege'], ['rainbowsix_be', 'Rainbow Six Siege'],
-  ['ninesols', 'Nine Sols'], ['robloxplayerbeta', 'ROBLOX'], ['valorant-win64-shipping', 'VALORANT'], ['valorant', 'VALORANT'],
-  ['minecraft.windows', 'Minecraft'], ['minecraft', 'Minecraft'],
-  ['theoutlasttrials', 'The Outlast Trials'], ['left4dead2', 'Left 4 Dead 2'], ['left4dead2.exe', 'Left 4 Dead 2'],
-  ['overwatch', 'Overwatch'], ['fortniteclient-win64-shipping', 'Fortnite'], ['fortniteclient-win64-shipping_eac', 'Fortnite'],
-  ['rocketleague', 'Rocket League'], ['deadbydaylight-win64-shipping', 'Dead by Daylight'], ['deadbydaylight', 'Dead by Daylight'],
-  ['cs2', 'Counter-Strike 2'], ['dota2', 'Dota 2'], ['league of legends', 'League of Legends'], ['leagueclient', 'League of Legends'],
-  ['genshinimpact', 'Genshin Impact'], ['zenlesszonezero', 'Zenless Zone Zero'], ['starrail', 'Honkai: Star Rail'],
-  ['r5apex', 'Apex Legends'], ['apexlegends', 'Apex Legends'], ['eldenring', 'ELDEN RING'], ['gta5', 'Grand Theft Auto V'],
-  ['rdr2', 'Red Dead Redemption 2'], ['bg3', 'Baldur’s Gate 3'], ['among us', 'Among Us'], ['among us.exe', 'Among Us'],
-  ['terraria', 'Terraria'], ['stardew valley', 'Stardew Valley'], ['hades', 'Hades'], ['hades2', 'Hades II'],
-  ['palworld-win64-shipping', 'Palworld'], ['phasmophobia', 'Phasmophobia'], ['lethal company', 'Lethal Company'],
-  ['deep rock galactic', 'Deep Rock Galactic'], ['destiny2', 'Destiny 2'], ['warframe.x64', 'Warframe'],
-  ['forzahorizon5', 'Forza Horizon 5'], ['the sims 4', 'The Sims 4'], ['osulazer', 'osu!'], ['osu!', 'osu!'],
-  ['hollow knight', 'Hollow Knight'], ['silksong', 'Hollow Knight: Silksong'], ['monsterhunterwilds', 'Monster Hunter Wilds'],
-  ['monsterhunterworld', 'Monster Hunter: World'], ['fallguys_client_game', 'Fall Guys'], ['fallguys_client_game-win64-shipping', 'Fall Guys'],
 ]);
 
 const DEFAULT_OVERLAY_SETTINGS = {
@@ -126,7 +109,7 @@ function sanitizeRegisteredGames(value) {
       && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(entry.gameIconDataUrl)
       ? entry.gameIconDataUrl
       : null;
-    if (!id || NON_GAME_PROCESSES.has(id) || !name || seen.has(id)) return [];
+    if (!id || NON_GAME_PROCESSES.has(id) || !isCatalogGame(id) || !name || seen.has(id)) return [];
     seen.add(id);
     return [{ id, name, processName, enabled: entry?.enabled !== false, gameIconDataUrl }];
   });
@@ -157,25 +140,97 @@ function persistRegisteredGames() {
 function isKnownGameProcess(processName, executablePath = '') {
   const key = String(processName || '').trim().replace(/\.exe$/i, '').toLowerCase();
   if (!key || NON_GAME_PROCESSES.has(key)) return false;
-  if (key === 'javaw') return /(?:^|[\\/])(?:\.minecraft|minecraft|prismlauncher|multimc)(?:[\\/]|$)/i.test(executablePath)
-    || registeredGames.some((game) => game.processName.toLowerCase() === key);
-  return KNOWN_GAME_PROCESSES.has(key) || registeredGames.some((game) => game.processName.toLowerCase() === key);
+  if (key === 'javaw') return /(?:^|[\\/])(?:\.minecraft|minecraft|prismlauncher|multimc)(?:[\\/]|$)/i.test(executablePath);
+  return isCatalogGame(key);
+}
+
+function fitIconDataUrl(dataUrl) {
+  if (!dataUrl) return null;
+  let image;
+  try { image = nativeImage.createFromDataURL(dataUrl); } catch { return null; }
+  if (!image || image.isEmpty()) return null;
+  const { width, height } = image.getSize();
+  const longest = Math.max(width, height);
+  const fitted = longest > 128 ? image.resize({ width: 128, height: 128, quality: 'best' }) : image;
+  const png = fitted.toPNG();
+  if (!png.length || png.length > 180_000) return null;
+  return `data:image/png;base64,${png.toString('base64')}`;
+}
+
+function extractWindowsIcon(executablePath) {
+  const script = `
+Add-Type -AssemblyName System.Drawing
+Add-Type -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.Runtime.InteropServices;
+public static class SekaiIcon {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  static extern int PrivateExtractIcons(string szFileName, int nIconIndex, int cxIcon, int cyIcon, IntPtr[] phicon, int[] piconid, int nIcons, int flags);
+  [DllImport("user32.dll")]
+  static extern bool DestroyIcon(IntPtr hIcon);
+  public static string PngBase64(string path) {
+    int[] sizes = new int[] { 256, 128, 64, 48, 32 };
+    foreach (int size in sizes) {
+      IntPtr[] icons = new IntPtr[1];
+      int[] ids = new int[1];
+      int count = PrivateExtractIcons(path, 0, size, size, icons, ids, 1, 0);
+      if (count <= 0 || icons[0] == IntPtr.Zero) continue;
+      try {
+        using (Icon icon = Icon.FromHandle(icons[0]))
+        using (Bitmap source = icon.ToBitmap())
+        using (Bitmap copy = new Bitmap(source))
+        using (System.IO.MemoryStream stream = new System.IO.MemoryStream()) {
+          copy.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+          return Convert.ToBase64String(stream.ToArray());
+        }
+      } finally { DestroyIcon(icons[0]); }
+    }
+    Icon associated = Icon.ExtractAssociatedIcon(path);
+    if (associated == null) return "";
+    using (associated)
+    using (Bitmap source = associated.ToBitmap())
+    using (System.IO.MemoryStream stream = new System.IO.MemoryStream()) {
+      source.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+      return Convert.ToBase64String(stream.ToArray());
+    }
+  }
+}
+"@
+[Console]::Out.Write([SekaiIcon]::PngBase64($env:SEKAI_ICON_PATH))
+`;
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      windowsHide: true,
+      timeout: 12_000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env, SEKAI_ICON_PATH: executablePath },
+    }, (error, stdout) => {
+      const encoded = String(stdout || '').replace(/\s+/g, '');
+      if (error || !/^[a-z0-9+/=]+$/i.test(encoded)) return resolve(null);
+      resolve(`data:image/png;base64,${encoded}`);
+    });
+  });
+}
+
+async function readExecutableIcon(executablePath) {
+  if (process.platform === 'win32') {
+    const extracted = fitIconDataUrl(await extractWindowsIcon(executablePath));
+    if (extracted) return extracted;
+  }
+  try {
+    const icon = await app.getFileIcon(executablePath, { size: 'large' });
+    if (!icon.isEmpty()) return fitIconDataUrl(icon.toDataURL());
+  } catch { /* O executável pode não publicar um ícone para o sistema. */ }
+  return null;
 }
 
 async function gameProcessIcon(executablePath) {
   if (gameIconCache.has(executablePath)) return gameIconCache.get(executablePath);
-  let dataUrl = null;
-  try {
-    const icon = await app.getFileIcon(executablePath, { size: 'large' });
-    if (!icon.isEmpty()) {
-      const png = icon.toPNG();
-      if (png.length) dataUrl = `data:image/png;base64,${png.toString('base64')}`;
-    }
-  } catch { /* Alguns jogos não expõem um ícone no executável. */ }
-  if (dataUrl) {
-    if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
-    gameIconCache.set(executablePath, dataUrl);
-  }
+  const dataUrl = await readExecutableIcon(executablePath);
+  if (!dataUrl) return null;
+  if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
+  gameIconCache.set(executablePath, dataUrl);
   return dataUrl;
 }
 
@@ -196,7 +251,7 @@ function getRunningGameProcesses() {
           const registered = registeredGames.find((game) => game.processName.toLowerCase() === processName.toLowerCase());
           return [{
             processName,
-            displayName: registered?.name || KNOWN_GAME_PROCESSES.get(processName.replace(/\.exe$/i, '').toLowerCase()) || (processName.toLowerCase() === 'javaw' ? 'Minecraft' : processName),
+            displayName: registered?.name || catalogGameName(processName) || (processName.toLowerCase() === 'javaw' ? 'Minecraft' : processName),
             executablePath,
             startedAt: Number.isFinite(startedAt) ? startedAt : null,
           }];
