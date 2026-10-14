@@ -1,6 +1,6 @@
 {
   "name": "sekai",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
@@ -55,6 +55,13 @@
   "overrides": {
     "next": {
       "postcss": "^8.5.30"
+    }
+  },
+  "build": {
+    "appId": "br.com.murasakidev.sekai",
+    "productName": "Sekai",
+    "win": {
+      "icon": "public/sekai.ico"
     }
   }
 }

@@ -207,7 +207,7 @@ export function useGameActivityByUser(userIds: string[]) {
 
 export function GameActivityLine({ activity }: { activity: GameActivity }) {
   const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(activity.startedAt)) / 1000));
-  return <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt="" className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover"/> : <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-emerald-400"/>}<span className="min-w-0 truncate">Jogando {activity.gameName} · {formatElapsed(elapsed)}</span></span>;
+  return <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt={`${activity.gameName} ícone`} className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover"/> : <span aria-label={`Ícone de ${activity.gameName} indisponível`} className="grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] bg-white/10 text-[9px] font-bold text-emerald-300">{activity.gameName.trim().slice(0, 1).toLocaleUpperCase()}</span>}<span className="min-w-0 truncate">Jogando {activity.gameName} · {formatElapsed(elapsed)}</span></span>;
 }
 
 export function GameActivityCard({ activity }: { activity: GameActivity }) {
@@ -215,7 +215,7 @@ export function GameActivityCard({ activity }: { activity: GameActivity }) {
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const elapsed = Math.max(0, Math.floor((now - Date.parse(activity.startedAt)) / 1000));
   return <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] p-3">
-    <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-emerald-400/10 text-emerald-300">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt="" className="h-full w-full object-cover"/> : <Gamepad2 size={24}/>}</span>
+    <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-emerald-400/10 text-emerald-100">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt={`${activity.gameName} ícone`} className="h-full w-full object-cover"/> : <span className="text-lg font-bold">{activity.gameName.trim().slice(0, 1).toLocaleUpperCase()}</span>}</span>
     <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-emerald-300"><Gamepad2 className="h-3.5 w-3.5"/>Jogando</span><span className="mt-0.5 block truncate text-sm font-semibold text-white">{activity.gameName}</span><span className="mt-0.5 block text-xs text-white/60">Há {formatElapsed(elapsed)}</span></span>
   </div>;
 }

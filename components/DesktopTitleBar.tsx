@@ -34,7 +34,7 @@ export function DesktopTitleBar() {
       onDoubleClick={() => void window.sekaiDesktop?.toggleMaximizeWindow?.().then(setMaximized)}
     >
       <div className="flex h-full min-w-0 flex-1 items-center gap-2 pl-3 text-[12px] font-medium tracking-[.01em]">
-        <img src="/sekai-logo-red.png" alt="" className="h-[15px] w-[15px] object-contain" draggable={false} />
+        <img src="/sekai-logo-red.png?v=0.2.2" alt="Sekai" className="h-[18px] w-[18px] object-contain" draggable={false} />
         <span className="truncate">Sekai</span>
       </div>
       <div className="flex h-full" style={{ WebkitAppRegion: "no-drag" } as CSSProperties & { WebkitAppRegion: string }}>

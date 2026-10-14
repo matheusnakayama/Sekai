@@ -1,4 +1,4 @@
-const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, session, shell } = require('electron');
 const { spawn, execFile } = require('child_process');
 const http = require('http');
 const fs = require('fs');
@@ -6,6 +6,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
+let SEKAI_WINDOW_ICON = null;
+try {
+  SEKAI_WINDOW_ICON = nativeImage.createFromBuffer(fs.readFileSync(SEKAI_LOGO_RED));
+} catch { /* O botão da barra customizada ainda exibe o logo servido pelo app. */ }
 const LOCAL_PORT = Number(process.env.SEKAI_PORT || 4791);
 const HOSTED_URL = 'https://murasakidev.com.br';
 
@@ -27,6 +31,14 @@ let gameScanBusy = false;
 let gameActivityTimer = null;
 const gameProcessStartedAt = new Map();
 const gameIconCache = new Map();
+const NON_GAME_PROCESSES = new Set([
+  'spotify', 'spotifylauncher', 'spotifywebhelper', 'chatgpt', 'gamebar', 'gamebarftserver',
+  'gamebarpresencewriter', 'xboxgamebar', 'xboxgamingoverlay', 'gamingservices', 'gamingservicesnet',
+  'msedge', 'microsoftedge', 'microsoftedgecp', 'msedgewebview2', 'sekai',
+  'discord', 'discordcanary', 'discordptb', 'steam', 'steamwebhelper', 'steamservice',
+  'epicgameslauncher', 'riotclientservices', 'ubisoftconnect', 'upc', 'eadesktop',
+  'battle.net', 'battle.net helper', 'gog galaxy',
+]);
 const KNOWN_GAME_PROCESSES = new Map([
   ['rainbowsix', 'Rainbow Six Siege'], ['rainbowsix_vulkan', 'Rainbow Six Siege'], ['rainbowsix_be', 'Rainbow Six Siege'],
   ['ninesols', 'Nine Sols'], ['robloxplayerbeta', 'ROBLOX'], ['valorant-win64-shipping', 'VALORANT'], ['valorant', 'VALORANT'],
@@ -114,7 +126,7 @@ function sanitizeRegisteredGames(value) {
       && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(entry.gameIconDataUrl)
       ? entry.gameIconDataUrl
       : null;
-    if (!id || !name || seen.has(id)) return [];
+    if (!id || NON_GAME_PROCESSES.has(id) || !name || seen.has(id)) return [];
     seen.add(id);
     return [{ id, name, processName, enabled: entry?.enabled !== false, gameIconDataUrl }];
   });
@@ -122,7 +134,12 @@ function sanitizeRegisteredGames(value) {
 
 function readRegisteredGames() {
   try {
-    return sanitizeRegisteredGames(JSON.parse(fs.readFileSync(registeredGamesPath(), 'utf8')));
+    const savedGames = JSON.parse(fs.readFileSync(registeredGamesPath(), 'utf8'));
+    const games = sanitizeRegisteredGames(savedGames);
+    if (!Array.isArray(savedGames) || games.length !== savedGames.length) {
+      fs.writeFileSync(registeredGamesPath(), JSON.stringify(games, null, 2), 'utf8');
+    }
+    return games;
   } catch {
     return [];
   }
@@ -139,6 +156,7 @@ function persistRegisteredGames() {
 
 function isKnownGameProcess(processName, executablePath = '') {
   const key = String(processName || '').trim().replace(/\.exe$/i, '').toLowerCase();
+  if (!key || NON_GAME_PROCESSES.has(key)) return false;
   if (key === 'javaw') return /(?:^|[\\/])(?:\.minecraft|minecraft|prismlauncher|multimc)(?:[\\/]|$)/i.test(executablePath)
     || registeredGames.some((game) => game.processName.toLowerCase() === key);
   return KNOWN_GAME_PROCESSES.has(key) || registeredGames.some((game) => game.processName.toLowerCase() === key);
@@ -148,11 +166,16 @@ async function gameProcessIcon(executablePath) {
   if (gameIconCache.has(executablePath)) return gameIconCache.get(executablePath);
   let dataUrl = null;
   try {
-    const icon = await app.getFileIcon(executablePath, { size: 'small' });
-    if (!icon.isEmpty()) dataUrl = icon.toDataURL();
+    const icon = await app.getFileIcon(executablePath, { size: 'large' });
+    if (!icon.isEmpty()) {
+      const png = icon.toPNG();
+      if (png.length) dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+    }
   } catch { /* Alguns jogos não expõem um ícone no executável. */ }
-  if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
-  gameIconCache.set(executablePath, dataUrl);
+  if (dataUrl) {
+    if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
+    gameIconCache.set(executablePath, dataUrl);
+  }
   return dataUrl;
 }
 
@@ -240,7 +263,9 @@ async function refreshGameActivity() {
       });
       if (registeredGamesChanged) persistRegisteredGames();
     }
-    const changed = (next?.gameId ?? '') !== (currentGameActivity?.gameId ?? '') || (next?.startedAt ?? 0) !== (currentGameActivity?.startedAt ?? 0);
+    const changed = (next?.gameId ?? '') !== (currentGameActivity?.gameId ?? '')
+      || (next?.startedAt ?? 0) !== (currentGameActivity?.startedAt ?? 0)
+      || (next?.gameIconDataUrl ?? '') !== (currentGameActivity?.gameIconDataUrl ?? '');
     currentGameActivity = next;
     if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sekai:games:activity', buildGameActivitySnapshot());
   } finally {
@@ -527,7 +552,7 @@ function createWindow(targetUrl) {
     title: 'Sekai',
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
-    icon: SEKAI_LOGO_RED,
+    ...(SEKAI_WINDOW_ICON && !SEKAI_WINDOW_ICON.isEmpty() ? { icon: SEKAI_WINDOW_ICON } : {}),
     ...(process.platform === 'win32' ? { frame: false } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -690,6 +715,7 @@ async function smoke() {
 }
 
 app.setName('Sekai');
+if (process.platform === 'win32') app.setAppUserModelId('br.com.murasakidev.sekai');
 // Perfil dedicado: o antigo estava com cache/storage bloqueado ("Acesso negado"), o que
 // quebrava o localStorage (login e Spotify). Precisa ser definido antes do app ficar pronto.
 app.setPath('userData', path.join(app.getPath('appData'), 'Sekai-perfil'));
