@@ -136,7 +136,6 @@ export default function RoomClient({
   const [soundEffectsLoading, setSoundEffectsLoading] = useState(false);
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [callMusicName, setCallMusicName] = useState<string | null>(null);
-  const [muteRemoteAudioDuringShare, setMuteRemoteAudioDuringShare] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
@@ -1146,7 +1145,6 @@ export default function RoomClient({
     managerRef.current?.broadcastScreenShareState(false);
     managerRef.current?.broadcastMediaState({ micOn: currentMicRef.current, camOn: restoreCam, deafened: currentDeafenedRef.current });
     setScreenCaptureInfo('');
-    setMuteRemoteAudioDuringShare(false);
     screenShareOperationRef.current = false;
   }
 
@@ -1213,7 +1211,6 @@ export default function RoomClient({
       if (displayAudioTrack) await prepareScreenAudioTrack(displayAudioTrack, displaySurface);
       if (displayAudioTrack && displayAudioTrack.readyState !== 'live') displayAudioTrack = null;
       screenAudioTrackRef.current = displayAudioTrack;
-      setMuteRemoteAudioDuringShare(Boolean(displayAudioTrack && displaySurface === 'monitor'));
       if (selection.shareAudio && !displayAudioTrack) {
         showProblem('A tela vai sem som. No aviso do navegador, marque compartilhar o áudio do sistema.');
       }
@@ -1225,7 +1222,6 @@ export default function RoomClient({
         screenAudioTrackRef.current = null;
         display.getTracks().forEach((track) => track.stop());
         screenStreamRef.current = null;
-        setMuteRemoteAudioDuringShare(false);
         setScreenCaptureInfo('');
         await manager
           .replaceVideoTrack(
@@ -1257,7 +1253,6 @@ export default function RoomClient({
       displayAudioTrack?.addEventListener('ended', () => {
         if (screenAudioTrackRef.current?.id !== displayAudioTrack.id) return;
         screenAudioTrackRef.current = null;
-        setMuteRemoteAudioDuringShare(false);
         const video = screenStreamRef.current?.getVideoTracks()[0];
         if (video && currentSharingRef.current) {
           void manager.replaceVideoTrack(video, screenStreamRef.current, profile, null).catch(() => {});
@@ -1267,7 +1262,6 @@ export default function RoomClient({
     } catch (err) {
       console.error('Não foi possível iniciar a apresentação de tela:', err);
       screenAudioTrackRef.current = null;
-      setMuteRemoteAudioDuringShare(false);
       setScreenCaptureInfo('');
       setGoLiveOpen(false);
       showProblem(screenShareFailureMessage(err, Boolean(selection.sourceId)), false, true);
@@ -1797,7 +1791,7 @@ export default function RoomClient({
           <ParticipantsGrid
             participants={participantList}
             mutedSoundEffectUserIds={mutedSoundEffectUserIds}
-            muteRemoteAudio={deafened || muteRemoteAudioDuringShare}
+            muteRemoteAudio={deafened}
             outputDeviceId={selectedOutputDeviceId}
             masterOutputVolume={outputVolume}
             focusedParticipantId={focusedParticipantId}
