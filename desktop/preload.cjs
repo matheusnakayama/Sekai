@@ -1,6 +1,24 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('sekaiDesktop', {
+  platform: process.platform,
+  getWindowState() {
+    return ipcRenderer.invoke('sekai:window:get-state');
+  },
+  minimizeWindow() {
+    return ipcRenderer.invoke('sekai:window:minimize');
+  },
+  toggleMaximizeWindow() {
+    return ipcRenderer.invoke('sekai:window:toggle-maximize');
+  },
+  closeWindow() {
+    return ipcRenderer.invoke('sekai:window:close');
+  },
+  onWindowMaximized(callback) {
+    const listener = (_event, maximized) => callback(Boolean(maximized));
+    ipcRenderer.on('sekai:window:maximized', listener);
+    return () => ipcRenderer.removeListener('sekai:window:maximized', listener);
+  },
   listSources(kind) {
     return ipcRenderer.invoke('sekai:list-sources', kind === 'screen' ? 'screen' : 'window');
   },

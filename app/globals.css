@@ -2,6 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Janela frameless do app Windows: reserva a faixa da barra e mantém o conteúdo em tela cheia na call. */
+html.sekai-desktop #sekai-app-root {
+  height: calc(100dvh - 34px) !important;
+  min-height: calc(100dvh - 34px) !important;
+  max-height: calc(100dvh - 34px) !important;
+}
+
+html.sekai-desktop.sekai-call-fullscreen #sekai-titlebar,
+html.sekai-desktop.sekai-call-fullscreen #sekai-titlebar-spacer {
+  display: none !important;
+}
+
+html.sekai-desktop.sekai-call-fullscreen #sekai-window-content {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+html.sekai-desktop.sekai-call-fullscreen #sekai-app-root {
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+
 /* ===== Temas (gerado) ===== */
 :root, html[data-theme="azul"] {
   --brand-50: 241 244 255;

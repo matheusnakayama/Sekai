@@ -26,6 +26,25 @@ let runningGameProcesses = [];
 let gameScanBusy = false;
 let gameActivityTimer = null;
 const gameProcessStartedAt = new Map();
+const gameIconCache = new Map();
+const KNOWN_GAME_PROCESSES = new Map([
+  ['rainbowsix', 'Rainbow Six Siege'], ['rainbowsix_vulkan', 'Rainbow Six Siege'], ['rainbowsix_be', 'Rainbow Six Siege'],
+  ['ninesols', 'Nine Sols'], ['robloxplayerbeta', 'ROBLOX'], ['valorant-win64-shipping', 'VALORANT'], ['valorant', 'VALORANT'],
+  ['minecraft.windows', 'Minecraft'], ['minecraft', 'Minecraft'],
+  ['theoutlasttrials', 'The Outlast Trials'], ['left4dead2', 'Left 4 Dead 2'], ['left4dead2.exe', 'Left 4 Dead 2'],
+  ['overwatch', 'Overwatch'], ['fortniteclient-win64-shipping', 'Fortnite'], ['fortniteclient-win64-shipping_eac', 'Fortnite'],
+  ['rocketleague', 'Rocket League'], ['deadbydaylight-win64-shipping', 'Dead by Daylight'], ['deadbydaylight', 'Dead by Daylight'],
+  ['cs2', 'Counter-Strike 2'], ['dota2', 'Dota 2'], ['league of legends', 'League of Legends'], ['leagueclient', 'League of Legends'],
+  ['genshinimpact', 'Genshin Impact'], ['zenlesszonezero', 'Zenless Zone Zero'], ['starrail', 'Honkai: Star Rail'],
+  ['r5apex', 'Apex Legends'], ['apexlegends', 'Apex Legends'], ['eldenring', 'ELDEN RING'], ['gta5', 'Grand Theft Auto V'],
+  ['rdr2', 'Red Dead Redemption 2'], ['bg3', 'Baldur’s Gate 3'], ['among us', 'Among Us'], ['among us.exe', 'Among Us'],
+  ['terraria', 'Terraria'], ['stardew valley', 'Stardew Valley'], ['hades', 'Hades'], ['hades2', 'Hades II'],
+  ['palworld-win64-shipping', 'Palworld'], ['phasmophobia', 'Phasmophobia'], ['lethal company', 'Lethal Company'],
+  ['deep rock galactic', 'Deep Rock Galactic'], ['destiny2', 'Destiny 2'], ['warframe.x64', 'Warframe'],
+  ['forzahorizon5', 'Forza Horizon 5'], ['the sims 4', 'The Sims 4'], ['osulazer', 'osu!'], ['osu!', 'osu!'],
+  ['hollow knight', 'Hollow Knight'], ['silksong', 'Hollow Knight: Silksong'], ['monsterhunterwilds', 'Monster Hunter Wilds'],
+  ['monsterhunterworld', 'Monster Hunter: World'], ['fallguys_client_game', 'Fall Guys'], ['fallguys_client_game-win64-shipping', 'Fall Guys'],
+]);
 
 const DEFAULT_OVERLAY_SETTINGS = {
   enabled: false,
@@ -118,6 +137,25 @@ function persistRegisteredGames() {
   }
 }
 
+function isKnownGameProcess(processName, executablePath = '') {
+  const key = String(processName || '').trim().replace(/\.exe$/i, '').toLowerCase();
+  if (key === 'javaw') return /(?:^|[\\/])(?:\.minecraft|minecraft|prismlauncher|multimc)(?:[\\/]|$)/i.test(executablePath)
+    || registeredGames.some((game) => game.processName.toLowerCase() === key);
+  return KNOWN_GAME_PROCESSES.has(key) || registeredGames.some((game) => game.processName.toLowerCase() === key);
+}
+
+async function gameProcessIcon(executablePath) {
+  if (gameIconCache.has(executablePath)) return gameIconCache.get(executablePath);
+  let dataUrl = null;
+  try {
+    const icon = await app.getFileIcon(executablePath, { size: 'small' });
+    if (!icon.isEmpty()) dataUrl = icon.toDataURL();
+  } catch { /* Alguns jogos não expõem um ícone no executável. */ }
+  if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
+  gameIconCache.set(executablePath, dataUrl);
+  return dataUrl;
+}
+
 function getRunningGameProcesses() {
   if (process.platform !== 'win32') return Promise.resolve([]);
   const script = '$ErrorActionPreference="SilentlyContinue"; Get-Process | ForEach-Object { if ($_.Path -and $_.Path -notlike "$env:WINDIR\\System32\\*" -and $_.Path -notlike "$env:WINDIR\\SysWOW64\\*") { $started=$null; try { $started=$_.StartTime.ToUniversalTime().ToString("o") } catch {}; [pscustomobject]@{ processName=$_.ProcessName; executablePath=$_.Path; startedAt=$started } } } | ConvertTo-Json -Compress';
@@ -127,13 +165,21 @@ function getRunningGameProcesses() {
       try {
         const parsed = JSON.parse(stdout);
         const rows = Array.isArray(parsed) ? parsed : [parsed];
-        resolve(rows.flatMap((row) => {
+        const candidates = rows.flatMap((row) => {
           const processName = String(row?.processName || '').trim().slice(0, 120);
           const executablePath = String(row?.executablePath || '').slice(0, 1024);
-          if (!processName || !executablePath) return [];
+          if (!processName || !executablePath || !isKnownGameProcess(processName, executablePath)) return [];
           const startedAt = Date.parse(String(row?.startedAt || ''));
-          return [{ processName, executablePath, startedAt: Number.isFinite(startedAt) ? startedAt : null }];
-        }));
+          const registered = registeredGames.find((game) => game.processName.toLowerCase() === processName.toLowerCase());
+          return [{
+            processName,
+            displayName: registered?.name || KNOWN_GAME_PROCESSES.get(processName.replace(/\.exe$/i, '').toLowerCase()) || (processName.toLowerCase() === 'javaw' ? 'Minecraft' : processName),
+            executablePath,
+            startedAt: Number.isFinite(startedAt) ? startedAt : null,
+          }];
+        });
+        Promise.all(candidates.map(async (process) => ({ ...process, gameIconDataUrl: await gameProcessIcon(process.executablePath) })))
+          .then(resolve, () => resolve(candidates.map((process) => ({ ...process, gameIconDataUrl: null }))));
       } catch {
         resolve([]);
       }
@@ -150,6 +196,17 @@ async function refreshGameActivity() {
   gameScanBusy = true;
   try {
     runningGameProcesses = await getRunningGameProcesses();
+    let registeredIconsChanged = false;
+    const iconsByProcess = new Map(runningGameProcesses.filter((process) => process.gameIconDataUrl).map((process) => [process.processName.toLowerCase(), process.gameIconDataUrl]));
+    if (iconsByProcess.size) {
+      registeredGames = registeredGames.map((game) => {
+        const icon = iconsByProcess.get(game.processName.toLowerCase());
+        if (game.gameIconDataUrl || !icon) return game;
+        registeredIconsChanged = true;
+        return { ...game, gameIconDataUrl: icon };
+      });
+      if (registeredIconsChanged) persistRegisteredGames();
+    }
     const active = [];
     const liveKeys = new Set();
     const previousIcon = currentGameActivity?.gameIconDataUrl || null;
@@ -160,18 +217,13 @@ async function refreshGameActivity() {
       liveKeys.add(key);
       const startedAt = process.startedAt || gameProcessStartedAt.get(key) || Date.now();
       gameProcessStartedAt.set(key, startedAt);
-      active.push({ gameId: game.id, gameName: game.name, executablePath: process.executablePath, startedAt, updatedAt: Date.now() });
+      active.push({ gameId: game.id, gameName: game.name, processName: process.processName, executablePath: process.executablePath, startedAt, updatedAt: Date.now() });
     }
     for (const key of gameProcessStartedAt.keys()) if (!liveKeys.has(key)) gameProcessStartedAt.delete(key);
     active.sort((a, b) => b.startedAt - a.startedAt);
     const selected = active[0] || null;
-    let gameIconDataUrl = null;
-    if (selected) {
-      try {
-        const icon = await app.getFileIcon(selected.executablePath, { size: 'small' });
-        if (!icon.isEmpty()) gameIconDataUrl = icon.toDataURL();
-      } catch { /* Alguns processos não fornecem um ícone de executável. */ }
-    }
+    const selectedProcess = selected && runningGameProcesses.find((item) => item.processName.toLowerCase() === selected.processName.toLowerCase());
+    const gameIconDataUrl = selectedProcess?.gameIconDataUrl || null;
     const next = selected ? {
       gameId: selected.gameId,
       gameName: selected.gameName,
@@ -307,6 +359,16 @@ function allowedUrl(target) {
   }
 }
 
+function trustedSekaiOrigin(target) {
+  try {
+    const url = new URL(target);
+    if (url.protocol === 'https:') return url.hostname === 'murasakidev.com.br' || url.hostname === 'www.murasakidev.com.br';
+    return url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+  } catch {
+    return false;
+  }
+}
+
 function rememberCapture(sourceId, shareAudio) {
   pendingCapture = { sourceId, shareAudio };
   if (pendingTimer) clearTimeout(pendingTimer);
@@ -343,8 +405,24 @@ function installCaptureHandler() {
     }
   });
 
-  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(permission === 'media' || permission === 'display-capture' || permission === 'notifications');
+  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    if (contents !== mainWindow?.webContents || details?.isMainFrame === false || !trustedSekaiOrigin(requestingOrigin)) return false;
+    if (permission === 'media') return ['audio', 'video', 'unknown'].includes(details?.mediaType || 'unknown');
+    return permission === 'display-capture' || permission === 'notifications';
+  });
+
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const requestUrl = details?.requestingUrl || contents?.getURL?.() || '';
+    const trustedRequest = contents === mainWindow?.webContents
+      && details?.isMainFrame !== false
+      && trustedSekaiOrigin(requestUrl);
+    if (permission === 'media') {
+      const requestedTypes = details?.mediaTypes;
+      const supportedTypes = !Array.isArray(requestedTypes) || requestedTypes.every((type) => type === 'audio' || type === 'video');
+      callback(trustedRequest && supportedTypes);
+      return;
+    }
+    callback(trustedRequest && (permission === 'display-capture' || permission === 'notifications'));
   });
 }
 
@@ -366,6 +444,24 @@ async function listSources(kind) {
 }
 
 function attachIpc() {
+  ipcMain.handle('sekai:window:get-state', (event) => {
+    if (event.sender !== mainWindow?.webContents || !mainWindow || mainWindow.isDestroyed()) return { maximized: false };
+    return { maximized: mainWindow.isMaximized() };
+  });
+  ipcMain.handle('sekai:window:minimize', (event) => {
+    if (event.sender !== mainWindow?.webContents || !mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.minimize();
+  });
+  ipcMain.handle('sekai:window:toggle-maximize', (event) => {
+    if (event.sender !== mainWindow?.webContents || !mainWindow || mainWindow.isDestroyed()) return false;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return mainWindow.isMaximized();
+  });
+  ipcMain.handle('sekai:window:close', (event) => {
+    if (event.sender !== mainWindow?.webContents || !mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.close();
+  });
   ipcMain.handle('sekai:list-sources', (_event, kind) => listSources(kind));
   ipcMain.on('sekai:prepare-capture', (event, sourceId, shareAudio) => {
     rememberCapture(String(sourceId || ''), Boolean(shareAudio));
@@ -432,6 +528,7 @@ function createWindow(targetUrl) {
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
     icon: SEKAI_LOGO_RED,
+    ...(process.platform === 'win32' ? { frame: false } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -464,6 +561,11 @@ function createWindow(targetUrl) {
 
   mainWindow.on('focus', () => updateOverlayWindow());
   mainWindow.on('blur', () => updateOverlayWindow());
+  const publishMaximizedState = () => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send('sekai:window:maximized', mainWindow.isMaximized());
+  };
+  mainWindow.on('maximize', publishMaximizedState);
+  mainWindow.on('unmaximize', publishMaximizedState);
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (!isMainFrame || code === -3) return;

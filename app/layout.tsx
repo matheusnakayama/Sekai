@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { DialogProvider } from "@/components/DialogProvider";
 import { FloatingYoutubeCharm } from "@/components/FloatingYoutubeCharm";
+import { DesktopTitleBar } from "@/components/DesktopTitleBar";
 import { SEKAI_LOGO_RED } from "@/lib/brandAssets";
 
 // O CSP com nonce precisa renderizar por requisicao para que o Next aplique o
@@ -41,10 +42,15 @@ export default function RootLayout({
         <script src="/theme-init.js" suppressHydrationWarning />
       </head>
       <body className="h-[100dvh] w-full overflow-hidden bg-discord-bg-primary">
-        <DialogProvider>
-          {children}
-          <FloatingYoutubeCharm />
-        </DialogProvider>
+        <div id="sekai-window-shell" className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+          <DesktopTitleBar />
+          <div id="sekai-window-content" className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <DialogProvider>
+              {children}
+              <FloatingYoutubeCharm />
+            </DialogProvider>
+          </div>
+        </div>
       </body>
     </html>
   );

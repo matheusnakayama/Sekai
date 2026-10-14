@@ -2133,6 +2133,11 @@ export default function Home() {
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("sekai-call-fullscreen", callFullscreen);
+    return () => document.documentElement.classList.remove("sekai-call-fullscreen");
+  }, [callFullscreen]);
+
   if (!authChecked || (authUserCandidateId && !mfaCheckComplete)) return null;
   if (mfaCheckFailed) return <main className="flex min-h-screen items-center justify-center bg-discord-bg-primary px-4 py-8"><div className="w-full max-w-md rounded-3xl border border-white/10 bg-discord-bg-secondary p-6 text-center shadow-2xl sm:p-8"><h1 className="text-xl font-bold text-discord-header-primary">Não foi possível validar a sessão</h1><p className="mt-2 text-sm leading-6 text-discord-text-muted">Tente novamente mais tarde ou saia e entre novamente.</p><button type="button" onClick={() => { void supabase.auth.signOut(); setAuthUserCandidateId(null); setCurrentUserId(null); setMfaCheckFailed(false); }} className="mt-5 rounded-xl bg-theme-gradient px-5 py-3 font-semibold text-white">Sair da conta</button></div></main>;
   if (mfaChallengeRequired) return <MfaChallenge
@@ -2219,7 +2224,7 @@ export default function Home() {
   };
 
   return (
-    <div className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
+    <div id="sekai-app-root" className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
       <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <GameActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       {!callFullscreen && <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />}

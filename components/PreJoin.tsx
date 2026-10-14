@@ -318,17 +318,23 @@ export default function PreJoin({
 }
 
 function mapMediaError(err: unknown): CallError {
-  const name = err instanceof DOMException ? err.name : '';
+  const name = err instanceof DOMException ? err.name : err && typeof err === 'object' && 'name' in err ? String(err.name) : '';
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     return {
       kind: 'permission-denied',
-      message: 'Acesso à câmera e ao microfone foi negado.',
+      message: 'Acesso ao microfone ou à câmera foi bloqueado.',
     };
   }
-  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
     return {
       kind: 'device-not-found',
       message: 'Nenhuma câmera ou microfone foi encontrado.',
+    };
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return {
+      kind: 'device-not-found',
+      message: 'O microfone ou a câmera está ocupado ou bloqueado pelo sistema.',
     };
   }
   return { kind: 'unknown', message: 'Não foi possível acessar seus dispositivos de mídia.' };
@@ -337,9 +343,9 @@ function mapMediaError(err: unknown): CallError {
 function deviceErrorHint(kind: CallError['kind']): string {
   switch (kind) {
     case 'permission-denied':
-      return 'Confira se o site tem permissão para usar o microfone nas configurações do navegador. Se acabou de liberar, volte e entre novamente.';
+      return 'No Sekai para Windows, confira Configurações do Windows → Privacidade e segurança → Microfone e permita o acesso para aplicativos da área de trabalho. Depois, tente entrar novamente.';
     case 'device-not-found':
-      return 'Verifique se um dispositivo está conectado. Você ainda pode entrar na sala e participar apenas assistindo.';
+      return 'Verifique se o dispositivo está conectado e se outro aplicativo não está usando o microfone ou a câmera. Você ainda pode entrar na sala apenas ouvindo.';
     default:
       return 'Verifique se outro aplicativo não está usando a câmera ou o microfone e tente novamente.';
   }

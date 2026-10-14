@@ -32,11 +32,11 @@ export function RegisteredGamesSettingsPanel() {
     try { setSnapshot(await desktop.updateRegisteredGames(games)); } catch { /* O app continua sem interromper a chamada. */ }
   }
 
-  function addGame(name: string, rawProcessName: string) {
+  function addGame(name: string, rawProcessName: string, gameIconDataUrl?: string | null) {
     const cleanProcess = rawProcessName.trim().replace(/\.exe$/i, "").split(/[\\/]/).pop() ?? "";
     const cleanName = name.trim() || cleanProcess.replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2");
     if (!cleanProcess || snapshot.registeredGames.some((game) => game.processName.toLowerCase() === cleanProcess.toLowerCase())) return;
-    void saveGames([...snapshot.registeredGames, { id: cleanProcess.toLowerCase(), name: cleanName, processName: cleanProcess, enabled: true }]);
+    void saveGames([...snapshot.registeredGames, { id: cleanProcess.toLowerCase(), name: cleanName, processName: cleanProcess, enabled: true, gameIconDataUrl: gameIconDataUrl ?? null }]);
     setGameName("");
     setProcessName("");
   }
@@ -49,7 +49,7 @@ export function RegisteredGamesSettingsPanel() {
   const normalizedSearch = searchQuery.trim().replace(/\.exe$/i, "").toLocaleLowerCase();
   const matchesSearch = (name: string, executable: string) => !normalizedSearch || `${name} ${executable}`.toLocaleLowerCase().includes(normalizedSearch);
   const visibleGames = snapshot.registeredGames.filter((game) => matchesSearch(game.name, game.processName));
-  const visibleDetected = detected.filter((process) => matchesSearch(process.processName, process.processName));
+  const visibleDetected = detected.filter((process) => matchesSearch(process.displayName || process.processName, process.processName));
 
   return <section className="settings-section-enter">
     <div className="mb-7"><p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Somente no aplicativo</p><h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Jogos registrados</h1><p className="mt-2 text-sm leading-6 text-discord-text-muted">O Sekai detecta os jogos em execução neste computador. Sua atividade é sincronizada para que amigos no navegador também possam vê-la.</p></div>
@@ -66,8 +66,8 @@ export function RegisteredGamesSettingsPanel() {
       })}</div> : <p className="py-2 text-sm text-discord-text-muted">{searchQuery ? "Nenhum jogo registrado corresponde à busca." : "Nenhum jogo adicionado."}</p>}
     </div>
     <div className="mb-6 rounded-2xl border border-white/5 bg-discord-bg-primary p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-discord-header-primary">Jogos detectados</h2><p className="mb-3 mt-1 text-xs leading-5 text-discord-text-muted">Adicione um jogo aberto. Para outros programas, informe o nome do processo abaixo.</p>
-      {visibleDetected.length ? <div className="max-h-52 space-y-1 overflow-y-auto">{visibleDetected.map((process) => <button key={`${process.processName}:${process.executablePath}`} type="button" onClick={() => addGame("", process.processName)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-discord-bg-modifier-hover"><Gamepad2 size={16} className="shrink-0 text-discord-text-muted"/><span className="min-w-0 flex-1 truncate text-sm text-discord-text-normal">{process.processName}</span><Plus size={16} className="text-discord-brand"/></button>)}</div> : <p className="py-2 text-xs text-discord-text-muted">{searchQuery ? "Nenhum aplicativo detectado corresponde à busca." : loading ? "Lendo processos…" : "Não há outros aplicativos detectáveis para adicionar."}</p>}
+      <h2 className="text-sm font-semibold text-discord-header-primary">Jogos detectados</h2><p className="mb-3 mt-1 text-xs leading-5 text-discord-text-muted">Mostramos jogos conhecidos que estão abertos. Para um jogo que não aparece, informe o processo abaixo.</p>
+      {visibleDetected.length ? <div className="max-h-52 space-y-1 overflow-y-auto">{visibleDetected.map((process) => <button key={`${process.processName}:${process.executablePath}`} type="button" onClick={() => addGame(process.displayName || "", process.processName, process.gameIconDataUrl)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-discord-bg-modifier-hover">{process.gameIconDataUrl ? <img src={process.gameIconDataUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover"/> : <Gamepad2 size={16} className="shrink-0 text-discord-text-muted"/>}<span className="min-w-0 flex-1 truncate text-sm text-discord-text-normal">{process.displayName || process.processName}</span><Plus size={16} className="text-discord-brand"/></button>)}</div> : <p className="py-2 text-xs text-discord-text-muted">{searchQuery ? "Nenhum jogo detectado corresponde à busca." : loading ? "Procurando jogos conhecidos em execução…" : "Não há jogos conhecidos em execução para adicionar."}</p>}
       <div className="mt-4 grid gap-2 border-t border-white/5 pt-4 sm:grid-cols-[1fr_1fr_auto]"><input value={gameName} onChange={(event) => setGameName(event.target.value)} placeholder="Nome exibido (ex.: Nine Sols)" className="rounded-lg border border-white/10 bg-discord-bg-secondary px-3 py-2 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70"/><input value={processName} onChange={(event) => setProcessName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addGame(gameName, processName); }} placeholder="Processo (ex.: NineSols.exe)" className="rounded-lg border border-white/10 bg-discord-bg-secondary px-3 py-2 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70"/><button type="button" onClick={() => addGame(gameName, processName)} disabled={!processName.trim()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-discord-brand px-3 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"><Plus size={15}/>Adicionar</button></div>
     </div>
     <p className="rounded-xl border border-white/5 p-4 text-xs leading-5 text-discord-text-muted">O navegador não consegue detectar processos do computador. Depois de registrados no app, os jogos e o tempo de sessão aparecem para seus amigos em qualquer cliente.</p>

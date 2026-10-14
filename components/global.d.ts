@@ -42,8 +42,10 @@ interface SekaiRegisteredGame {
 
 interface SekaiRunningGameProcess {
   processName: string;
+  displayName: string;
   executablePath: string;
   startedAt: number | null;
+  gameIconDataUrl?: string | null;
 }
 
 interface SekaiGameActivity {
@@ -61,6 +63,12 @@ interface SekaiGameActivitySnapshot {
 }
 
 interface SekaiDesktop {
+  platform?: string;
+  getWindowState?(): Promise<{ maximized: boolean }>;
+  minimizeWindow?(): Promise<void>;
+  toggleMaximizeWindow?(): Promise<boolean>;
+  closeWindow?(): Promise<void>;
+  onWindowMaximized?(callback: (maximized: boolean) => void): () => void;
   listSources(kind: 'window' | 'screen'): Promise<SekaiDesktopSource[]>;
   prepareCapture(sourceId: string, shareAudio: boolean): void;
   // Optional so a newer hosted UI remains compatible with older installed Electron apps.
