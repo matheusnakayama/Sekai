@@ -697,7 +697,16 @@ export default function RoomClient({
       manager.onMediaState = (peerId, state) => {
         setParticipants((prev) => {
           const participant = prev[peerId] ?? createRemoteParticipant(peerId, participantNamesRef.current.get(peerId), participantAvatarsRef.current.get(peerId));
-          return { ...prev, [peerId]: { ...participant, micOn: state.micOn, camOn: state.camOn, isDeafened: state.deafened ?? participant.isDeafened ?? false } };
+          return {
+            ...prev,
+            [peerId]: {
+              ...participant,
+              micOn: state.micOn,
+              camOn: state.camOn,
+              isDeafened: state.deafened ?? participant.isDeafened ?? false,
+              isSpeaking: state.isSpeaking ?? participant.isSpeaking,
+            },
+          };
         });
       };
 
