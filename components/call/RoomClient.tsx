@@ -61,6 +61,8 @@ export default function RoomClient({
   onClose,
   onMinimize,
   onRestoreCall,
+  callFullscreen = false,
+  onToggleCallFullscreen,
   callVisible = true,
   onParticipantsChange,
   onAddFriend,
@@ -83,6 +85,9 @@ export default function RoomClient({
   onMinimize?: () => void;
   /** Abre novamente a chamada, mesmo se a pessoa estiver em outra página/canal. */
   onRestoreCall?: () => void;
+  /** Alterna o modo de chamada imersiva no layout principal do app. */
+  callFullscreen?: boolean;
+  onToggleCallFullscreen?: () => void;
   callVisible?: boolean;
   onParticipantsChange?: (participants: Participant[]) => void;
   onAddFriend?: (userId: string) => void;
@@ -141,14 +146,12 @@ export default function RoomClient({
   const [revealedScreenShareIds, setRevealedScreenShareIds] = useState<Set<string>>(() => new Set());
   const [presentationPipWindow, setPresentationPipWindow] = useState<Window | null>(null);
   const [hideOtherParticipants, setHideOtherParticipants] = useState(false);
-  const [callFullscreen, setCallFullscreen] = useState(false);
   const [fatalError, setFatalError] = useState<CallError | null>(null);
   const [banner, setBanner] = useState<{ message: string; connection: boolean; persistent?: boolean } | null>(null);
   const audioPreferenceRef = useRef<CallAudioPreference>(readCallAudioPreference());
   const [pendingPrankPrompt, setPendingPrankPrompt] = useState<{ senderName: string } | null>(null);
 
   const localIdRef = useRef<string>('');
-  const callRootRef = useRef<HTMLElement | null>(null);
   const localNameRef = useRef<string>('');
   const onCloseRef = useRef(onClose);
   const roomSessionRef = useRef('');
@@ -1457,26 +1460,8 @@ export default function RoomClient({
     setShowParticipants(false);
   }
 
-  async function toggleCallFullscreen() {
-    const root = callRootRef.current;
-    if (!root) return;
-    const doc = root.ownerDocument;
-    try {
-      if (doc.fullscreenElement) {
-        await doc.exitFullscreen();
-        return;
-      }
-      if (root.requestFullscreen) await root.requestFullscreen();
-      else await doc.documentElement.requestFullscreen();
-    } catch (error) {
-      console.warn('Não foi possível alternar para tela cheia:', error);
-      try {
-        if (doc.fullscreenElement) await doc.exitFullscreen();
-        else await doc.documentElement.requestFullscreen();
-      } catch (fallbackError) {
-        console.warn('O modo de tela cheia não está disponível neste cliente:', fallbackError);
-      }
-    }
+  function toggleCallFullscreen() {
+    onToggleCallFullscreen?.();
   }
 
   function stopWatchingPresentation() {
@@ -1624,15 +1609,6 @@ export default function RoomClient({
   const isHost = Boolean(localIdRef.current) && hostId === localIdRef.current;
 
   useEffect(() => {
-    const root = callRootRef.current;
-    const doc = root?.ownerDocument;
-    if (!doc) return;
-    const updateFullscreen = () => setCallFullscreen(doc.fullscreenElement === root || doc.fullscreenElement === doc.documentElement);
-    doc.addEventListener('fullscreenchange', updateFullscreen);
-    return () => doc.removeEventListener('fullscreenchange', updateFullscreen);
-  }, []);
-
-  useEffect(() => {
     if (!presentationPipWindow) return;
     const pipWindow = presentationPipWindow;
     const handlePageHide = () => {
@@ -1729,8 +1705,6 @@ export default function RoomClient({
 
   return (
     <main
-      ref={callRootRef}
-      style={callFullscreen ? { height: '100vh', width: '100vw', backgroundColor: '#111214' } : undefined}
       className="flex h-full min-h-0 w-full min-w-0 flex-col bg-transparent"
     >
       <header className="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#111214]/70 px-4 py-3 sm:px-6">

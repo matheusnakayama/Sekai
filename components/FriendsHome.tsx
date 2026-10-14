@@ -29,6 +29,7 @@ interface FriendHomeProps {
   unreadByUser?: Record<string, number>;
   onMarkDirectRead?: (userId: string) => void;
   onOpenSettings?: () => void;
+  onViewProfile?: () => void;
   onOpenMobileNavigation?: () => void;
   onPresenceChange?: (presence: Presence) => boolean | void | Promise<boolean | void>;
   onlineUserIds?: string[];
@@ -55,7 +56,7 @@ function explainDatabaseError(error: { code?: string; message: string }, feature
   return `Erro do Supabase${error.code ? ` (${error.code})` : ""}: ${error.message}`;
 }
 
-export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onOpenMobileNavigation, onPresenceChange, onlineUserIds = [], currentUserProfile, onJoinDirectCall, activeDirectCallPeerId, onOpenDirectCall }: FriendHomeProps) {
+export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDirectMessageOpened, unreadByUser = {}, onMarkDirectRead, onOpenSettings, onViewProfile, onOpenMobileNavigation, onPresenceChange, onlineUserIds = [], currentUserProfile, onJoinDirectCall, activeDirectCallPeerId, onOpenDirectCall }: FriendHomeProps) {
   const supabase = createClient();
   const dialogs = useDialogs();
   const [username, setUsername] = useState("");
@@ -444,6 +445,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           presence: currentUserProfile?.status === "online" || currentUserProfile?.status === "idle" || currentUserProfile?.status === "dnd" || currentUserProfile?.status === "offline" ? currentUserProfile.status : "offline",
         }}
         onOpenSettings={onOpenSettings}
+        onViewProfile={onViewProfile}
         onPresenceChange={onPresenceChange}
       >
         {({ toggle, openSettings, isOpen, triggerRef }) => <footer ref={triggerRef} className="flex h-[60px] shrink-0 items-center gap-2 bg-discord-bg-darkest px-2">

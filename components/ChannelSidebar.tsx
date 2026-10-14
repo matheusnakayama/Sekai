@@ -102,6 +102,7 @@ interface ChannelSidebarProps {
   onVoiceOutputVolumeChange?: (volume: number) => void;
   onVoiceProfileChange?: (profile: VoiceProfile) => void;
   onOpenSettings?: () => void;
+  onViewProfile?: () => void;
   onOpenVoiceSettings?: () => void;
   onPresenceChange?: (presence: "online" | "idle" | "dnd" | "offline") => boolean | void | Promise<boolean | void>;
   canManageChannels?: boolean;
@@ -146,6 +147,7 @@ export function ChannelSidebar({
   onVoiceOutputVolumeChange,
   onVoiceProfileChange,
   onOpenSettings,
+  onViewProfile,
   onOpenVoiceSettings,
   onPresenceChange,
   canManageChannels = false,
@@ -564,7 +566,7 @@ export function ChannelSidebar({
         </div>
       )}
       {/* Painel do usuário */}
-      <CurrentUserProfileMenu user={currentUser} onOpenSettings={onOpenSettings} onPresenceChange={onPresenceChange}>
+      <CurrentUserProfileMenu user={currentUser} onOpenSettings={onOpenSettings} onViewProfile={onViewProfile} onPresenceChange={onPresenceChange}>
       {({ toggle, openSettings, isOpen, triggerRef }) => <div ref={triggerRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
         <button onClick={toggle} aria-label="Abrir menu do perfil" aria-expanded={isOpen} className={`relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
           <span className="absolute inset-0 overflow-hidden rounded-full">

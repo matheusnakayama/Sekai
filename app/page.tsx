@@ -21,6 +21,7 @@ import { ChatArea } from "@/components/ChatArea";
 import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
 import { MemberList, MemberItem, ServerRoleOption, type MemberVoiceActivity } from "@/components/MemberList";
+import { MemberProfileDialog } from "@/components/MemberProfileDialog";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
@@ -374,6 +375,7 @@ export default function Home() {
     peerUserId?: string;
   } | null>(null);
   const [callExpanded, setCallExpanded] = useState(false);
+  const [callFullscreen, setCallFullscreen] = useState(false);
   const [voiceConnecting, setVoiceConnecting] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [pendingVoiceJoin, setPendingVoiceJoin] = useState<{ channelId: string; startedAt: number } | null>(null);
@@ -421,6 +423,7 @@ export default function Home() {
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
@@ -1811,6 +1814,7 @@ export default function Home() {
     setVoiceSession(null);
     setPendingVoiceJoin(null);
     setCallExpanded(false);
+    setCallFullscreen(false);
     setVoiceParticipants([]);
     setVoicePingMs(null);
     voiceControlsRef.current = null;
@@ -1827,6 +1831,7 @@ export default function Home() {
 
     if (channel.type !== "voice") {
       setCallExpanded(false);
+      setCallFullscreen(false);
       return;
     }
 
@@ -2180,16 +2185,39 @@ export default function Home() {
     };
     for (const participant of participants) voiceActivityByUser[participant.id] = activity;
   }
+  const myProfileForDialog: MemberItem = {
+    id: currentUserId,
+    displayName: myProfile?.displayName ?? currentMember?.displayName ?? "Você",
+    username: myProfile?.username ?? currentMember?.username ?? null,
+    pronouns: myProfile?.pronouns ?? null,
+    bio: myProfile?.bio ?? null,
+    customStatus: myProfile?.customStatus ?? null,
+    avatarUrl: myProfile?.avatarUrl ?? null,
+    avatarPositionX: myProfile?.avatarPositionX ?? 50,
+    avatarPositionY: myProfile?.avatarPositionY ?? 50,
+    avatarZoom: myProfile?.avatarZoom ?? 100,
+    bannerUrl: myProfile?.bannerUrl ?? null,
+    bannerPositionX: myProfile?.bannerPositionX ?? 50,
+    bannerPositionY: myProfile?.bannerPositionY ?? 50,
+    bannerZoom: myProfile?.bannerZoom ?? 100,
+    activityBannerUrl: myProfile?.activityBannerUrl ?? null,
+    profileCardColor: myProfile?.profileCardColor ?? null,
+    badges: myProfile?.badges ?? [],
+    status: myProfile?.presence ?? currentMember?.status ?? "online",
+    profilePresence: myProfile?.presence ?? "online",
+    roleName: currentMember?.roleName ?? "",
+    assignedRoles: currentMember?.assignedRoles ?? [],
+  };
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <div className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
       <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <GameActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
-      <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />
+      {!callFullscreen && <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />}
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-      {mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      <div className={mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
+      {!callFullscreen && mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
+      <div className={callFullscreen ? "hidden" : mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
       <ServerSidebar
         currentUserId={currentUserId ?? ""}
         servers={railServers}
@@ -2221,6 +2249,7 @@ export default function Home() {
         onDeleteChannel={(channel) => { void deleteChannel(channel); }}
         onOpenServerMenu={() => activeServerId && setShowServerSettings(true)}
         onOpenSettings={() => setShowUserSettings(true)}
+        onViewProfile={() => setShowMyProfile(true)}
         onOpenVoiceSettings={() => { setSettingsSection("voz"); setShowUserSettings(true); }}
         onToggleMute={voiceSession ? () => voiceControlsRef.current?.toggleMic() : undefined}
         onToggleCamera={voiceSession ? () => voiceControlsRef.current?.toggleCam() : undefined}
@@ -2317,6 +2346,14 @@ export default function Home() {
         />
       )}
 
+      {showMyProfile && currentUserId && <MemberProfileDialog
+        profile={myProfileForDialog}
+        currentUserId={currentUserId}
+        voiceActivity={voiceActivityByUser[currentUserId]}
+        onClose={() => setShowMyProfile(false)}
+        onOpenSettings={() => { setShowMyProfile(false); setShowUserSettings(true); }}
+      />}
+
       {showServerSettings && activeServerId && (
         <ServerSettingsModal
           serverId={activeServerId}
@@ -2392,7 +2429,9 @@ export default function Home() {
             onConnectionQualityChange={setVoicePingMs}
             onAddFriend={handleAddFriend}
             onClose={disconnectVoice}
-            onMinimize={() => setCallExpanded(false)}
+            onMinimize={() => { setCallFullscreen(false); setCallExpanded(false); }}
+            callFullscreen={callFullscreen}
+            onToggleCallFullscreen={() => setCallFullscreen((fullscreen) => !fullscreen)}
             onRestoreCall={() => {
               setCallExpanded(true);
               if (voiceSession.kind === "server" && voiceSession.serverId) {
@@ -2419,6 +2458,7 @@ export default function Home() {
           onlineUserIds={onlineUserIds}
           onMarkDirectRead={(userId) => setDmUnreadByUser((previous) => { const next = { ...previous }; delete next[userId]; return next; })}
           onOpenSettings={() => setShowUserSettings(true)}
+          onViewProfile={() => setShowMyProfile(true)}
           onOpenMobileNavigation={() => { setMobileMembersOpen(false); setMobileNavigationOpen(true); }}
           onPresenceChange={handlePresenceChange}
           onJoinDirectCall={(peerId, peerName, sendInvite) => void handleJoinDirectCall(peerId, peerName, sendInvite)}
@@ -2568,11 +2608,11 @@ export default function Home() {
         onOpenVoiceActivity={(activity) => { if (activity.serverId !== activeServerId) setActiveServerId(activity.serverId); handleSelectChannel(activity.channelId); setMobileMembersOpen(false); }}
         onOpenSettings={() => { setSettingsSection("perfil"); setShowUserSettings(true); }}
       /></div>}
-      {mentionToast && <button onClick={() => { setInviteChannelId(mentionToast.channelId); setActiveServerId(mentionToast.serverId); setCallExpanded(false); setMentionToast(null); }} className={`fixed left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary ${dmToast ? "bottom-28" : "bottom-5"}`}>
+      {mentionToast && <button onClick={() => { setInviteChannelId(mentionToast.channelId); setActiveServerId(mentionToast.serverId); setCallExpanded(false); setCallFullscreen(false); setMentionToast(null); }} className={`fixed left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary ${dmToast ? "bottom-28" : "bottom-5"}`}>
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-discord-danger text-sm font-bold text-white">@</span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">Menção</span><span className="block truncate text-sm font-semibold text-white">{servers.find((server) => server.id === mentionToast.serverId)?.name ?? "Servidor"}</span><span className="block truncate text-xs text-discord-text-muted">{mentionToast.preview || "Você foi mencionado"}</span></span>
       </button>}
-      {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
+      {dmToast && <button onClick={() => { setDirectMessageUserId(dmToast.userId); setActiveServerId(""); setActiveChannelId(""); setCallExpanded(false); setCallFullscreen(false); setDmToast(null); }} className="fixed bottom-5 left-5 z-[150] flex max-w-sm items-center gap-3 rounded-xl border border-white/10 bg-discord-bg-floating p-3 text-left shadow-2xl transition hover:bg-discord-bg-secondary">
         <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-discord-brand">{dmToast.avatarUrl ? <img src={dmToast.avatarUrl} alt="" className="h-full w-full object-cover"/> : <span className="grid h-full place-items-center font-bold text-white">{dmToast.name[0]?.toUpperCase()}</span>}<span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-discord-bg-floating bg-red-500"/></span>
         <span className="min-w-0"><span className="block text-xs font-semibold text-discord-text-muted">{dmToast.content === "Ligação de voz recebida" ? "Chamada recebida" : "Nova mensagem direta"}</span><span className="block truncate text-sm font-semibold text-white">{dmToast.name}</span><span className="block truncate text-xs text-discord-text-muted">{dmToast.content}</span></span>
       </button>}
