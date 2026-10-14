@@ -37,6 +37,7 @@ interface SekaiRegisteredGame {
   name: string;
   processName: string;
   enabled: boolean;
+  gameIconDataUrl?: string | null;
 }
 
 interface SekaiRunningGameProcess {
@@ -48,6 +49,7 @@ interface SekaiRunningGameProcess {
 interface SekaiGameActivity {
   gameId: string;
   gameName: string;
+  gameIconDataUrl?: string | null;
   startedAt: number;
   updatedAt: number;
 }

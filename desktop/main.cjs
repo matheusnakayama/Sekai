@@ -90,9 +90,14 @@ function sanitizeRegisteredGames(value) {
     const processName = path.basename(String(entry?.processName || '')).replace(/\.exe$/i, '').trim().slice(0, 120);
     const id = processName.toLowerCase();
     const name = String(entry?.name || processName).trim().slice(0, 80);
+    const gameIconDataUrl = typeof entry?.gameIconDataUrl === 'string'
+      && entry.gameIconDataUrl.length <= 500_000
+      && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(entry.gameIconDataUrl)
+      ? entry.gameIconDataUrl
+      : null;
     if (!id || !name || seen.has(id)) return [];
     seen.add(id);
-    return [{ id, name, processName, enabled: entry?.enabled !== false }];
+    return [{ id, name, processName, enabled: entry?.enabled !== false, gameIconDataUrl }];
   });
 }
 
@@ -147,6 +152,7 @@ async function refreshGameActivity() {
     runningGameProcesses = await getRunningGameProcesses();
     const active = [];
     const liveKeys = new Set();
+    const previousIcon = currentGameActivity?.gameIconDataUrl || null;
     for (const game of registeredGames.filter((item) => item.enabled)) {
       const process = runningGameProcesses.find((item) => item.processName.toLowerCase() === game.processName.toLowerCase());
       if (!process) continue;
@@ -154,11 +160,34 @@ async function refreshGameActivity() {
       liveKeys.add(key);
       const startedAt = process.startedAt || gameProcessStartedAt.get(key) || Date.now();
       gameProcessStartedAt.set(key, startedAt);
-      active.push({ gameId: game.id, gameName: game.name, startedAt, updatedAt: Date.now() });
+      active.push({ gameId: game.id, gameName: game.name, executablePath: process.executablePath, startedAt, updatedAt: Date.now() });
     }
     for (const key of gameProcessStartedAt.keys()) if (!liveKeys.has(key)) gameProcessStartedAt.delete(key);
     active.sort((a, b) => b.startedAt - a.startedAt);
-    const next = active[0] || null;
+    const selected = active[0] || null;
+    let gameIconDataUrl = null;
+    if (selected) {
+      try {
+        const icon = await app.getFileIcon(selected.executablePath, { size: 'small' });
+        if (!icon.isEmpty()) gameIconDataUrl = icon.toDataURL();
+      } catch { /* Alguns processos não fornecem um ícone de executável. */ }
+    }
+    const next = selected ? {
+      gameId: selected.gameId,
+      gameName: selected.gameName,
+      startedAt: selected.startedAt,
+      updatedAt: selected.updatedAt,
+      gameIconDataUrl: gameIconDataUrl || (currentGameActivity?.gameId === selected.gameId ? previousIcon : null),
+    } : null;
+    if (next?.gameIconDataUrl) {
+      let registeredGamesChanged = false;
+      registeredGames = registeredGames.map((game) => {
+        if (game.id !== next.gameId || game.gameIconDataUrl) return game;
+        registeredGamesChanged = true;
+        return { ...game, gameIconDataUrl: next.gameIconDataUrl };
+      });
+      if (registeredGamesChanged) persistRegisteredGames();
+    }
     const changed = (next?.gameId ?? '') !== (currentGameActivity?.gameId ?? '') || (next?.startedAt ?? 0) !== (currentGameActivity?.startedAt ?? 0);
     currentGameActivity = next;
     if (changed && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sekai:games:activity', buildGameActivitySnapshot());

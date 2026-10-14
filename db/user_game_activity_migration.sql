@@ -2,9 +2,12 @@ create table if not exists public.user_game_activity (
   user_id uuid primary key references auth.users(id) on delete cascade,
   game_id text not null check (char_length(game_id) between 1 and 120),
   game_name text not null check (char_length(game_name) between 1 and 80),
+  game_icon_url text,
   started_at timestamptz not null,
   updated_at timestamptz not null default now()
 );
+
+alter table public.user_game_activity add column if not exists game_icon_url text;
 
 alter table public.user_game_activity enable row level security;
 

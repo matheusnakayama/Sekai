@@ -21,13 +21,20 @@ export function GameActivityPublisher({ userId, presence }: { userId: string; pr
           await supabase.from("user_game_activity").delete().eq("user_id", userId);
           return;
         }
-        const { error } = await supabase.from("user_game_activity").upsert({
+        const activityRow = {
           user_id: userId,
           game_id: game.gameId,
           game_name: game.gameName,
+          game_icon_url: game.gameIconDataUrl || null,
           started_at: new Date(game.startedAt).toISOString(),
           updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
+        };
+        let { error } = await supabase.from("user_game_activity").upsert(activityRow, { onConflict: "user_id" });
+        if (error && String(error.message || "").toLowerCase().includes("game_icon_url")) {
+          const legacyRow: Record<string, unknown> = { ...activityRow };
+          delete legacyRow.game_icon_url;
+          ({ error } = await supabase.from("user_game_activity").upsert(legacyRow, { onConflict: "user_id" }));
+        }
         if (error) console.warn("Não foi possível publicar sua atividade de jogo:", error.message);
       } catch (error) {
         if (!stopped) console.warn("Falha ao sincronizar atividade de jogo:", error);

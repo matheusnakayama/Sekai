@@ -74,7 +74,6 @@ export default function Controls({
   onToggleParticipants,
   onToggleChat,
   onPlaySoundEffect,
-  callLayout = false,
 }: {
   micOn: boolean;
   deafened: boolean;
@@ -113,7 +112,6 @@ export default function Controls({
   onToggleParticipants: () => void;
   onToggleChat: () => void;
   onPlaySoundEffect: (effect: SoundboardEffect) => void;
-  callLayout?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [soundboardOpen, setSoundboardOpen] = useState(false);
@@ -147,25 +145,6 @@ export default function Controls({
 
   const presentationActive = sharingScreen || watchingPresentation;
   const togglePresentation = watchingPresentation ? onStopWatching : onToggleScreenShare;
-
-  if (callLayout) {
-    const micLabel = micLockedByHost ? 'O anfitrião bloqueou seu microfone' : micOn ? 'Silenciar microfone' : 'Ativar microfone';
-    const presentationLabel = watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela';
-    return (
-      <div role="toolbar" aria-label="Controles da chamada" className="call-controls flex items-center gap-2 rounded-[18px] bg-[#1e1f22] p-1.5 text-white shadow-[0_6px_24px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.06]">
-        <button type="button" onClick={onToggleMic} disabled={micLockedByHost} aria-pressed={!micOn} aria-label={micLabel} title={micLabel} className={`call-control grid h-11 w-11 place-items-center rounded-xl ${micOn ? 'bg-[#2b2d31] text-white/90 hover:bg-[#383a40]' : 'bg-[#f23f43]/15 text-[#f23f43] hover:bg-[#f23f43]/25'}`}>
-          <MicIcon off={!micOn} />
-        </button>
-        <button type="button" onClick={togglePresentation} aria-pressed={presentationActive} aria-label={presentationLabel} title={presentationLabel} className={`call-control grid h-11 w-11 place-items-center rounded-xl ${presentationActive ? 'bg-[#23a559] text-white hover:bg-[#1f9250]' : 'bg-[#2b2d31] text-white/90 hover:bg-[#383a40]'}`}>
-          <ScreenShareIcon active={sharingScreen} />
-        </button>
-        <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-white/10" />
-        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="call-control grid h-11 w-14 place-items-center rounded-xl bg-[#da373c] text-white hover:bg-[#f23f43]">
-          <HangupIcon />
-        </button>
-      </div>
-    );
-  }
 
   if (minimalMode) {
     return (

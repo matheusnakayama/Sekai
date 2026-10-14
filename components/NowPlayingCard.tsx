@@ -122,7 +122,27 @@ export function ListeningLine({ track, artUrl }: ListeningActivity) {
   );
 }
 
-export type GameActivity = { gameId: string; gameName: string; startedAt: string; updatedAt: string };
+export type GameActivity = { gameId: string; gameName: string; gameIconUrl?: string | null; startedAt: string; updatedAt: string };
+
+function safeGameIconUrl(value: string | null | undefined) {
+  const icon = String(value || "");
+  if (icon.length > 500_000) return "";
+  if (/^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(icon)) return icon;
+  try {
+    const url = new URL(icon);
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+async function loadGameActivity(supabase: ReturnType<typeof createClient>, userId: string) {
+  const withIcon = await supabase.from("user_game_activity").select("game_id,game_name,game_icon_url,started_at,updated_at").eq("user_id", userId).maybeSingle();
+  if (!withIcon.error) return withIcon.data as { game_id: string; game_name: string; game_icon_url?: string | null; started_at: string; updated_at: string } | null;
+  if (!String(withIcon.error.message || "").toLowerCase().includes("game_icon_url")) return null;
+  const legacy = await supabase.from("user_game_activity").select("game_id,game_name,started_at,updated_at").eq("user_id", userId).maybeSingle();
+  return !legacy.error && legacy.data ? { ...legacy.data, game_icon_url: null } as { game_id: string; game_name: string; game_icon_url: null; started_at: string; updated_at: string } : null;
+}
 
 function isFreshGameActivity(updatedAt: string) {
   const timestamp = Date.parse(updatedAt);
@@ -136,11 +156,10 @@ export function useGameActivity(userId: string, status: string) {
     let cancelled = false;
     const supabase = createClient();
     async function load() {
-      const { data, error } = await supabase.from("user_game_activity").select("game_id,game_name,started_at,updated_at").eq("user_id", userId).maybeSingle();
+      const data = await loadGameActivity(supabase, userId);
       if (cancelled) return;
-      const row = data as { game_id: string; game_name: string; started_at: string; updated_at: string } | null;
-      if (error || !row || !isFreshGameActivity(row.updated_at)) { setActivity(null); return; }
-      setActivity({ gameId: row.game_id, gameName: row.game_name, startedAt: row.started_at, updatedAt: row.updated_at });
+      if (!data || !isFreshGameActivity(data.updated_at)) { setActivity(null); return; }
+      setActivity({ gameId: data.game_id, gameName: data.game_name, gameIconUrl: safeGameIconUrl(data.game_icon_url), startedAt: data.started_at, updatedAt: data.updated_at });
     }
     void load();
     const channel = supabase.channel(`game-activity-${userId}`)
@@ -161,14 +180,19 @@ export function useGameActivityByUser(userIds: string[]) {
     let cancelled = false;
     const supabase = createClient();
     async function load() {
-      const rows: Array<{ user_id: string; game_id: string; game_name: string; started_at: string; updated_at: string }> = [];
+      const rows: Array<{ user_id: string; game_id: string; game_name: string; game_icon_url?: string | null; started_at: string; updated_at: string }> = [];
       for (let index = 0; index < ids.length; index += 100) {
-        const { data, error } = await supabase.from("user_game_activity").select("user_id,game_id,game_name,started_at,updated_at").in("user_id", ids.slice(index, index + 100));
+        let { data, error } = await supabase.from("user_game_activity").select("user_id,game_id,game_name,game_icon_url,started_at,updated_at").in("user_id", ids.slice(index, index + 100));
+        if (error && String(error.message || "").toLowerCase().includes("game_icon_url")) {
+          const legacy = await supabase.from("user_game_activity").select("user_id,game_id,game_name,started_at,updated_at").in("user_id", ids.slice(index, index + 100));
+          data = legacy.data as typeof data;
+          error = legacy.error;
+        }
         if (cancelled || error) return;
         rows.push(...((data ?? []) as typeof rows));
       }
       const next: Record<string, GameActivity> = {};
-      for (const row of rows) if (isFreshGameActivity(row.updated_at) && row.game_name) next[row.user_id] = { gameId: row.game_id, gameName: row.game_name, startedAt: row.started_at, updatedAt: row.updated_at };
+      for (const row of rows) if (isFreshGameActivity(row.updated_at) && row.game_name) next[row.user_id] = { gameId: row.game_id, gameName: row.game_name, gameIconUrl: safeGameIconUrl(row.game_icon_url), startedAt: row.started_at, updatedAt: row.updated_at };
       if (!cancelled) setActivities(next);
     }
     void load();
@@ -183,7 +207,7 @@ export function useGameActivityByUser(userIds: string[]) {
 
 export function GameActivityLine({ activity }: { activity: GameActivity }) {
   const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(activity.startedAt)) / 1000));
-  return <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]"><Gamepad2 className="h-3.5 w-3.5 shrink-0 text-emerald-400"/><span className="min-w-0 truncate">Jogando {activity.gameName} · {formatElapsed(elapsed)}</span></span>;
+  return <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt="" className="h-3.5 w-3.5 shrink-0 rounded-[3px] object-cover"/> : <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-emerald-400"/>}<span className="min-w-0 truncate">Jogando {activity.gameName} · {formatElapsed(elapsed)}</span></span>;
 }
 
 export function GameActivityCard({ activity }: { activity: GameActivity }) {
@@ -191,7 +215,7 @@ export function GameActivityCard({ activity }: { activity: GameActivity }) {
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   const elapsed = Math.max(0, Math.floor((now - Date.parse(activity.startedAt)) / 1000));
   return <div className="mt-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.06] bg-[#1a1a1d] p-3">
-    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-emerald-400/10 text-emerald-300"><Gamepad2 size={24}/></span>
+    <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-emerald-400/10 text-emerald-300">{activity.gameIconUrl ? <img src={activity.gameIconUrl} alt="" className="h-full w-full object-cover"/> : <Gamepad2 size={24}/>}</span>
     <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[.12em] text-emerald-300"><Gamepad2 className="h-3.5 w-3.5"/>Jogando</span><span className="mt-0.5 block truncate text-sm font-semibold text-white">{activity.gameName}</span><span className="mt-0.5 block text-xs text-white/60">Há {formatElapsed(elapsed)}</span></span>
   </div>;
 }

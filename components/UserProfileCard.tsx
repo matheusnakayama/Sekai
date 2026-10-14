@@ -12,6 +12,8 @@ import type { CustomBadge } from "@/lib/badges";
 import { cn } from "@/lib/utils";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { getProfilePalette } from "@/lib/utils";
+import { GameActivityCard, NowPlayingCard, SpotifyMark, useGameActivity, useNowPlaying } from "@/components/NowPlayingCard";
+import { safeSpotifyArtUrl } from "@/lib/spotify";
 
 export interface ProfileCardUser {
   id: string;
@@ -227,6 +229,8 @@ export function UserProfileCard({
   const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
   const [resolvedPosition, setResolvedPosition] = useState(position);
   const isOtherUser = profile.id !== currentUserId;
+  const gameActivity = useGameActivity(profile.id, profile.status);
+  const nowPlaying = useNowPlaying(profile.id, profile.status);
   const [mutualFriends, setMutualFriends] = useState<Array<{ id: string; name: string; avatarUrl?: string | null }>>([]);
   const [mutualFriendsLoaded, setMutualFriendsLoaded] = useState(false);
   const username = profile.username || profile.id.slice(0, 8);
@@ -519,6 +523,23 @@ export function UserProfileCard({
             <span aria-hidden="true">·</span>
             <span>{mutualServers.length} {serverCountLabel}</span>
           </div>
+
+          {(gameActivity || nowPlaying) && (
+            <div className="mt-1" aria-label="Atividade atual">
+              {gameActivity ? (
+                <div className={nowPlaying ? "relative pb-3" : "relative"}>
+                  <GameActivityCard activity={gameActivity} />
+                  {nowPlaying && (
+                    <a href={nowPlaying.trackUrl || undefined} target={nowPlaying.trackUrl ? "_blank" : undefined} rel={nowPlaying.trackUrl ? "noreferrer" : undefined} aria-label={`Também ouvindo ${nowPlaying.track}`} className="absolute -bottom-0.5 right-1 z-10 flex h-9 max-w-[82%] items-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-[#202124]/95 px-2 shadow-lg backdrop-blur-sm">
+                      <span className="h-6 w-6 shrink-0 overflow-hidden rounded-md bg-white/10">{safeSpotifyArtUrl(nowPlaying.artUrl) ? <img src={safeSpotifyArtUrl(nowPlaying.artUrl)} alt="" className="h-full w-full object-cover"/> : <SpotifyMark className="h-full w-full p-1"/>}</span>
+                      <SpotifyMark className="h-3.5 w-3.5 shrink-0"/>
+                      <span className="min-w-0 truncate text-[11px] font-medium text-white/90">Ouvindo {nowPlaying.track}</span>
+                    </a>
+                  )}
+                </div>
+              ) : nowPlaying ? <NowPlayingCard activity={nowPlaying} /> : null}
+            </div>
+          )}
 
           {profile.assignedRoles?.length ? (
             <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Cargos deste membro">

@@ -1460,11 +1460,22 @@ export default function RoomClient({
   async function toggleCallFullscreen() {
     const root = callRootRef.current;
     if (!root) return;
+    const doc = root.ownerDocument;
     try {
-      if (root.ownerDocument.fullscreenElement === root) await root.ownerDocument.exitFullscreen();
-      else await root.requestFullscreen();
+      if (doc.fullscreenElement) {
+        await doc.exitFullscreen();
+        return;
+      }
+      if (root.requestFullscreen) await root.requestFullscreen();
+      else await doc.documentElement.requestFullscreen();
     } catch (error) {
       console.warn('Não foi possível alternar para tela cheia:', error);
+      try {
+        if (doc.fullscreenElement) await doc.exitFullscreen();
+        else await doc.documentElement.requestFullscreen();
+      } catch (fallbackError) {
+        console.warn('O modo de tela cheia não está disponível neste cliente:', fallbackError);
+      }
     }
   }
 
@@ -1616,7 +1627,7 @@ export default function RoomClient({
     const root = callRootRef.current;
     const doc = root?.ownerDocument;
     if (!doc) return;
-    const updateFullscreen = () => setCallFullscreen(doc.fullscreenElement === root);
+    const updateFullscreen = () => setCallFullscreen(doc.fullscreenElement === root || doc.fullscreenElement === doc.documentElement);
     doc.addEventListener('fullscreenchange', updateFullscreen);
     return () => doc.removeEventListener('fullscreenchange', updateFullscreen);
   }, []);
@@ -1820,7 +1831,6 @@ export default function RoomClient({
 
       <footer className="z-20 flex w-full shrink-0 justify-center bg-transparent px-3 pb-4 pt-2 sm:pb-5">
         <Controls
-          callLayout
           micOn={micOn}
           deafened={deafened}
           camOn={camOn}
