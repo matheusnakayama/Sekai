@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { catalogGameName, isCatalogGame } = require('../lib/gameCatalog.cjs');
+const { readExeIconPng } = require('../lib/exeIcon.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
@@ -32,6 +33,7 @@ let gameScanBusy = false;
 let gameActivityTimer = null;
 const gameProcessStartedAt = new Map();
 const gameIconCache = new Map();
+const gameIconFallbackAt = new Map();
 const NON_GAME_PROCESSES = new Set([
   'spotify', 'spotifylauncher', 'spotifywebhelper', 'chatgpt', 'gamebar', 'gamebarftserver',
   'gamebarpresencewriter', 'xboxgamebar', 'xboxgamingoverlay', 'gamingservices', 'gamingservicesnet',
@@ -157,48 +159,25 @@ function fitIconDataUrl(dataUrl) {
   return `data:image/png;base64,${png.toString('base64')}`;
 }
 
-function extractWindowsIcon(executablePath) {
-  const script = `
-Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition @"
-using System;
-using System.Drawing;
-using System.Runtime.InteropServices;
-public static class SekaiIcon {
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-  static extern int PrivateExtractIcons(string szFileName, int nIconIndex, int cxIcon, int cyIcon, IntPtr[] phicon, int[] piconid, int nIcons, int flags);
-  [DllImport("user32.dll")]
-  static extern bool DestroyIcon(IntPtr hIcon);
-  public static string PngBase64(string path) {
-    int[] sizes = new int[] { 256, 128, 64, 48, 32 };
-    foreach (int size in sizes) {
-      IntPtr[] icons = new IntPtr[1];
-      int[] ids = new int[1];
-      int count = PrivateExtractIcons(path, 0, size, size, icons, ids, 1, 0);
-      if (count <= 0 || icons[0] == IntPtr.Zero) continue;
-      try {
-        using (Icon icon = Icon.FromHandle(icons[0]))
-        using (Bitmap source = icon.ToBitmap())
-        using (Bitmap copy = new Bitmap(source))
-        using (System.IO.MemoryStream stream = new System.IO.MemoryStream()) {
-          copy.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-          return Convert.ToBase64String(stream.ToArray());
-        }
-      } finally { DestroyIcon(icons[0]); }
-    }
-    Icon associated = Icon.ExtractAssociatedIcon(path);
-    if (associated == null) return "";
-    using (associated)
-    using (Bitmap source = associated.ToBitmap())
-    using (System.IO.MemoryStream stream = new System.IO.MemoryStream()) {
-      source.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-      return Convert.ToBase64String(stream.ToArray());
-    }
-  }
+function pngBufferToDataUrl(png) {
+  if (!png?.length) return null;
+  return `data:image/png;base64,${png.toString('base64')}`;
 }
-"@
-[Console]::Out.Write([SekaiIcon]::PngBase64($env:SEKAI_ICON_PATH))
-`;
+
+function extractWindowsShellIcon(executablePath) {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    'Add-Type -AssemblyName System.Drawing',
+    '$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:SEKAI_ICON_PATH)',
+    'if ($null -eq $icon) { exit 2 }',
+    '$bitmap = $icon.ToBitmap()',
+    '$stream = New-Object System.IO.MemoryStream',
+    '$bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)',
+    '[Console]::Out.Write([Convert]::ToBase64String($stream.ToArray()))',
+    '$bitmap.Dispose()',
+    '$icon.Dispose()',
+    '$stream.Dispose()',
+  ].join('\n');
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
@@ -207,15 +186,15 @@ public static class SekaiIcon {
       env: { ...process.env, SEKAI_ICON_PATH: executablePath },
     }, (error, stdout) => {
       const encoded = String(stdout || '').replace(/\s+/g, '');
-      if (error || !/^[a-z0-9+/=]+$/i.test(encoded)) return resolve(null);
+      if (error || encoded.length < 32 || !/^[a-z0-9+/=]+$/i.test(encoded)) return resolve(null);
       resolve(`data:image/png;base64,${encoded}`);
     });
   });
 }
 
-async function readExecutableIcon(executablePath) {
+async function readShellOrFileIcon(executablePath) {
   if (process.platform === 'win32') {
-    const extracted = fitIconDataUrl(await extractWindowsIcon(executablePath));
+    const extracted = fitIconDataUrl(await extractWindowsShellIcon(executablePath));
     if (extracted) return extracted;
   }
   try {
@@ -225,13 +204,24 @@ async function readExecutableIcon(executablePath) {
   return null;
 }
 
-async function gameProcessIcon(executablePath) {
-  if (gameIconCache.has(executablePath)) return gameIconCache.get(executablePath);
-  const dataUrl = await readExecutableIcon(executablePath);
-  if (!dataUrl) return null;
+function rememberGameIcon(executablePath, dataUrl) {
   if (gameIconCache.size >= 128) gameIconCache.delete(gameIconCache.keys().next().value);
   gameIconCache.set(executablePath, dataUrl);
   return dataUrl;
+}
+
+async function gameProcessIcon(executablePath) {
+  if (!executablePath) return null;
+  if (gameIconCache.has(executablePath)) return gameIconCache.get(executablePath);
+  let dataUrl = null;
+  try { dataUrl = fitIconDataUrl(pngBufferToDataUrl(readExeIconPng(executablePath))); } catch { dataUrl = null; }
+  if (dataUrl) return rememberGameIcon(executablePath, dataUrl);
+  const lastFallback = gameIconFallbackAt.get(executablePath) || 0;
+  if (Date.now() - lastFallback < 60_000) return null;
+  gameIconFallbackAt.set(executablePath, Date.now());
+  dataUrl = await readShellOrFileIcon(executablePath);
+  if (!dataUrl) return null;
+  return rememberGameIcon(executablePath, dataUrl);
 }
 
 function getRunningGameProcesses() {

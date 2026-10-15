@@ -62,7 +62,7 @@ export function RegisteredGamesSettingsPanel() {
 
   if (!desktop?.getGameActivity || !desktop?.updateRegisteredGames) return <section className="settings-section-enter"><p className="text-xs font-bold uppercase tracking-widest text-discord-brand">Somente no aplicativo</p><h1 className="mt-1 text-2xl font-bold text-discord-header-primary">Jogos registrados</h1><p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/[.06] p-4 text-sm leading-6 text-discord-text-normal">A detecção de jogos funciona apenas no aplicativo Sekai. Seus amigos ainda podem ver a atividade que você compartilhar pelo app.</p></section>;
 
-  const active = snapshot.currentGame;
+  const active = snapshot.currentGame && isCatalogGame(snapshot.currentGame.gameId) ? snapshot.currentGame : null;
   const registered = snapshot.registeredGames.filter((game) => isCatalogGame(game.processName));
   const knownIds = new Set(registered.map((game) => normalizeProcessName(game.processName)));
   const normalizedSearch = searchQuery.trim().replace(/\.exe$/i, "").toLocaleLowerCase();

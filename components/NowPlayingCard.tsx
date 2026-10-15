@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ArrowUpRight } from "lucide-react";
 import { Gamepad2 } from "lucide-react";
 import { isFreshActivity, readSpotifySession, safeSpotifyArtUrl, safeSpotifyProfileUrl, type NowPlaying, type PublicConnection } from "@/lib/spotify";
+import { isCatalogGame } from "@/lib/gameCatalog";
 
 export function SpotifyMark({ className }: { className?: string }) {
   return (
@@ -158,7 +159,7 @@ export function useGameActivity(userId: string, status: string) {
     async function load() {
       const data = await loadGameActivity(supabase, userId);
       if (cancelled) return;
-      if (!data || !isFreshGameActivity(data.updated_at)) { setActivity(null); return; }
+      if (!data || !isFreshGameActivity(data.updated_at) || !isCatalogGame(data.game_id)) { setActivity(null); return; }
       setActivity({ gameId: data.game_id, gameName: data.game_name, gameIconUrl: safeGameIconUrl(data.game_icon_url), startedAt: data.started_at, updatedAt: data.updated_at });
     }
     void load();
@@ -192,7 +193,7 @@ export function useGameActivityByUser(userIds: string[]) {
         rows.push(...((data ?? []) as typeof rows));
       }
       const next: Record<string, GameActivity> = {};
-      for (const row of rows) if (isFreshGameActivity(row.updated_at) && row.game_name) next[row.user_id] = { gameId: row.game_id, gameName: row.game_name, gameIconUrl: safeGameIconUrl(row.game_icon_url), startedAt: row.started_at, updatedAt: row.updated_at };
+      for (const row of rows) if (isFreshGameActivity(row.updated_at) && row.game_name && isCatalogGame(row.game_id)) next[row.user_id] = { gameId: row.game_id, gameName: row.game_name, gameIconUrl: safeGameIconUrl(row.game_icon_url), startedAt: row.started_at, updatedAt: row.updated_at };
       if (!cancelled) setActivities(next);
     }
     void load();

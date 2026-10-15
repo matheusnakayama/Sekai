@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isCatalogGame } from "@/lib/gameCatalog";
 
 export function GameActivityPublisher({ userId, presence }: { userId: string; presence?: string | null }) {
   useEffect(() => {
@@ -16,7 +17,8 @@ export function GameActivityPublisher({ userId, presence }: { userId: string; pr
       try {
         const snapshot = await getGameActivity?.();
         if (stopped || !snapshot) return;
-        const game = presence === "offline" ? null : snapshot.currentGame;
+        const reported = presence === "offline" ? null : snapshot.currentGame;
+        const game = reported && isCatalogGame(reported.gameId) ? reported : null;
         if (!game) {
           await supabase.from("user_game_activity").delete().eq("user_id", userId);
           return;
