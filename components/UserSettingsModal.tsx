@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useEscapeKey } from "@/lib/useEscapeKey";
+import { useAnimatedClose } from "@/lib/useAnimatedClose";
+import { cn } from "@/lib/utils";
 import {
   Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, Link2, LogOut, MessageSquare, Pencil, Plus, Trash2,
   Gamepad2, Mic, Monitor, Palette, Settings2, Shield, UserRound, X,
@@ -354,11 +357,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     } catch { setRecentImages([]); }
   }, [imagePicker, userId]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) { if (event.key === "Escape" && !saving && !imagePicker && !imageEditor) onClose(); }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [imageEditor, imagePicker, onClose, saving]);
+  const { closing, requestClose } = useAnimatedClose(onClose);
+  useEscapeKey(requestClose, !saving);
 
   const visibleNavigation = useMemo(() => NAV.filter((item) => {
     if (item.id === "insignias" && !isBadgeManager) return false;
@@ -497,7 +497,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       if (serverUpdateError) { setError("Falha ao salvar perfil do servidor: " + serverUpdateError.message); return; }
       if (!updatedMember) { setError("Não foi possível localizar sua participação neste servidor para salvar o perfil."); return; }
       rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
-      onSaved(); onClose(); return;
+      onSaved(); requestClose(); return;
     }
     if (!displayName.trim()) { setError("Informe um nome de exibição."); setSection("perfil"); return; }
     if (!/^[a-zA-Z0-9_.-]{2,32}$/.test(username.trim())) { setError("O nome de usuário deve ter de 2 a 32 caracteres: letras, números, ponto, hífen ou sublinhado."); setSection("perfil"); return; }
@@ -547,7 +547,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     setSaving(false);
     if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
     rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
-    onSaved(); onClose();
+    onSaved(); requestClose();
   }
 
   async function createBadge() {
@@ -749,8 +749,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   }
 
   return (
-    <div className="settings-backdrop-enter fixed inset-0 z-[100] flex items-stretch justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="user-settings-title" className="settings-window-enter flex h-[100dvh] max-h-[100dvh] w-full min-h-0 max-w-5xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:max-h-[calc(100dvh-48px)] sm:rounded-2xl">
+    <div className={cn("settings-backdrop-enter fixed inset-0 z-[100] flex items-stretch justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-6", closing && "settings-backdrop-exit")} onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) requestClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="user-settings-title" className={cn("settings-window-enter flex h-[100dvh] max-h-[100dvh] w-full min-h-0 max-w-5xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(900px,calc(100dvh-48px))] sm:max-h-[calc(100dvh-48px)] sm:rounded-2xl", closing && "settings-window-exit")}>
         <aside className="hidden min-h-0 w-60 shrink-0 flex-col overflow-y-auto border-r border-black/20 bg-discord-bg-primary p-4 sm:flex">
           <div className="mb-6 flex items-center gap-3 px-2 pt-2">
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-theme-gradient text-white"><Settings2 size={18}/></div>
@@ -772,7 +772,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center justify-between border-b border-black/15 px-5 py-4 sm:px-8">
             <div className="flex min-w-0 items-center gap-3"><select aria-label="Seção de configurações" value={section} onChange={(e) => setSection(e.target.value as Section)} className="max-w-[190px] rounded-lg bg-discord-bg-primary px-3 py-2 text-sm text-discord-text-normal sm:hidden">{visibleNavigation.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><div className="hidden items-center gap-2 sm:flex"><currentSection.icon size={18} className="text-discord-brand"/><h3 className="font-semibold text-discord-header-primary">{currentSection.label}</h3></div><span className="hidden text-sm text-discord-text-muted sm:inline">/</span><span className="hidden text-sm text-discord-text-muted sm:inline">Configurações de usuário</span></div>
-            <button onClick={onClose} aria-label="Fechar configurações" className="rounded-full p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><X size={19}/></button>
+            <button onClick={requestClose} aria-label="Fechar configurações" className="rounded-full p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white"><X size={19}/></button>
           </header>
 
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-6 sm:px-9 sm:py-8">
@@ -912,7 +912,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                     const visibleInMemberList = badgeMemberListVisibility[badgeTargetUser]?.[badge.id] !== false;
                     return <div key={badge.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-discord-bg-secondary/60 p-3 transition hover:border-white/10">
                       <CustomBadgeList badges={[badge]} size="medium"/>
-                      <div className="min-w-0 flex-1">{badgeEditingId === badge.id ? <div className="grid grid-cols-[minmax(0,1fr)_5rem_auto_auto] items-center gap-1.5"><input autoFocus value={badgeEditName} maxLength={32} onChange={(event) => setBadgeEditName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveBadgeName(badge); if (event.key === "Escape") setBadgeEditingId(null); }} aria-label={`Editar nome da insígnia ${badge.name}`} title="Nome mostrado ao passar o mouse" placeholder="Nome" className={`${inputClass} my-0 min-w-0 py-1.5 text-sm`}/><input value={badgeEditIcon} maxLength={12} onChange={(event) => setBadgeEditIcon(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveBadgeName(badge); if (event.key === "Escape") setBadgeEditingId(null); }} aria-label={`Editar símbolo ou rótulo de ${badge.name}`} title="Símbolo ou rótulo curto" placeholder="Símbolo" className={`${inputClass} my-0 min-w-0 px-2 py-1.5 text-center text-sm`}/><button type="button" onClick={() => void saveBadgeName(badge)} disabled={badgeSaving || !badgeEditName.trim() || !badgeEditIcon.trim()} aria-label="Salvar alterações da insígnia" className="rounded-lg p-2 text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-50"><Check size={16}/></button><button type="button" onClick={() => setBadgeEditingId(null)} disabled={badgeSaving} aria-label="Cancelar edição" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/5"><X size={16}/></button></div> : <><p className="truncate text-sm font-semibold text-discord-text-normal">{badge.name}</p><p className={`text-[11px] ${badgePendingDeleteId === badge.id ? "text-rose-200" : "text-discord-text-muted"}`}>{badgePendingDeleteId === badge.id ? "Isso remove a insígnia de todos os perfis." : `${badge.icon} · ${assigned ? "atribuída" : "não atribuída"}`}</p></>}</div>
+                      <div className="min-w-0 flex-1">{badgeEditingId === badge.id ? <div className="grid grid-cols-[minmax(0,1fr)_5rem_auto_auto] items-center gap-1.5"><input data-esc-local autoFocus value={badgeEditName} maxLength={32} onChange={(event) => setBadgeEditName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveBadgeName(badge); if (event.key === "Escape") { event.stopPropagation(); setBadgeEditingId(null); } }} aria-label={`Editar nome da insígnia ${badge.name}`} title="Nome mostrado ao passar o mouse" placeholder="Nome" className={`${inputClass} my-0 min-w-0 py-1.5 text-sm`}/><input data-esc-local value={badgeEditIcon} maxLength={12} onChange={(event) => setBadgeEditIcon(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveBadgeName(badge); if (event.key === "Escape") { event.stopPropagation(); setBadgeEditingId(null); } }} aria-label={`Editar símbolo ou rótulo de ${badge.name}`} title="Símbolo ou rótulo curto" placeholder="Símbolo" className={`${inputClass} my-0 min-w-0 px-2 py-1.5 text-center text-sm`}/><button type="button" onClick={() => void saveBadgeName(badge)} disabled={badgeSaving || !badgeEditName.trim() || !badgeEditIcon.trim()} aria-label="Salvar alterações da insígnia" className="rounded-lg p-2 text-emerald-300 hover:bg-emerald-400/10 disabled:opacity-50"><Check size={16}/></button><button type="button" onClick={() => setBadgeEditingId(null)} disabled={badgeSaving} aria-label="Cancelar edição" className="rounded-lg p-2 text-discord-text-muted hover:bg-white/5"><X size={16}/></button></div> : <><p className="truncate text-sm font-semibold text-discord-text-normal">{badge.name}</p><p className={`text-[11px] ${badgePendingDeleteId === badge.id ? "text-rose-200" : "text-discord-text-muted"}`}>{badgePendingDeleteId === badge.id ? "Isso remove a insígnia de todos os perfis." : `${badge.icon} · ${assigned ? "atribuída" : "não atribuída"}`}</p></>}</div>
                       {badgeEditingId !== badge.id && <button type="button" onClick={() => startBadgeNameEdit(badge)} disabled={badgeSaving} aria-label={`Editar nome da insígnia ${badge.name}`} title="Editar nome" className="rounded-lg p-2 text-discord-text-muted transition hover:bg-white/5 hover:text-discord-text-normal disabled:opacity-50"><Pencil size={15}/></button>}
                       <button type="button" aria-pressed={assigned} onClick={() => void toggleBadgeAssignment(badge)} disabled={badgeSaving} className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${assigned ? "bg-emerald-400/10 text-emerald-200 hover:bg-rose-400/10 hover:text-rose-200" : "bg-discord-bg-modifier-hover text-discord-text-normal hover:bg-discord-brand/20"}`}>{assigned ? "Atribuída" : "Atribuir"}</button>
                       <div className="flex items-center gap-2 rounded-lg bg-black/10 px-2.5 py-1.5">
@@ -985,7 +985,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
           </div>
 
           {(error || notice) && <div className={`mx-5 mb-3 rounded-lg px-3 py-2 text-sm sm:mx-9 ${error ? "bg-discord-danger/10 text-discord-danger" : "bg-emerald-500/10 text-emerald-300"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : section === "voz" ? "As preferências de áudio são aplicadas imediatamente neste navegador." : section === "sobreposicao" || section === "jogos" ? "As opções são salvas neste aplicativo." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={onClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && section !== "voz" && section !== "sobreposicao" && section !== "jogos" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
+          <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-black/15 bg-discord-bg-secondary px-5 py-4 sm:px-9"><p className="hidden text-xs text-discord-text-muted sm:block">{section === "insignias" ? "As atribuições são aplicadas imediatamente." : section === "mensagens" ? "A exibição do chat muda na hora, neste navegador." : section === "conexoes" ? "A conexão do Spotify fica neste navegador." : section === "voz" ? "As preferências de áudio são aplicadas imediatamente neste navegador." : section === "sobreposicao" || section === "jogos" ? "As opções são salvas neste aplicativo." : "As preferências de aparência são aplicadas na hora."}</p><div className="ml-auto flex gap-2"><button onClick={requestClose} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-white">Fechar</button>{section !== "insignias" && section !== "mensagens" && section !== "conexoes" && section !== "voz" && section !== "sobreposicao" && section !== "jogos" && <button onClick={() => void handleSave()} disabled={saving} className="rounded-lg bg-theme-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/10 transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">{saving ? "Salvando..." : section === "perfil" && profileScope === "server" ? "Salvar perfil do servidor" : "Salvar perfil"}</button>}</div></footer>
         </main>
       </div>
       {imagePicker && <ProfileImagePickerModal kind={imagePicker.kind} recentImages={recentImages} onSelect={selectProfileMedia} onClose={() => setImagePicker(null)}/>}

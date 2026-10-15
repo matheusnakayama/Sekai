@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useEscapeKey } from "@/lib/useEscapeKey";
+import { useAnimatedClose } from "@/lib/useAnimatedClose";
 import { X, Trash2, Plus, Copy, Search, Users, Eye, Pencil, ShieldCheck, Palette, Check, GripVertical, Image as ImageIcon, ImagePlus, Activity, AppWindow, Ban, FolderTree, Hash, Link2, Lock, MessageSquare, Music2, Puzzle, ScrollText, Server, Shield, Smile, Sparkles, Sticker, Tag, Volume2, type LucideIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -98,6 +100,8 @@ export function ServerSettingsModal({
 }: ServerSettingsModalProps) {
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("geral");
+  const { closing, requestClose } = useAnimatedClose(onClose);
+  useEscapeKey(requestClose);
 
   async function onAudit(action: string, target?: string, details?: Record<string, unknown>) {
     const { error } = await supabase.from("server_audit_logs").insert({
@@ -111,8 +115,8 @@ export function ServerSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-5">
-      <div className="flex h-[100dvh] w-full max-w-6xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(860px,96vh)] sm:rounded-2xl sm:border sm:border-white/[0.08]">
+    <div className={cn("settings-backdrop-enter fixed inset-0 z-[250] flex items-center justify-center bg-black/75 p-0 backdrop-blur-sm sm:p-5", closing && "settings-backdrop-exit")} onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
+      <div className={cn("settings-pane-enter flex h-[100dvh] w-full max-w-6xl overflow-hidden bg-discord-bg-secondary shadow-2xl sm:h-[min(860px,96vh)] sm:rounded-2xl sm:border sm:border-white/[0.08]", closing && "settings-pane-exit")}>
         <aside className="hidden w-[min(272px,38vw)] shrink-0 flex-col bg-discord-bg-darkest p-3 sm:flex sm:p-4">
           <div className="mb-4 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-3 py-3">
             <p className="truncate text-sm font-bold text-white">{serverName}</p>
@@ -135,7 +139,7 @@ export function ServerSettingsModal({
               </section>
             ))}
           </nav>
-          <button onClick={onClose} className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.08] px-3 py-2.5 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
+          <button onClick={requestClose} className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.08] px-3 py-2.5 text-sm text-discord-text-muted transition hover:bg-white/[0.05] hover:text-white"><X className="h-4 w-4"/>Fechar configurações</button>
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:p-7">
@@ -146,7 +150,7 @@ export function ServerSettingsModal({
                 {SETTINGS_GROUPS.map((group) => <optgroup key={group.title} label={group.title}>{group.items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</optgroup>)}
               </select>
             </div>
-            <button onClick={onClose} aria-label="Fechar configurações" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted transition hover:bg-white/5 hover:text-white">
+            <button onClick={requestClose} aria-label="Fechar configurações" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-discord-text-muted transition hover:bg-white/5 hover:text-white">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -482,6 +486,30 @@ function GeralTab({
 
 // ---------------- Cargos ----------------
 const ROLE_COLORS = ["#99aab5", "#1abc9c", "#2ecc71", "#3498db", "#9b59b6", "#e91e63", "#f1c40f", "#e67e22", "#e74c3c", "#607d8b", "#16a085", "#27ae60", "#2980b9", "#8e44ad", "#c0392b", "#34495e"];
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+function RoleColorPicker({ value, onChange, disabled, size = "h-8 w-8" }: { value: string; onChange: (color: string) => void; disabled?: boolean; size?: string }) {
+  const [hexDraft, setHexDraft] = useState(value);
+  useEffect(() => { setHexDraft(value); }, [value]);
+  const isPreset = ROLE_COLORS.some((color) => color.toLowerCase() === value.toLowerCase());
+  const safeValue = HEX_RE.test(value) ? value : "#99aab5";
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {ROLE_COLORS.map((color) => {
+        const active = value.toLowerCase() === color.toLowerCase();
+        return <button key={color} type="button" disabled={disabled} aria-label={`Selecionar cor ${color}`} aria-pressed={active} onClick={() => onChange(color)} className={cn("grid place-items-center rounded-full border-2 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50", size, active ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{active && <Check size={14} className="text-white drop-shadow"/>}</button>;
+      })}
+      <label title="Escolher qualquer cor" className={cn("relative grid cursor-pointer place-items-center overflow-hidden rounded-full border-2 transition hover:scale-110", size, !isPreset ? "border-white" : "border-transparent", disabled && "pointer-events-none opacity-50")} style={{ background: isPreset ? "conic-gradient(red, yellow, lime, aqua, blue, magenta, red)" : safeValue }}>
+        {!isPreset && <Check size={14} className="text-white drop-shadow"/>}
+        <input type="color" disabled={disabled} value={safeValue} onChange={(event) => onChange(event.target.value)} aria-label="Escolher cor personalizada" className="absolute inset-0 h-full w-full cursor-pointer opacity-0"/>
+      </label>
+      <input type="text" disabled={disabled} value={hexDraft} maxLength={7} spellCheck={false} aria-label="Código hexadecimal da cor" placeholder="#RRGGBB"
+        onChange={(event) => { let v = event.target.value.trim(); if (v && !v.startsWith("#")) v = "#" + v; setHexDraft(v); if (HEX_RE.test(v)) onChange(v.toLowerCase()); }}
+        onBlur={() => setHexDraft(value)}
+        className="h-8 w-24 rounded-lg border border-white/[0.08] bg-discord-bg-dark px-2 font-mono text-xs uppercase text-discord-header-primary outline-none focus:border-discord-brand disabled:opacity-50"/>
+    </div>
+  );
+}
 const ROLE_ICON_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_ROLE_ICON_SIZE = 5 * 1024 * 1024;
 
@@ -852,7 +880,7 @@ function CargosTab({ serverId, currentUserId, canEdit, onChanged, onAudit }: { s
       {createRoleOpen && canEdit && <form onSubmit={(event) => { event.preventDefault(); void handleCreateRole(); }} className="mb-4 rounded-xl border border-discord-brand/25 bg-discord-brand/[0.06] p-4 shadow-sm">
         <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Novo cargo</h3><p className="mt-1 text-xs text-discord-text-muted">Defina o nome, a cor, o ícone circular e a insígnia que aparecerá junto ao cargo.</p></div>
         <label className="block text-xs font-semibold text-discord-text-muted">Nome do cargo<input autoFocus value={newRoleName} maxLength={80} onChange={(event) => setNewRoleName(event.target.value)} placeholder="Ex.: Equipe, VAMP, Moderador" className="mt-1.5 w-full rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2.5 text-sm text-discord-text-normal outline-none focus:border-discord-brand/70"/></label>
-        <div className="mt-4"><p className="mb-2 text-xs font-semibold text-discord-text-muted">Cor do cargo</p><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" aria-label={`Selecionar cor ${color}`} aria-pressed={newRoleColor.toLowerCase() === color.toLowerCase()} onClick={() => setNewRoleColor(color)} className={cn("grid h-7 w-7 place-items-center rounded-full border-2 transition hover:scale-110", newRoleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{newRoleColor.toLowerCase() === color.toLowerCase() && <Check size={13} className="text-white drop-shadow"/>}</button>)}</div></div>
+        <div className="mt-4"><p className="mb-2 text-xs font-semibold text-discord-text-muted">Cor do cargo</p><RoleColorPicker value={newRoleColor} onChange={setNewRoleColor} size="h-7 w-7"/></div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleIconChange}/><ImageIcon size={15} className="text-discord-brand"/>{newRoleIconFile ? "Trocar ícone" : "Ícone circular"}</label>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/[0.1] bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal transition hover:bg-white/[0.06]"><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={handleNewRoleInsigniaChange}/><ShieldCheck size={15} className="text-discord-brand"/>{newRoleInsigniaFile ? "Trocar insígnia" : "Insígnia do cargo"}</label>
@@ -895,7 +923,7 @@ function CargosTab({ serverId, currentUserId, canEdit, onChanged, onAudit }: { s
                 <span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-discord-text-normal">Insígnia do cargo</span><span className="mt-0.5 block text-[11px] leading-4 text-discord-text-muted">Aparece após o nome do cargo no perfil e antes do título na lista · até 5 MB</span></span>
                 {canEdit && !selectedRole.is_default && <div className="flex shrink-0 items-center gap-2"><label className="cursor-pointer rounded-lg border border-white/[0.1] px-2.5 py-2 text-[11px] font-semibold text-discord-text-normal transition hover:bg-white/[0.06]">{insigniaUploading ? "Enviando…" : selectedRole.insigniaUrl ? "Trocar" : "Enviar"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={insigniaUploading} onChange={handleSelectedRoleInsigniaChange}/></label>{selectedRole.insigniaUrl && <button type="button" disabled={insigniaUploading} onClick={() => void removeSelectedRoleInsignia()} className="rounded-lg p-2 text-discord-text-muted transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50" aria-label="Remover insígnia do cargo"><Trash2 size={14}/></button>}</div>}
               </div>
-              <div className="mt-5"><div className="mb-3 flex items-center gap-2 text-xs font-semibold text-discord-text-muted"><Palette size={15}/>Cor do cargo</div><div className="flex flex-wrap gap-2">{ROLE_COLORS.map((color) => <button key={color} type="button" disabled={!canEdit || selectedRole.is_default} aria-label={`Selecionar cor ${color}`} aria-pressed={roleColor.toLowerCase() === color.toLowerCase()} onClick={() => setRoleColor(color)} className={cn("grid h-8 w-8 place-items-center rounded-full border-2 transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50", roleColor.toLowerCase() === color.toLowerCase() ? "border-white" : "border-transparent")} style={{ backgroundColor: color }}>{roleColor.toLowerCase() === color.toLowerCase() && <Check size={15} className="text-white drop-shadow"/>}</button>)}</div></div>
+              <div className="mt-5"><div className="mb-3 flex items-center gap-2 text-xs font-semibold text-discord-text-muted"><Palette size={15}/>Cor do cargo</div><RoleColorPicker value={roleColor} onChange={setRoleColor} disabled={!canEdit || selectedRole.is_default}/></div>
             </div>
             <div className="rounded-xl border border-white/[0.07] bg-discord-bg-secondary p-4"><p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-discord-text-muted">Prévia no mini perfil</p><RoleBadgeList roles={[{ id: selectedRole.id, name: roleName || selectedRole.name, color: roleColor, iconUrl: selectedRole.iconUrl, insigniaUrl: selectedRole.insigniaUrl }]} size="medium" layout="profile"/></div>
             {canEdit && !selectedRole.is_default && <button type="button" onClick={() => void saveRoleAppearance()} disabled={saving} className="rounded-lg bg-discord-brand px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50">{saving ? "Salvando…" : "Salvar alterações"}</button>}

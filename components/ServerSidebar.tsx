@@ -163,7 +163,7 @@ export function ServerSidebar({
     }
   }
 
-  const reorder = useChannelReorder({ enabled: true, channels: orderedServers, onReorder: commitServerOrder, gap: 8, indicatorWidth: 48 });
+  const reorder = useChannelReorder({ enabled: true, channels: orderedServers, onReorder: commitServerOrder, gap: 8, indicatorWidth: 48, shift: true, dragScale: 1.08 });
 
   return (
     <div className="flex h-full w-24 shrink-0 flex-col gap-2 overflow-x-hidden bg-discord-bg-darkest py-3">
@@ -220,7 +220,6 @@ export function ServerSidebar({
           </ServerIcon>
           </div>
         ))}
-        {reorder.indicator && <div aria-hidden="true" className="reorder-drop-indicator pointer-events-none absolute z-40" style={{ margin: 0, transform: `translate3d(${reorder.indicator.left}px, ${reorder.indicator.top}px, 0)`, width: reorder.indicator.width }} />}
       </div>
 
       <ServerIcon onClick={onCreateServer} label="Adicionar servidor">

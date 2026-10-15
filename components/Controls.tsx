@@ -5,6 +5,8 @@ import { ChevronDown, Maximize2, Minimize2, Music, Music2, Play, Settings, Squar
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon, StopWatchingIcon } from './icons';
 import AnchoredPopover from './AnchoredPopover';
 
+const MINIMAL_KEY = 'sekai:call-controls-minimal';
+
 export interface SoundboardEffect {
   id: string;
   name: string;
@@ -119,14 +121,24 @@ export default function Controls({
   const [audioMenuOpen, setAudioMenuOpen] = useState<'input' | 'output' | null>(null);
   const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
   const [minimalMode, setMinimalMode] = useState(false);
+  const [clip, setClip] = useState(false);
+  const clipTimer = useRef<number | undefined>(undefined);
+  const toggleMinimalRef = useRef<(next: boolean) => void>(() => {});
   const musicFileRef = useRef<HTMLInputElement>(null);
   const inputAnchorRef = useRef<HTMLDivElement>(null);
   const outputAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    try {
+      if (localStorage.getItem(MINIMAL_KEY) === '1') { setMinimalMode(true); setClip(true); }
+    } catch {}
+    return () => { if (clipTimer.current) window.clearTimeout(clipTimer.current); };
+  }, []);
+
+  useEffect(() => {
     if (!minimalMode) return;
     const leaveMinimalMode = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMinimalMode(false);
+      if (event.key === 'Escape') toggleMinimalRef.current(false);
     };
     window.addEventListener('keydown', leaveMinimalMode);
     return () => window.removeEventListener('keydown', leaveMinimalMode);
@@ -139,28 +151,28 @@ export default function Controls({
   }
 
   function handleLeave() {
-    setMinimalMode(false);
     onLeave();
   }
 
   const presentationActive = sharingScreen || watchingPresentation;
   const togglePresentation = watchingPresentation ? onStopWatching : onToggleScreenShare;
 
-  if (minimalMode) {
-    return (
-      <div className="group relative flex items-center gap-1.5 rounded-[18px] border border-white/10 bg-[#17191f]/95 p-1.5 text-white shadow-2xl backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={() => setMinimalMode(false)}
-          aria-label="Sair do modo minimalista"
-          title="Voltar aos controles completos · Esc"
-          className="absolute -top-10 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/10 bg-[#17191f] px-3 py-2 text-xs font-semibold text-white opacity-0 shadow-xl transition focus:opacity-100 group-hover:opacity-100"
-        >
-          <Maximize2 className="h-3.5 w-3.5" /> Controles completos
-        </button>
+  const toggleMinimal = (next: boolean) => {
+    setClip(true);
+    if (next) { setSoundboardOpen(false); setMusicOpen(false); setAudioMenuOpen(null); setVoiceSettingsOpen(false); }
+    setMinimalMode(next);
+    try { localStorage.setItem(MINIMAL_KEY, next ? '1' : '0'); } catch {}
+    if (clipTimer.current) window.clearTimeout(clipTimer.current);
+    if (!next) clipTimer.current = window.setTimeout(() => setClip(false), 460);
+  };
+
+  toggleMinimalRef.current = toggleMinimal;
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2 px-3">
+      <div className="ctl-group">
         <div ref={inputAnchorRef} className="relative flex items-center gap-0.5">
           <ControlButton
-            compact
             active={micOn}
             activeLabel="Silenciar microfone"
             inactiveLabel="Ativar microfone"
@@ -171,58 +183,8 @@ export default function Controls({
           >
             <MicIcon off={!micOn} />
           </ControlButton>
-          <AudioArrowButton
-            compact
-            label="Opções do microfone"
-            open={audioMenuOpen === 'input'}
-            onClick={() => { setAudioMenuOpen((open) => open === 'input' ? null : 'input'); setVoiceSettingsOpen(false); }}
-          />
+          <AudioArrowButton label="Opções do microfone" open={audioMenuOpen === 'input'} onClick={() => { setAudioMenuOpen((open) => open === 'input' ? null : 'input'); setVoiceSettingsOpen(false); }} />
           <AnchoredPopover open={audioMenuOpen === 'input'} anchorRef={inputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
-            <h3 className="px-1 text-sm font-semibold">Dispositivo de entrada</h3>
-            <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
-              {inputDevices.length ? inputDevices.map((device) => <AudioOption key={device.deviceId} label={device.label} selected={device.deviceId === selectedInputDeviceId} onClick={() => { onSelectInputDevice(device.deviceId); setAudioMenuOpen(null); }} />) : <p className="px-2 py-2 text-xs text-white/50">Nenhum microfone encontrado</p>}
-            </div>
-            <div className="my-3 border-t border-white/10" />
-            <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} aria-expanded={voiceSettingsOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-white/[0.06]">
-              <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceProfile === 'standard' ? 'Padrão' : 'Supressão de ruído'}</span></span><Settings className="h-4 w-4 text-white/55" />
-            </button>
-            {voiceSettingsOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1"><AudioOption label="Padrão" selected={voiceProfile === 'standard'} onClick={() => onVoiceProfileChange('standard')} /><AudioOption label="Supressão de ruído" selected={voiceProfile === 'noise-suppression'} onClick={() => onVoiceProfileChange('noise-suppression')} /></div>}
-            <label className="mt-3 block border-t border-white/10 pt-3"><span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round(inputVolume * 100)}%</span></span><input aria-label="Volume de entrada do microfone" type="range" min="0" max="2" step="0.01" value={inputVolume} onChange={(event) => onInputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" /></label>
-            <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
-          </AnchoredPopover>
-        </div>
-        <ControlButton
-          compact
-          active={!presentationActive}
-          activeLabel="Apresentar tela"
-          inactiveLabel={watchingPresentation ? 'Parar de assistir à apresentação' : 'Parar apresentação'}
-          onClick={togglePresentation}
-          highlight={presentationActive}
-          title={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar apresentação' : 'Apresentar tela'}
-        >
-          <ScreenShareIcon active={sharingScreen} />
-        </ControlButton>
-        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="grid h-12 w-12 place-items-center rounded-xl bg-[#ed344b] text-white transition hover:bg-[#d92b42] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"><HangupIcon /></button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-3">
-      <div ref={inputAnchorRef} className="relative flex items-center gap-1.5">
-        <ControlButton
-          active={micOn}
-          activeLabel="Silenciar microfone"
-          inactiveLabel="Ativar microfone"
-          onClick={onToggleMic}
-          danger={!micOn}
-          disabled={micLockedByHost}
-          title={micLockedByHost ? 'O anfitrião bloqueou seu microfone' : undefined}
-        >
-          <MicIcon off={!micOn} />
-        </ControlButton>
-        <AudioArrowButton label="Opções do microfone" open={audioMenuOpen === 'input'} onClick={() => { setAudioMenuOpen((open) => open === 'input' ? null : 'input'); setVoiceSettingsOpen(false); }} />
-        <AnchoredPopover open={audioMenuOpen === 'input'} anchorRef={inputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
           <h3 className="px-1 text-sm font-semibold">Dispositivo de entrada</h3>
           <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
             {inputDevices.length ? inputDevices.map((device) => <AudioOption key={device.deviceId} label={device.label} selected={device.deviceId === selectedInputDeviceId} onClick={() => onSelectInputDevice(device.deviceId)} />) : <p className="px-2 py-2 text-xs text-white/50">Nenhum microfone encontrado</p>}
@@ -241,20 +203,21 @@ export default function Controls({
           </label>
           <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
         </AnchoredPopover>
-      </div>
-
-      <div ref={outputAnchorRef} className="relative flex items-center gap-1.5">
-        <ControlButton
-          active={!deafened}
-          activeLabel="Ensurdecer"
-          inactiveLabel="Reativar áudio"
-          onClick={onToggleDeafen}
-          danger={deafened}
-        >
-          {deafened ? <VolumeX className="h-5 w-5"/> : <Volume2 className="h-5 w-5"/>}
-        </ControlButton>
-        <AudioArrowButton label="Opções de saída de áudio" open={audioMenuOpen === 'output'} onClick={() => { setAudioMenuOpen((open) => open === 'output' ? null : 'output'); setVoiceSettingsOpen(false); }} />
-        <AnchoredPopover open={audioMenuOpen === 'output'} anchorRef={outputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
+        </div>
+        <Collapse show={!minimalMode} clip={clip}>
+          <div ref={outputAnchorRef} className="relative flex items-center gap-0.5">
+            <ControlButton
+              active={!deafened}
+              activeLabel="Ensurdecer"
+              inactiveLabel="Reativar áudio"
+              onClick={onToggleDeafen}
+              danger={deafened}
+              title={deafened ? 'Reativar áudio' : 'Ensurdecer'}
+            >
+              {deafened ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+            </ControlButton>
+            <AudioArrowButton label="Opções de saída de áudio" open={audioMenuOpen === 'output'} onClick={() => { setAudioMenuOpen((open) => open === 'output' ? null : 'output'); setVoiceSettingsOpen(false); }} />
+            <AnchoredPopover open={audioMenuOpen === 'output'} anchorRef={outputAnchorRef} width={320} className="rounded-xl border border-surface-border bg-[#24262d] p-3 text-white shadow-2xl">
           <h3 className="px-1 text-sm font-semibold">Dispositivo de saída</h3>
           {!outputDeviceSelectionSupported ? <p className="mt-2 rounded-lg bg-black/15 px-2 py-2 text-xs leading-relaxed text-white/55">Este navegador não permite escolher a saída de áudio. O Sekai continuará usando a saída padrão do sistema.</p> : <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
             <AudioOption label="Padrão do sistema" selected={!selectedOutputDeviceId || selectedOutputDeviceId === 'default'} onClick={() => onSelectOutputDevice('')} />
@@ -265,40 +228,37 @@ export default function Controls({
             <input aria-label="Volume de saída" type="range" min="0" max="1" step="0.01" value={outputVolume} onChange={(event) => onOutputVolumeChange(Number(event.target.value))} className="mt-3 w-full accent-[rgb(var(--d-brand))]" />
           </label>
         </AnchoredPopover>
+          </div>
+          <ControlButton
+            active={camOn}
+            activeLabel="Desligar câmera"
+            inactiveLabel="Ligar câmera"
+            onClick={onToggleCam}
+            danger={!camOn}
+            title={camOn ? 'Desligar câmera' : 'Ligar câmera'}
+          >
+            <CamIcon off={!camOn} />
+          </ControlButton>
+        </Collapse>
       </div>
 
-      <ControlButton
-        active={camOn}
-        activeLabel="Desligar câmera"
-        inactiveLabel="Ligar câmera"
-        onClick={onToggleCam}
-        danger={!camOn}
-      >
-        <CamIcon off={!camOn} />
-      </ControlButton>
-
-      <ControlButton
-        active={!sharingScreen}
-        activeLabel="Compartilhar tela"
-        inactiveLabel="Parar compartilhamento"
-        onClick={onToggleScreenShare}
-        highlight={sharingScreen}
-      >
-        <ScreenShareIcon active={sharingScreen} />
-      </ControlButton>
-
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setSoundboardOpen((open) => !open)}
-          aria-label="Abrir efeitos sonoros do servidor"
-          aria-expanded={soundboardOpen}
-          title="Efeitos sonoros"
-          className={`h-14 w-14 rounded-full border flex items-center justify-center transition-colors ${soundboardOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
+      <div className="ctl-group">
+        <ControlButton
+          active={!presentationActive}
+          activeLabel="Compartilhar tela"
+          inactiveLabel={watchingPresentation ? 'Parar de assistir à apresentação' : 'Parar compartilhamento'}
+          onClick={togglePresentation}
+          highlight={presentationActive}
+          title={watchingPresentation ? 'Parar de assistir à apresentação' : sharingScreen ? 'Parar compartilhamento' : 'Compartilhar tela'}
         >
-          <Music2 className="h-5 w-5" />
-        </button>
-        {soundboardOpen && (
+          {watchingPresentation ? <StopWatchingIcon /> : <ScreenShareIcon active={sharingScreen} />}
+        </ControlButton>
+        <Collapse show={!minimalMode} clip={clip}>
+          <div className="relative">
+            <button type="button" onClick={() => setSoundboardOpen((open) => !open)} aria-label="Abrir efeitos sonoros do servidor" aria-expanded={soundboardOpen} title="Efeitos sonoros" className={`ctl-btn ${soundboardOpen ? 'ctl-btn-on' : ''}`}>
+              <Music2 className="h-5 w-5" />
+            </button>
+            {soundboardOpen && (
           <div className="absolute bottom-full right-0 z-50 mb-3 w-80 max-w-[calc(100vw_-_2rem)] overflow-hidden rounded-2xl border border-surface-border bg-[#17191f] p-3 text-white shadow-2xl">
             <div className="mb-3 flex items-center justify-between gap-3 px-1">
               <div className="min-w-0">
@@ -336,20 +296,12 @@ export default function Controls({
             )}
           </div>
         )}
-      </div>
-
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setMusicOpen((open) => !open)}
-          aria-label="Tocar uma música na call"
-          aria-expanded={musicOpen}
-          title="Tocar música na call"
-          className={`h-14 w-14 rounded-full border flex items-center justify-center transition-colors ${callMusicName || musicOpen ? 'border-brand-400/50 bg-brand-500/20 text-white' : 'border-surface-border bg-surface-card text-white/80 hover:bg-surface-border'}`}
-        >
-          <Music className="h-5 w-5" />
-        </button>
-        {musicOpen && (
+          </div>
+          <div className="relative">
+            <button type="button" onClick={() => setMusicOpen((open) => !open)} aria-label="Tocar uma música na call" aria-expanded={musicOpen} title="Tocar música na call" className={`ctl-btn ${callMusicName || musicOpen ? 'ctl-btn-on' : ''}`}>
+              <Music className="h-5 w-5" />
+            </button>
+            {musicOpen && (
           <div className="absolute bottom-full right-0 z-50 mb-3 w-80 max-w-[calc(100vw_-_2rem)] rounded-2xl border border-surface-border bg-[#17191f] p-3 text-white shadow-2xl">
             <h3 className="px-1 text-sm font-semibold">Música na call</h3>
             <p className="mt-1 px-1 text-[11px] leading-relaxed text-white/50">Escolha um arquivo de áudio do seu computador. Quem estiver nesta call escuta junto.</p>
@@ -372,77 +324,29 @@ export default function Controls({
             </div>
           </div>
         )}
+          </div>
+          <button type="button" onClick={onToggleParticipants} aria-label="Ver participantes" title="Participantes" className="ctl-btn relative">
+            <PeopleIcon />
+            <span className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#111214] bg-brand-500 px-1 text-[10px] font-semibold leading-none text-white">{participantCount}</span>
+          </button>
+          <button type="button" onClick={onToggleChat} aria-label={chatUnreadCount ? `Abrir chat, ${chatUnreadCount} mensagens não lidas` : 'Abrir chat da chamada'} title="Chat da chamada" className="ctl-btn relative">
+            <ChatIcon />
+            {chatUnreadCount > 0 && <span className="absolute -right-1 -top-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#111214] bg-theme-gradient px-1 text-[10px] font-semibold leading-none text-white">{chatUnreadCount > 99 ? '99+' : chatUnreadCount}</span>}
+          </button>
+          <button type="button" onClick={handleCopy} aria-label="Copiar link de convite" title={copied ? 'Link copiado' : 'Convidar'} className={`ctl-btn ${copied ? 'ctl-btn-on' : ''}`}>
+            {copied ? <CheckIcon /> : <LinkIcon />}
+          </button>
+        </Collapse>
+        <button type="button" onClick={() => toggleMinimal(!minimalMode)} aria-label={minimalMode ? 'Mostrar controles completos' : 'Ativar modo minimalista'} aria-pressed={minimalMode} title={minimalMode ? 'Controles completos · Esc' : 'Modo minimalista'} className="ctl-btn">
+          {minimalMode ? <Maximize2 className="h-[18px] w-[18px]" /> : <Minimize2 className="h-[18px] w-[18px]" />}
+        </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onToggleParticipants}
-        aria-label="Ver participantes"
-        className="relative h-14 w-14 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
-      >
-        <PeopleIcon />
-        <span className="absolute -top-2 -right-2 z-10 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-[#111214] bg-brand-500 px-1 text-[11px] font-semibold leading-none">
-          {participantCount}
-        </span>
-      </button>
+      <div className="ctl-group ctl-group-leave">
+        <button type="button" onClick={handleLeave} aria-label="Sair da chamada" title="Sair da chamada" className="ctl-leave"><HangupIcon /></button>
+      </div>
 
-      <button
-        type="button"
-        onClick={onToggleChat}
-        aria-label={chatUnreadCount ? `Abrir chat, ${chatUnreadCount} mensagens não lidas` : 'Abrir chat da chamada'}
-        title="Chat da chamada"
-        className="relative h-14 w-14 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center justify-center text-white transition-colors"
-      >
-        <ChatIcon />
-        {chatUnreadCount > 0 && (
-          <span className="absolute -top-2 -right-2 z-10 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-[#111214] bg-theme-gradient px-1 text-[10px] font-semibold leading-none">
-            {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-          </span>
-        )}
-      </button>
-
-      <button
-        type="button"
-        onClick={handleCopy}
-        aria-label="Copiar link de convite"
-        className="h-14 px-5 rounded-full bg-surface-card hover:bg-surface-border border border-surface-border flex items-center gap-2 text-white text-sm font-medium transition-colors"
-      >
-        {copied ? <CheckIcon /> : <LinkIcon />}
-        {copied ? 'Copiado' : 'Convidar'}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setMinimalMode(true)}
-        aria-label="Ativar modo minimalista"
-        title="Modo minimalista"
-        className="grid h-14 w-14 place-items-center rounded-full border border-surface-border bg-surface-card text-white/75 transition hover:bg-surface-border hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
-      >
-        <Minimize2 className="h-5 w-5" />
-      </button>
-
-      {watchingPresentation ? (
-        <button
-          onClick={onStopWatching}
-          aria-label="Parar de assistir à apresentação"
-          title="Parar de assistir"
-          className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
-        >
-          <StopWatchingIcon />
-          <span className="hidden sm:inline">Parar de assistir</span>
-        </button>
-      ) : (
-        <button
-          onClick={handleLeave}
-          aria-label="Sair da chamada"
-          className="h-14 w-14 sm:w-auto sm:px-6 rounded-full bg-danger hover:bg-red-600 flex items-center justify-center gap-2 text-white font-semibold transition-colors"
-        >
-          <HangupIcon />
-          <span className="hidden sm:inline">Sair</span>
-        </button>
-      )}
-
-      {callMusicName && (
+      {!minimalMode && callMusicName && (
         <div className="flex basis-full items-center justify-center gap-2 pt-1 text-xs text-white/75">
           <Music className="h-3.5 w-3.5 shrink-0" />
           <span className="max-w-[240px] truncate">Tocando {callMusicName}</span>
@@ -453,11 +357,18 @@ export default function Controls({
   );
 }
 
+function Collapse({ show, clip, children }: { show: boolean; clip: boolean; children: React.ReactNode }) {
+  return (
+    <div className="ctl-collapse" data-show={show} data-clip={clip}>
+      <div className="ctl-collapse-inner"><div className="ctl-collapse-row">{children}</div></div>
+    </div>
+  );
+}
+
 function ControlButton({
   active,
   danger,
   highlight,
-  compact,
   activeLabel,
   inactiveLabel,
   onClick,
@@ -484,23 +395,19 @@ function ControlButton({
       title={title}
       aria-label={active ? activeLabel : inactiveLabel}
       aria-pressed={!active}
-      className={`grid place-items-center transition-colors border disabled:cursor-not-allowed disabled:opacity-50 ${compact ? 'h-12 w-12 rounded-xl' : 'h-14 w-14 rounded-full'} ${
-        danger
-          ? compact ? 'border-red-500/20 bg-[#3a171d] text-red-400 hover:bg-[#4a1b23]' : 'bg-danger hover:bg-red-600 border-transparent text-white'
-          : highlight
-          ? compact ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-theme-gradient hover:brightness-110 border-transparent text-white'
-          : compact ? 'border-white/[0.06] bg-white/[0.04] text-white/85 hover:bg-white/[0.09]' : 'bg-surface-card hover:bg-surface-border border-surface-border text-white'
-      }`}
+      className={`ctl-btn ${danger ? 'ctl-btn-danger' : highlight ? 'ctl-btn-on' : ''}`}
     >
       {children}
     </button>
   );
 }
 
-function AudioArrowButton({ label, open, onClick, compact = false }: { label: string; open: boolean; onClick: () => void; compact?: boolean }) {
-  return <button type="button" onClick={onClick} aria-label={label} aria-expanded={open} title={label} className={`grid place-items-center rounded-xl border transition ${compact ? 'h-12 w-8 border-white/[0.06] bg-white/[0.04] text-white/60 hover:bg-white/[0.09] hover:text-white' : 'h-14 w-11 border-surface-border bg-surface-card text-white/65 hover:bg-surface-border hover:text-white'}`}>
-    <ChevronDown className={`h-5 w-5 transition-transform ${open ? 'rotate-180' : ''}`} />
-  </button>;
+function AudioArrowButton({ label, open, onClick }: { label: string; open: boolean; onClick: () => void; compact?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} aria-expanded={open} title={label} className="ctl-arrow">
+      <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+    </button>
+  );
 }
 
 function AudioOption({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {

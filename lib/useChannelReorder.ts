@@ -80,6 +80,8 @@ export function useChannelReorder<T extends { id: string }>({
   move = moveItem,
   gap = 0,
   indicatorWidth,
+  shift = false,
+  dragScale = 1.015,
 }: {
   enabled: boolean;
   /** Itens na MESMA ordem em que aparecem na tela. */
@@ -91,6 +93,10 @@ export function useChannelReorder<T extends { id: string }>({
   gap?: number;
   /** Largura fixa (centralizada) do indicador; por padrão usa a largura do item. */
   indicatorWidth?: number;
+  /** Em vez de uma linha indicadora, os itens vizinhos deslizam para abrir espaço (listas planas). */
+  shift?: boolean;
+  /** Escala do item enquanto é arrastado. */
+  dragScale?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<DragSession | null>(null);
@@ -125,6 +131,11 @@ export function useChannelReorder<T extends { id: string }>({
       session.row.removeAttribute("data-dragging");
       try { session.row.releasePointerCapture(session.pointerId); } catch { /* ponteiro já liberado */ }
     }
+    const shiftContainer = containerRef.current;
+    if (shiftContainer) {
+      shiftContainer.removeAttribute("data-reorder-shifting");
+      shiftContainer.querySelectorAll<HTMLElement>("[data-reorder-id]").forEach((element) => { if (element.style.transform) element.style.transform = ""; });
+    }
     document.body.classList.remove("list-reordering");
     sessionRef.current = null;
     setDraggingId(null);
@@ -136,6 +147,33 @@ export function useChannelReorder<T extends { id: string }>({
     const container = containerRef.current;
     if (!container) return;
     const containerRect = container.getBoundingClientRect();
+    if (shift) {
+      // Mede pela posição de layout (offsetTop), ignorando os transforms de deslize, para não oscilar.
+      const all = Array.from(container.querySelectorAll<HTMLElement>("[data-reorder-id]"));
+      const layoutTop = (element: HTMLElement) => containerRect.top - container.scrollTop + element.offsetTop;
+      let nearest: { element: HTMLElement; after: boolean; distance: number } | null = null;
+      for (const element of all) {
+        if (element === session.row || element.offsetHeight === 0) continue;
+        const mid = layoutTop(element) + element.offsetHeight / 2;
+        const distance = Math.abs(session.lastY - mid);
+        if (!nearest || distance < nearest.distance) nearest = { element, after: session.lastY > mid, distance };
+      }
+      if (!nearest) { session.target = null; return; }
+      session.target = { id: nearest.element.dataset.reorderId!, after: nearest.after };
+      const sourceIndex = all.indexOf(session.row);
+      const insertAt = all.indexOf(nearest.element) + (nearest.after ? 1 : 0);
+      const newIndex = sourceIndex < insertAt ? insertAt - 1 : insertAt;
+      const step = session.row.offsetHeight + gap;
+      all.forEach((element, index) => {
+        if (element === session.row) return;
+        let offset = 0;
+        if (newIndex > sourceIndex && index > sourceIndex && index <= newIndex) offset = -step;
+        else if (newIndex < sourceIndex && index >= newIndex && index < sourceIndex) offset = step;
+        const value = offset ? `translate3d(0, ${offset}px, 0)` : "";
+        if (element.style.transform !== value) element.style.transform = value;
+      });
+      return;
+    }
     const rows = Array.from(container.querySelectorAll<HTMLElement>("[data-reorder-id]")).filter((element) => element !== session.row);
     let best: { element: HTMLElement; after: boolean; distance: number } | null = null;
     for (const element of rows) {
@@ -157,14 +195,14 @@ export function useChannelReorder<T extends { id: string }>({
       const next = { top: Math.round(y) - 1, left, width };
       return current && current.top === next.top && current.left === next.left && current.width === next.width ? current : next;
     });
-  }, [gap, indicatorWidth, markTarget]);
+  }, [gap, indicatorWidth, markTarget, shift]);
 
   const applyTransform = useCallback((session: DragSession) => {
     const container = containerRef.current;
     const scrollDelta = container ? container.scrollTop - session.startScrollTop : 0;
     const dy = session.lastY - session.startY + scrollDelta;
-    session.row.style.transform = `translate3d(0, ${dy}px, 0) scale(1.015)`;
-  }, []);
+    session.row.style.transform = `translate3d(0, ${dy}px, 0) scale(${dragScale})`;
+  }, [dragScale]);
 
   /** Rolagem automática ao arrastar perto das bordas da lista. */
   const autoScroll = useCallback((session: DragSession) => {
@@ -194,11 +232,12 @@ export function useChannelReorder<T extends { id: string }>({
     session.row.style.transition = "box-shadow 160ms ease, opacity 160ms ease";
     try { session.row.setPointerCapture(session.pointerId); } catch { /* sem captura: segue pelos eventos da janela */ }
     document.body.classList.add("list-reordering");
+    if (shift) containerRef.current?.setAttribute("data-reorder-shifting", "true");
     setDraggingId(session.id);
     applyTransform(session);
     updateTarget(session);
     autoScroll(session);
-  }, [applyTransform, autoScroll, updateTarget]);
+  }, [applyTransform, autoScroll, shift, updateTarget]);
 
   useEffect(() => {
     if (!enabled) return;
