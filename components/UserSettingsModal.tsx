@@ -19,7 +19,7 @@ import { useTheme } from "@/lib/useTheme";
 import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/ProfileImageModals";
 import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
-import { MemberListBannerArt } from "@/components/MemberListBannerArt";
+import { MemberListBannerPreview } from "@/components/MemberListBannerArt";
 import { ProfileDecoration, ProfileDecorationPicker } from "@/components/ProfileDecoration";
 import { isMissingProfileDecorationColumn, normalizeProfileDecoration, type ProfileDecorationId } from "@/lib/profileDecorations";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
@@ -814,12 +814,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                   </div>
                 </div>
                 <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Fica atrás do nome, meio transparente, com fade diagonal da direita até o canto inferior esquerdo.</p></div>
-                  <div className="relative mb-3 flex h-12 w-60 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
-                    {memberListBannerPreview && <MemberListBannerArt src={memberListBannerPreview} positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} playing />}
-                    <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/>
-                    <span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{displayName || "Seu nome"}</span>
-                  </div>
+                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">A imagem começa invisível e fica sólida um pouco depois do nome, até 100% na direita.</p></div>
+                  <MemberListBannerPreview src={memberListBannerPreview} name={displayName || "Seu nome"} positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} playing />
                   <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{memberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{memberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setMemberListBannerFile(null); setMemberListBannerPreview(""); setMemberListBannerCrop(DEFAULT_CROP); setRemoveMemberListBanner(true); }} aria-label="Remover banner da lista de membros" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                 </div>
                 <div className="grid gap-x-5 gap-y-1 md:grid-cols-2">
@@ -883,11 +879,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                     </div>
                   </div>
                   <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                    <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Personalização independente para este servidor, com o mesmo fade meio transparente.</p></div>
-                    <div className="relative mb-3 flex h-12 w-60 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
-                      {serverMemberListBannerPreview && <MemberListBannerArt src={serverMemberListBannerPreview} positionX={serverMemberListBannerCrop.x} positionY={serverMemberListBannerCrop.y} zoom={serverMemberListBannerCrop.zoom} playing />}
-                      <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/><span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{serverDisplayName || "Seu nome"}</span>
-                    </div>
+                    <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Personalização independente para este servidor, com o mesmo fade depois do nome.</p></div>
+                    <MemberListBannerPreview src={serverMemberListBannerPreview} name={serverDisplayName || "Seu nome"} positionX={serverMemberListBannerCrop.x} positionY={serverMemberListBannerCrop.y} zoom={serverMemberListBannerCrop.zoom} playing />
                     <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{serverMemberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{serverMemberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "server")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setServerMemberListBannerFile(null); setServerMemberListBannerPreview(""); setServerMemberListBannerCrop(DEFAULT_CROP); setRemoveServerMemberListBanner(true); }} aria-label="Remover banner da lista deste servidor" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                   </div>
                   <Field label="Nome neste servidor" hint={`${serverDisplayName.length}/32`}><input value={serverDisplayName} maxLength={32} onChange={(e) => setServerDisplayName(e.target.value)} placeholder="Nome de exibição" className={inputClass}/></Field>

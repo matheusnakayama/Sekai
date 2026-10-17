@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MEMBER_LIST_BANNER_MASK, MEMBER_LIST_BANNER_OPACITY } from "../lib/memberListBanner.ts";
+import { MEMBER_LIST_BANNER_FADE, memberListBannerMask } from "../lib/memberListBanner.ts";
 import {
   PROFILE_DECORATIONS,
   isMissingProfileDecorationColumn,
@@ -10,10 +10,12 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
-test("member list banner fades diagonally and stays semi-transparent", () => {
-  assert.match(MEMBER_LIST_BANNER_MASK, /to bottom left/);
-  assert.match(MEMBER_LIST_BANNER_MASK, /transparent 88%/);
-  assert.equal(MEMBER_LIST_BANNER_OPACITY, 0.8);
+test("member list banner fades from clear after the name to solid on the right", () => {
+  const mask = memberListBannerMask(90);
+  assert.match(mask, /90deg/);
+  assert.match(mask, /transparent 0px, transparent 90px/);
+  assert.match(mask, new RegExp(`#000 ${90 + MEMBER_LIST_BANNER_FADE}px, #000 100%`));
+  assert.match(memberListBannerMask(-8), /transparent 0px, transparent 0px/);
 });
 
 test("profile decorations are a fixed catalog of ten original frames", () => {

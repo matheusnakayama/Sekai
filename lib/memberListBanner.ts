@@ -1,9 +1,15 @@
-/**
- * Fade diagonal e suave, como o banner antigo: a direita fica visível
- * e a imagem some em direção ao canto inferior esquerdo.
- * A opacidade do elemento deixa o fundo da linha aparecer por trás.
- */
-export const MEMBER_LIST_BANNER_MASK =
-  "linear-gradient(to bottom left, #000 0%, #000 22%, rgba(0,0,0,.62) 46%, rgba(0,0,0,.22) 68%, transparent 88%)";
+/** Distância depois do nome antes de a imagem começar a aparecer. */
+export const MEMBER_LIST_BANNER_GAP = 12;
 
-export const MEMBER_LIST_BANNER_OPACITY = 0.8;
+/** Quanto a opacidade leva para ir de 0 a 100%, da esquerda para a direita. */
+export const MEMBER_LIST_BANNER_FADE = 68;
+
+/**
+ * Máscara horizontal: transparente até um pouco depois do nome,
+ * depois sobe até opacidade total na direita.
+ */
+export function memberListBannerMask(nameEnd: number) {
+  const start = Math.max(0, Math.round(nameEnd));
+  const solid = start + MEMBER_LIST_BANNER_FADE;
+  return `linear-gradient(90deg, transparent 0px, transparent ${start}px, #000 ${solid}px, #000 100%)`;
+}
