@@ -569,8 +569,9 @@ export function ChannelSidebar({
       )}
       {/* Painel do usuário */}
       <CurrentUserProfileMenu user={currentUser} onOpenSettings={onOpenSettings} onViewProfile={onViewProfile} onPresenceChange={onPresenceChange}>
-      {({ toggle, openSettings, isOpen, triggerRef }) => <div ref={triggerRef} className="profile-footer group relative flex h-[52px] items-center gap-2 rounded-lg border border-transparent bg-discord-bg-darkest px-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
-        <button onClick={toggle} aria-label="Abrir menu do perfil" aria-expanded={isOpen} className={`relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
+      {({ toggle, openSettings, isOpen, triggerRef }) => <div ref={triggerRef} className="profile-footer group relative flex flex-col gap-1 rounded-lg border border-transparent bg-discord-bg-darkest px-2 py-2 transition-colors duration-200 hover:border-white/5 hover:bg-discord-bg-modifier-hover/70 focus-within:border-white/10">
+        <div className="flex min-w-0 items-center gap-2">
+        <button onClick={toggle} aria-label="Abrir menu do perfil" aria-expanded={isOpen} className={`profile-footer-avatar relative h-8 w-8 shrink-0 rounded-full bg-discord-brand ring-offset-2 ring-offset-discord-bg-darkest transition hover:ring-2 hover:ring-discord-brand ${currentUser.isSpeaking ? "voice-speaking-avatar" : ""}`}>
           <span className="absolute inset-0 overflow-hidden rounded-full">
             {currentUser.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -591,8 +592,9 @@ export function ChannelSidebar({
             <span className="profile-footer-username absolute inset-0 truncate">{currentUser.username || currentUser.userId.slice(0, 8)}</span>
           </p>
         </button>
+        </div>
 
-        <div className="profile-footer-actions flex items-center gap-0.5">
+        <div className="profile-footer-actions flex items-center justify-end gap-0.5 border-t border-white/[0.06] pt-1">
           <ThemePicker placement="up" align="left" />
 
           <button

@@ -722,10 +722,6 @@ export function ChatArea({
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, message });
           }} className={`group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
-            {editing?.id !== message.id && <div className="pointer-events-none absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-full border border-white/[0.06] bg-[#18191c]/95 p-0.5 shadow-md backdrop-blur group-hover:pointer-events-auto group-hover:flex">
-              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-75 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
-              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
-            </div>}
             {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-0 w-10 shrink-0" />}
             {chatDisplay.showAvatars && !isGroupedMessage && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
@@ -783,6 +779,11 @@ export function ChatArea({
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-discord-brand/15 text-discord-brand"><FileText size={18}/></span><span className="min-w-0"><span className="block max-w-[min(60vw,320px)] truncate text-sm font-medium">{message.attachmentName || "Arquivo anexado"}</span><span className="block text-[10px] text-discord-text-muted">{message.attachmentMimeType}</span></span>
                 </a>
               )}
+
+              {editing?.id !== message.id && <div className="pointer-events-none mt-1.5 hidden w-fit items-center gap-0.5 rounded-lg border border-white/[0.06] bg-discord-bg-floating/95 px-1 py-0.5 shadow-md group-hover:pointer-events-auto group-hover:flex">
+                {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="chat-inline-control grid h-7 w-7 place-items-center rounded-md text-[13px] opacity-80 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
+                <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="chat-inline-control grid h-7 w-7 place-items-center rounded-md text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
+              </div>}
 
               {chatDisplay.showReactions && message.reactions && message.reactions.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
@@ -951,10 +952,26 @@ export function ChatArea({
 
         <form
           onSubmit={handleSubmit}
-          className="sekai-composer flex min-h-12 items-center gap-1.5 px-2 py-1.5 sm:gap-2 sm:px-4 sm:py-2.5"
+          className="sekai-composer flex flex-col gap-1 px-2 py-2 sm:px-3 sm:py-2.5"
         >
+          <textarea
+            ref={composerRef}
+            rows={1}
+            maxLength={4000}
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); refreshMentionSearch(e.target.value, e.target.selectionStart); }}
+            onKeyDown={onComposerKeyDown}
+            onKeyUp={(e) => { if (!["Escape", "ArrowDown", "ArrowUp", "Enter"].includes(e.key)) refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart); }}
+            onClick={(e) => refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart)}
+            onPaste={handlePaste}
+            onBlur={() => setMentionSearch(null)}
+            placeholder={`Mensagem para ${channelName}`}
+            className="max-h-40 min-h-8 w-full resize-none bg-transparent px-1 py-1 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
+          />
+          <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-1.5">
+          <div className="flex min-w-0 items-center gap-0.5">
           <div ref={composerToolsRef} className="relative shrink-0">
-            <button type="button" onClick={() => { setComposerToolsOpen((open) => !open); setAppsOpen(false); }} aria-label="Abrir opções do chat" aria-haspopup="menu" aria-expanded={composerToolsOpen} className="sekai-seal h-9 w-9 text-white">
+            <button type="button" onClick={() => { setComposerToolsOpen((open) => !open); setAppsOpen(false); }} aria-label="Abrir opções do chat" aria-haspopup="menu" aria-expanded={composerToolsOpen} className="grid h-9 w-9 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white">
               <Plus className="h-5 w-5" />
             </button>
             {composerToolsOpen && <div role="menu" aria-label="Opções do chat" className="sekai-command-menu absolute bottom-[calc(100%+12px)] left-0 z-[100] w-[min(300px,calc(100vw-28px))] p-1.5">
@@ -975,23 +992,8 @@ export function ChatArea({
           </div>
           <input ref={attachmentInput} type="file" accept="*/*" className="hidden" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
-          <textarea
-            ref={composerRef}
-            rows={1}
-            maxLength={4000}
-            value={draft}
-            onChange={(e) => { setDraft(e.target.value); refreshMentionSearch(e.target.value, e.target.selectionStart); }}
-            onKeyDown={onComposerKeyDown}
-            onKeyUp={(e) => { if (!["Escape", "ArrowDown", "ArrowUp", "Enter"].includes(e.key)) refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart); }}
-            onClick={(e) => refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart)}
-            onPaste={handlePaste}
-            onBlur={() => setMentionSearch(null)}
-            placeholder={`Mensagem para ${channelName}`}
-            className="max-h-40 min-h-6 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
-          />
-
           <div ref={emojiPickerRef} className="relative">
-            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] right-0 z-[90] w-[min(360px,calc(100vw-16px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
+            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] left-0 z-[90] w-[min(360px,calc(100vw-16px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
               <div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-discord-text-muted">Emojis</p><span className="text-[10px] text-discord-text-muted">Clique para inserir</span></div>
               <div className="grid max-h-[min(45dvh,360px)] grid-cols-6 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1 sm:max-h-48 sm:grid-cols-8">
                 {STANDARD_EMOJIS.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={`Inserir ${emoji}`} className="grid h-10 w-10 place-self-center place-items-center rounded-lg text-2xl transition hover:bg-white/10">{emoji}</button>)}
@@ -1006,14 +1008,17 @@ export function ChatArea({
                 </div>
               </>}
             </div>}
-            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
+            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white">
               <Smile className="h-5 w-5" />
             </button>
           </div>
+          </div>
 
-          <button type="submit" disabled={uploading} aria-label={pendingPastedImage ? "Enviar imagem" : "Enviar mensagem"} className="sekai-send grid h-10 w-10 shrink-0 place-items-center text-white disabled:cursor-wait disabled:opacity-50">
-            <SendHorizontal className="h-5 w-5" />
+          <button type="submit" disabled={uploading} aria-label={pendingPastedImage ? "Enviar imagem" : "Enviar mensagem"} className="sekai-send inline-flex h-9 shrink-0 items-center gap-1.5 px-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-50">
+            Enviar
+            <SendHorizontal className="h-4 w-4" />
           </button>
+          </div>
         </form>
       </div>
       {topicDraft && <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !topicBusy) setTopicDraft(null); }}>

@@ -471,12 +471,14 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
         onViewProfile={onViewProfile}
         onPresenceChange={onPresenceChange}
       >
-        {({ toggle, openSettings, isOpen, triggerRef }) => <footer ref={triggerRef} className="flex h-[60px] shrink-0 items-center gap-2 bg-discord-bg-darkest px-2">
-          <button type="button" onClick={toggle} aria-expanded={isOpen} aria-label="Abrir seu perfil" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-discord-bg-modifier-hover">
+        {({ toggle, openSettings, isOpen, triggerRef }) => <footer ref={triggerRef} className="flex shrink-0 flex-col gap-1 bg-discord-bg-darkest px-2 py-2">
+          <button type="button" onClick={toggle} aria-expanded={isOpen} aria-label="Abrir seu perfil" className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-discord-bg-modifier-hover">
             <FriendAvatar profile={ownProfile()} size="sm" statusSurface="rgb(var(--d-darkest))" />
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-discord-header-primary">{currentUserProfile?.display_name || "Você"}</span><span className="block truncate text-xs text-discord-text-muted">{currentUserProfile?.custom_status || `@${currentUserProfile?.username || "voce"}`}</span></span>
           </button>
-          <button type="button" onClick={openSettings} title="Configurações de usuário" aria-label="Abrir configurações de usuário" className="rounded-md p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"><Settings size={18}/></button>
+          <div className="flex items-center justify-end border-t border-white/[0.06] pt-1">
+            <button type="button" onClick={openSettings} title="Configurações de usuário" aria-label="Abrir configurações de usuário" className="rounded-md p-2 text-discord-text-muted transition hover:bg-discord-bg-modifier-hover hover:text-discord-text-normal"><Settings size={18}/></button>
+          </div>
         </footer>}
       </CurrentUserProfileMenu>
     </aside>
@@ -542,11 +544,15 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
               <ChatMessageBody content={dmDraft} preferences={chatDisplay} previewLinks={false} mentionNames={dmMentionNames} />
             </div>
           )}
-          <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex min-h-14 items-center gap-1 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:mx-5 sm:gap-3 sm:px-4 sm:py-2">
-            <label title="Enviar imagem" aria-label="Enviar imagem" className={`grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={21}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
-            <input maxLength={4000} value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} onPaste={(event) => { const imageItem = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/")); const file = imageItem?.getAsFile(); if (file) { event.preventDefault(); void uploadDmImage(file); } }} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-w-0 flex-1 bg-transparent py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
-            <button type="button" onClick={() => setDmDraft((draft) => `${draft}${draft ? " " : ""}🙂`)} title="Adicionar emoji" aria-label="Adicionar emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-white"><Smile size={20}/></button>
-            <button type="submit" aria-label="Enviar mensagem" disabled={!dmDraft.trim() || uploadingImage} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 disabled:opacity-35"><Send size={19}/></button>
+          <form onSubmit={sendDirectMessage} className="mx-2 mb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col gap-1 rounded-xl bg-discord-bg-secondary px-2 py-2 sm:mx-5">
+            <input maxLength={4000} value={dmDraft} onChange={(event) => setDmDraft(event.target.value)} onPaste={(event) => { const imageItem = Array.from(event.clipboardData.items).find((item) => item.kind === "file" && item.type.startsWith("image/")); const file = imageItem?.getAsFile(); if (file) { event.preventDefault(); void uploadDmImage(file); } }} placeholder={`Enviar mensagem para @${activeFriend.username}`} aria-label={`Enviar mensagem para ${activeFriend.display_name || activeFriend.username}`} className="min-h-8 w-full bg-transparent px-1 py-1 text-base text-discord-text-normal outline-none placeholder:text-discord-text-muted sm:text-sm"/>
+            <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-1.5">
+              <div className="flex items-center gap-0.5">
+                <label title="Enviar imagem" aria-label="Enviar imagem" className={`grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white ${uploadingImage ? "pointer-events-none opacity-50" : ""}`}><ImageIcon size={18}/><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" disabled={uploadingImage} onChange={(event) => { void uploadDmImage(event.target.files?.[0]); event.currentTarget.value = ""; }}/></label>
+                <button type="button" onClick={() => setDmDraft((draft) => `${draft}${draft ? " " : ""}🙂`)} title="Adicionar emoji" aria-label="Adicionar emoji" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><Smile size={18}/></button>
+              </div>
+              <button type="submit" aria-label="Enviar mensagem" disabled={!dmDraft.trim() || uploadingImage} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-discord-brand px-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-35">Enviar<Send size={16}/></button>
+            </div>
           </form>
           {message && <p role="alert" className="mx-5 -mt-2 mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
         </section>
