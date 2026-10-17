@@ -447,6 +447,7 @@ export default function Home() {
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [voiceProfileUserId, setVoiceProfileUserId] = useState<string | null>(null);
+  const [sekaiPeopleOpen, setSekaiPeopleOpen] = useState(false);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -2300,14 +2301,14 @@ export default function Home() {
   };
 
   return (
-    <div id="sekai-app-root" className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
+    <div id="sekai-app-root" data-people={sekaiPeopleOpen ? "open" : "closed"} className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
       <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <GameActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       {!callFullscreen && <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />}
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      <div className="app-columns relative flex min-h-0 flex-1 overflow-hidden">
       {!callFullscreen && mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      <div className={callFullscreen ? "hidden" : mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
+      <div className={callFullscreen ? "sekai-nav hidden" : mobileNavigationOpen ? "sekai-nav fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "sekai-nav hidden md:flex md:h-full"}>
       <div className="server-rail-hover relative flex h-full min-h-0">
       <span className="server-rail-hotspot" aria-hidden="true" />
       <div className="server-rail-shell flex h-full shrink-0">
@@ -2510,7 +2511,8 @@ export default function Home() {
       )}
 
       {/* A chamada fica montada enquanto você está conectado; só aparece quando a tela dela está aberta. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="sekai-stage relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {activeServerId && !callOpenHere && <button type="button" className="sekai-people-toggle" aria-pressed={sekaiPeopleOpen} onClick={() => setSekaiPeopleOpen((open) => !open)}><Users className="h-4 w-4" />Pessoas</button>}
       {!callOpenHere && !!activeServerId && <header className="flex h-14 shrink-0 items-center gap-3 border-b border-black/20 bg-discord-bg-secondary/80 px-3 shadow-sm md:hidden">
         <button type="button" onClick={() => { setMobileMembersOpen(false); setMobileNavigationOpen(true); }} aria-label="Abrir servidores e canais" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-header-primary active:scale-95"><Menu className="h-5 w-5"/></button>
         <div className="min-w-0 flex-1">
@@ -2691,7 +2693,8 @@ export default function Home() {
       </div>
 
       {mobileMembersOpen && !callOpenHere && <button type="button" aria-label="Fechar lista de membros" onClick={() => setMobileMembersOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      {!callOpenHere && !!activeServerId && <div className={mobileMembersOpen ? "fixed bottom-[env(safe-area-inset-bottom)] right-0 top-[env(safe-area-inset-top)] z-[160] flex w-60 shadow-2xl md:static md:z-auto md:h-full md:shadow-none" : "hidden md:flex md:h-full"}><button type="button" onClick={() => setMobileMembersOpen(false)} aria-label="Fechar lista de membros" className="absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg bg-discord-bg-primary text-discord-text-normal shadow-md md:hidden"><X className="h-5 w-5"/></button><MemberList
+      {sekaiPeopleOpen && !callOpenHere && !!activeServerId && <button type="button" className="sekai-people-backdrop" aria-label="Fechar pessoas" onClick={() => setSekaiPeopleOpen(false)} />}
+      {!callOpenHere && !!activeServerId && <div className={mobileMembersOpen ? "sekai-people fixed bottom-[env(safe-area-inset-bottom)] right-0 top-[env(safe-area-inset-top)] z-[160] flex w-60 shadow-2xl md:static md:z-auto md:h-full md:shadow-none" : "sekai-people hidden md:flex md:h-full"}><button type="button" onClick={() => setMobileMembersOpen(false)} aria-label="Fechar lista de membros" className="absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg bg-discord-bg-primary text-discord-text-normal shadow-md md:hidden"><X className="h-5 w-5"/></button><MemberList
         members={members}
         currentUserId={currentUserId}
         onAddFriend={handleAddFriend}

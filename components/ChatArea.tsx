@@ -721,7 +721,7 @@ export function ChatArea({
           <div onContextMenu={(event) => {
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, message });
-          }} className={`group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
+          }} data-own={message.authorId === currentUserId ? "true" : "false"} className={`chat-entry group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
             {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-0 w-10 shrink-0" />}
             {chatDisplay.showAvatars && !isGroupedMessage && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">

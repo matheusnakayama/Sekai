@@ -906,6 +906,160 @@ html[data-layout="sekai"] .server-rail-shell:focus-within {
   }
 }
 
+.sekai-people-toggle,
+.sekai-people-backdrop { display: none; }
+
+@media (min-width: 768px) {
+  html[data-layout="sekai"] #sekai-app-root:not(.fixed) {
+    padding: 12px;
+    background:
+      radial-gradient(880px 420px at 0% 0%, color-mix(in srgb, var(--g2) 24%, transparent), transparent 58%),
+      radial-gradient(720px 420px at 100% 100%, color-mix(in srgb, var(--g4) 18%, transparent), transparent 52%),
+      #0b0d12;
+  }
+
+  html[data-layout="sekai"] #sekai-app-root:not(.fixed) > .h-\[3px\] { display: none; }
+
+  html[data-layout="sekai"] .app-columns { gap: 12px; }
+
+  html[data-layout="sekai"] .sekai-nav,
+  html[data-layout="sekai"] .sekai-stage {
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  }
+
+  html[data-layout="sekai"] .sekai-nav { background: rgb(var(--d-dark)); }
+
+  html[data-layout="sekai"] .sekai-nav .server-view-enter {
+    width: 19rem;
+    background: transparent;
+  }
+
+  html[data-layout="sekai"] .server-rail-shell {
+    border-radius: 24px 0 0 24px;
+    overflow: hidden;
+  }
+
+  html[data-layout="sekai"] .channel-row { margin-inline: 6px; }
+
+  html[data-layout="sekai"] .channel-row > div > button {
+    border-radius: 12px;
+    min-height: 36px;
+  }
+
+  html[data-layout="sekai"] .conversation-rail {
+    margin: 10px;
+    height: auto;
+    align-self: stretch;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  html[data-layout="sekai"] .sekai-people {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 35;
+    height: auto;
+    width: 17.5rem;
+    transform: translateX(calc(100% + 28px));
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(var(--d-dark));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+  }
+
+  html[data-layout="sekai"] #sekai-app-root[data-people="open"] .sekai-people {
+    transform: translateX(0);
+  }
+
+  html[data-layout="sekai"] .sekai-people .member-roster {
+    width: 100%;
+    background: transparent;
+  }
+}
+
+html[data-layout="sekai"] .sekai-people-toggle {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 14, 18, 0.72);
+  color: white;
+  font-size: 12px;
+  font-weight: 650;
+  backdrop-filter: blur(10px);
+}
+
+html[data-layout="sekai"] .sekai-people-toggle[aria-pressed="true"] {
+  background: rgb(var(--d-brand));
+  border-color: transparent;
+}
+
+html[data-layout="sekai"] .sekai-people-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: block;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+html[data-layout="sekai"] .chat-theme-canvas > .flex.h-14 {
+  height: 58px;
+  margin: 8px 8px 0;
+  padding-right: 7.5rem;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: none;
+}
+
+html[data-layout="sekai"] .sekai-composer {
+  margin: 4px 14px 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+html[data-layout="sekai"] .chat-entry {
+  width: max-content;
+  max-width: min(78%, 680px);
+  margin: 3px 10px;
+  border-radius: 6px 18px 18px 18px;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 8px 12px;
+}
+
+html[data-layout="sekai"] .chat-entry:hover { background: rgba(255, 255, 255, 0.08); }
+
+html[data-layout="sekai"] .chat-entry > .min-w-0 { flex: 1 1 auto; }
+
+html[data-layout="sekai"] .chat-entry[data-own="true"] {
+  margin-left: auto;
+  flex-direction: row-reverse;
+  border-radius: 18px 6px 18px 18px;
+  background: color-mix(in srgb, rgb(var(--d-brand)) 42%, #182033);
+}
+
+html[data-layout="sekai"] .chat-entry[data-own="true"]:hover {
+  background: color-mix(in srgb, rgb(var(--d-brand)) 52%, #182033);
+}
+
 .server-icon-button:not(:disabled):hover {
   transform: scale(1.07);
 }
@@ -1179,6 +1333,7 @@ html[data-layout="sekai"] .server-rail-shell:focus-within {
   .server-name-tooltip-enter,
   .server-rail-pill-active,
   .server-rail-shell,
+  .sekai-people,
   .server-view-enter,
   .custom-profile-badge,
   .settings-backdrop-enter,

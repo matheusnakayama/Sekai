@@ -437,7 +437,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
   }
 
   return <div className="flex min-w-0 flex-1 overflow-hidden bg-discord-bg-primary">
-    <aside className="hidden w-[270px] shrink-0 flex-col border-r border-black/20 bg-discord-bg-secondary/70 md:flex">
+    <aside className="conversation-rail hidden w-[270px] shrink-0 flex-col border-r border-black/20 bg-discord-bg-secondary/70 md:flex">
       <div className="p-3"><label className="flex w-full items-center gap-2 rounded-lg bg-discord-bg-primary/70 px-3 py-2 text-sm text-discord-text-muted transition focus-within:ring-1 focus-within:ring-white/20"><Search size={16}/><input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Buscar" aria-label="Buscar conversas" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-discord-text-muted" />{conversationSearch && <button type="button" onClick={() => setConversationSearch("")} aria-label="Limpar busca"><X size={14}/></button>}</label></div>
       <nav className="space-y-1 px-2">
         <button onClick={() => { setSelectedFriend(null); setTab("online"); }} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${tab === "online" && !selectedFriend ? "bg-discord-bg-modifier-hover text-white" : "text-discord-text-muted hover:bg-discord-bg-modifier-hover/60"}`}><Users size={18}/>Amigos online</button>
