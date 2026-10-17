@@ -5,6 +5,8 @@ import type { RoleBadge } from "@/components/RoleBadgeList";
 import { RoleInsignia } from "@/components/RoleBadgeList";
 import { MemberContextMenu } from "@/components/MemberContextMenu";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
+import { MemberListBannerArt } from "@/components/MemberListBannerArt";
+import { memberListBannerWidth } from "@/lib/memberListBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { GameActivityLine, ListeningLine, useGameActivityByUser, useListeningByUser } from "@/components/NowPlayingCard";
 import { MemberProfileDialog } from "@/components/MemberProfileDialog";
@@ -36,6 +38,7 @@ export interface MemberItem {
   avatarPositionY?: number | null;
   avatarZoom?: number | null;
   profileCardColor?: string | null;
+  profileDecoration?: string | null;
   badges?: CustomBadge[];
   showBadgesInMemberList?: boolean;
   status: "online" | "idle" | "dnd" | "offline";
@@ -255,7 +258,7 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
   const [hovered, setHovered] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
-  const [bannerStart, setBannerStart] = useState(112);
+  const [bannerWidth, setBannerWidth] = useState(0);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -265,7 +268,8 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
       const rowBounds = row.getBoundingClientRect();
       const nameBounds = name.getBoundingClientRect();
       const visibleNameWidth = Math.min(name.scrollWidth, name.clientWidth);
-      setBannerStart(Math.max(0, Math.min(rowBounds.width, nameBounds.left - rowBounds.left + visibleNameWidth + 8)));
+      const contentEnd = Math.max(0, Math.min(rowBounds.width, nameBounds.left - rowBounds.left + visibleNameWidth + 10));
+      setBannerWidth(memberListBannerWidth(rowBounds.width, contentEnd));
     };
     updateStart();
     const observer = new ResizeObserver(updateStart);
@@ -274,15 +278,9 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
     return () => observer.disconnect();
   }, [member.displayName, member.memberListBannerUrl]);
 
-  const bannerFadeStart = Math.max(0, bannerStart - 12);
-  const bannerMask = `linear-gradient(90deg, transparent 0, transparent ${bannerFadeStart}px, rgba(0,0,0,.035) ${bannerStart}px, rgba(0,0,0,.14) ${bannerStart + 14}px, rgba(0,0,0,.46) ${bannerStart + 34}px, black ${bannerStart + 58}px, black 100%)`;
-
   return (
-    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[44px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
-      {member.memberListBannerUrl && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 opacity-80" style={{ maskImage: bannerMask, WebkitMaskImage: bannerMask }}>
-        <CroppedProfileImage src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} pauseGif isHovered={hovered} />
-        <span className="absolute inset-0 bg-gradient-to-l from-black/35 via-black/10 to-transparent" />
-      </div>}
+    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[42px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+      {member.memberListBannerUrl && <MemberListBannerArt src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} width={bannerWidth} hovered={hovered} />}
       <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(member, rowRef.current ?? event.currentTarget); }} aria-label={`Abrir cartão de ${member.displayName}`} title={`Abrir cartão de ${member.displayName}`} className="relative z-10 h-8 w-8 shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
@@ -298,7 +296,7 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
 
       <span className="relative z-10 flex min-w-0 flex-1 flex-col justify-center">
         <span className="flex min-w-0 items-center gap-1 leading-4">
-          <span ref={nameRef} className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]" style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
+          <span ref={nameRef} className={cn("min-w-0 truncate text-[13px] font-semibold tracking-[-0.011em]", member.memberListBannerUrl && "[text-shadow:0_1px_2px_rgba(0,0,0,.72)]")} style={{ color: member.roleColor || "#f2f3f5" }}>{member.displayName}</span>
           {member.showBadgesInMemberList !== false && <CustomBadgeList badges={member.badges} limit={3} respectMemberListVisibility />}
         </span>
         {gameActivity ? <GameActivityLine activity={gameActivity} /> : listening ? <ListeningLine track={listening.track} artUrl={listening.artUrl} /> : member.customStatus && <span title={member.customStatus} className="min-w-0 truncate text-[11px] font-medium leading-[14px] tracking-[-0.006em] text-[#b5bac1]">{member.customStatus}</span>}

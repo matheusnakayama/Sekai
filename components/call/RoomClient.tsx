@@ -23,6 +23,7 @@ import { isPlayableAudioFile, startCallMusicPlayback, stopCallMusicPlayback, typ
 import { buildDisplayMediaRequest, prepareScreenAudioTrack, screenShareFailureMessage } from '@/lib/screenShare';
 import { advanceVoiceGate, createVoiceGate, openCallInput, releaseCallInput, releaseCallInputTrack, setVoiceInputVolume, voiceDeviceId } from '@/lib/voiceCapture';
 import { readVoicePreferences, saveVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT, type VoicePreferences } from '@/lib/voicePreferences';
+import { playUiSound } from '@/lib/uiSounds';
 import { inviteUrl } from '@/lib/invites';
 import type {
   CallError,
@@ -737,6 +738,7 @@ export default function RoomClient({
         });
 
         setPhase('in-call');
+        playUiSound('call-join');
 
         others.forEach((member) => manager.preparePeerConnection(member.id));
 
@@ -776,6 +778,7 @@ export default function RoomClient({
             [member.id]: { ...participant, ...prev[member.id], name: memberName, avatarUrl: member.info?.avatarUrl ?? null, joinedAt: Number.isFinite(member.info?.joinedAt) ? member.info.joinedAt : Date.now() },
           };
         });
+        playUiSound('call-join');
         manager.preparePeerConnection(member.id);
         if (localIdRef.current < member.id) {
           manager.callPeer(member.id).catch(() => {
@@ -791,6 +794,7 @@ export default function RoomClient({
       });
 
       channel.bind('pusher:member_removed', (member: PresenceMember) => {
+        playUiSound('call-leave');
         manager.hangupPeer(member.id);
         participantNamesRef.current.delete(member.id);
         participantAvatarsRef.current.delete(member.id);

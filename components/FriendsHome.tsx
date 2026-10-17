@@ -9,6 +9,8 @@ import { HoverGifImage } from "@/components/HoverGifImage";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
+import { ProfileDecoration } from "@/components/ProfileDecoration";
+import { isMissingProfileDecorationColumn, withProfileDecorationColumn, withoutProfileDecorationColumn } from "@/lib/profileDecorations";
 import type { ProfileCardPosition, ProfileCardUser } from "@/components/UserProfileCard";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { PresenceIndicator, type Presence } from "@/components/PresenceIndicator";
@@ -36,10 +38,10 @@ interface FriendHomeProps {
   onJoinDirectCall?: (peerId: string, peerName: string, sendInvite: boolean) => void;
   activeDirectCallPeerId?: string | null;
   onOpenDirectCall?: () => void;
-  currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[]; status?: string | null };
+  currentUserProfile?: { display_name?: string | null; username?: string; avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; profile_decoration?: string | null; badges?: CustomBadge[]; status?: string | null };
 }
 
-type Profile = { id: string; username: string; display_name: string | null; avatar_url: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; status: string | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; badges?: CustomBadge[] };
+type Profile = { id: string; username: string; display_name: string | null; avatar_url: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null; status: string | null; banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null; bio?: string | null; custom_status?: string | null; pronouns?: string | null; profile_card_color?: string | null; profile_decoration?: string | null; badges?: CustomBadge[] };
 type Friendship = { id: string; sender_id: string; receiver_id: string; status: "pending" | "accepted"; sender?: Profile; receiver?: Profile };
 type ServerInvite = { id: string; sender_id: string; server_id: string; server_name: string; channel_id: string | null; status: "pending" | "accepted"; sender?: Profile };
 type DirectMessage = { id: string; sender_id: string; receiver_id: string; content: string; attachment_url: string | null; created_at: string };
@@ -94,17 +96,29 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
 
   const loadFriends = useCallback(async () => {
     const friendshipSelect = "id,sender_id,receiver_id,status,created_at,sender:profiles!friendships_sender_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color),receiver:profiles!friendships_receiver_id_fkey(id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color)";
-    const [{ data: sent, error: sentError }, { data: received, error: receivedError }, { data: inviteRows }] = await Promise.all([
-      supabase.from("friendships").select(friendshipSelect).eq("sender_id", currentUserId).order("created_at", { ascending: false }),
-      supabase.from("friendships").select(friendshipSelect).eq("receiver_id", currentUserId).order("created_at", { ascending: false }),
+    const decoratedFriendshipSelect = withProfileDecorationColumn(friendshipSelect);
+    let [{ data: sent, error: sentError }, { data: received, error: receivedError }, { data: inviteRows }] = await Promise.all([
+      supabase.from("friendships").select(decoratedFriendshipSelect).eq("sender_id", currentUserId).order("created_at", { ascending: false }),
+      supabase.from("friendships").select(decoratedFriendshipSelect).eq("receiver_id", currentUserId).order("created_at", { ascending: false }),
       supabase.from("friend_server_invites")
         .select("id,sender_id,server_id,server_name,channel_id,status,sender:profiles!friend_server_invites_sender_id_fkey(id,username,display_name,avatar_url,status)")
         .eq("receiver_id", currentUserId).eq("status", "pending").order("created_at", { ascending: false }),
     ]);
+    if ((sentError && isMissingProfileDecorationColumn(sentError)) || (receivedError && isMissingProfileDecorationColumn(receivedError))) {
+      const retry = await Promise.all([
+        supabase.from("friendships").select(withoutProfileDecorationColumn(decoratedFriendshipSelect)).eq("sender_id", currentUserId).order("created_at", { ascending: false }),
+        supabase.from("friendships").select(withoutProfileDecorationColumn(decoratedFriendshipSelect)).eq("receiver_id", currentUserId).order("created_at", { ascending: false }),
+      ]);
+      sent = retry[0].data;
+      sentError = retry[0].error;
+      received = retry[1].data;
+      receivedError = retry[1].error;
+    }
     const error = sentError ?? receivedError;
     if (error) { setMessage(explainDatabaseError(error, "friends")); return; }
-    const data = [...(sent ?? []), ...(received ?? [])].sort((left, right) => right.created_at.localeCompare(left.created_at));
-    setRequests((data ?? []) as unknown as Friendship[]);
+    const data = [...(sent ?? []), ...(received ?? [])] as unknown as Array<Friendship & { created_at: string }>;
+    data.sort((left, right) => right.created_at.localeCompare(left.created_at));
+    setRequests(data);
     setServerInvites((inviteRows ?? []) as unknown as ServerInvite[]);
   }, [currentUserId, supabase]);
 
@@ -137,8 +151,13 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
     const data = [...(sent.data ?? []), ...(received.data ?? [])].sort((left, right) => right.created_at.localeCompare(left.created_at)).slice(0, 100);
     const ids = Array.from(new Set((data ?? []).map((row) => row.sender_id === currentUserId ? row.receiver_id : row.sender_id))).filter((id) => id !== currentUserId);
     if (!ids.length) { setRecentProfiles([]); return; }
-    const { data: profiles } = await supabase.from("profiles").select("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color").in("id", ids);
-    setRecentProfiles((profiles ?? []) as Profile[]);
+    const recentColumns = withProfileDecorationColumn("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color");
+    let { data: profiles, error: profileError } = await supabase.from("profiles").select(recentColumns).in("id", ids);
+    if (profileError && isMissingProfileDecorationColumn(profileError)) {
+      const retry = await supabase.from("profiles").select(withoutProfileDecorationColumn(recentColumns)).in("id", ids);
+      profiles = retry.data;
+    }
+    setRecentProfiles((profiles ?? []) as unknown as Profile[]);
   }, [currentUserId, supabase]);
 
   useEffect(() => { void loadRecentProfiles(); }, [loadRecentProfiles]);
@@ -157,8 +176,10 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       return;
     }
     let cancelled = false;
-    void supabase.from("profiles").select("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color").eq("id", openUserId).maybeSingle().then(({ data }) => {
-      if (!cancelled && data) { setSelectedFriend(data as Profile); onMarkDirectRead?.(data.id); }
+    const openColumns = withProfileDecorationColumn("id,username,display_name,avatar_url,avatar_position_x,avatar_position_y,avatar_zoom,status,banner_url,banner_position_x,banner_position_y,banner_zoom,bio,custom_status,pronouns,profile_card_color");
+    void supabase.from("profiles").select(openColumns).eq("id", openUserId).maybeSingle().then(async ({ data, error: openError }) => {
+      const profile = data ?? (openError && isMissingProfileDecorationColumn(openError) ? (await supabase.from("profiles").select(withoutProfileDecorationColumn(openColumns)).eq("id", openUserId).maybeSingle()).data : null);
+      if (!cancelled && profile) { const row = profile as unknown as Profile; setSelectedFriend(row); onMarkDirectRead?.(row.id); }
       onDirectMessageOpened?.();
     });
     return () => { cancelled = true; };
@@ -383,6 +404,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
         bannerPositionY: profile.banner_position_y,
         bannerZoom: profile.banner_zoom,
         profileCardColor: profile.profile_card_color,
+        profileDecoration: profile.profile_decoration,
         badges: profile.badges,
         status,
         roleName: "Membro",
@@ -408,6 +430,7 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
       custom_status: currentUserProfile?.custom_status ?? null,
       pronouns: currentUserProfile?.pronouns ?? null,
       profile_card_color: currentUserProfile?.profile_card_color ?? null,
+      profile_decoration: currentUserProfile?.profile_decoration ?? null,
       badges: currentUserProfile?.badges ?? [],
       status: currentUserProfile?.status ?? "offline",
     };
@@ -527,11 +550,12 @@ export function FriendsHome({ currentUserId, servers, onJoined, openUserId, onDi
           </form>
           {message && <p role="alert" className="mx-5 -mt-2 mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{message}</p>}
         </section>
-        {profilePanelOpen && <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(86vw,320px)] shrink-0 flex-col overflow-y-auto border-l border-black/20 bg-discord-bg-secondary shadow-2xl xl:static xl:z-auto xl:w-[320px] xl:shadow-none">
+        {profilePanelOpen && <aside className="absolute inset-y-0 right-0 z-20 flex w-[min(86vw,320px)] shrink-0 flex-col overflow-y-auto border-l border-black/20 bg-discord-bg-secondary shadow-2xl xl:static xl:relative xl:z-auto xl:w-[320px] xl:shadow-none">
+          <ProfileDecoration id={activeFriend.profile_decoration} />
           <ProfileBanner src={activeFriend.banner_url} positionX={activeFriend.banner_position_x} positionY={activeFriend.banner_position_y} zoom={activeFriend.banner_zoom} className="aspect-[3.125/1] w-full shrink-0" style={{ background: activeFriend.profile_card_color || "#202127" }}>
             <button onClick={() => setProfilePanelOpen(false)} title="Fechar perfil" aria-label="Fechar perfil" className="absolute right-3 top-3 rounded-full bg-black/40 p-1.5 text-white/80 hover:bg-black/65 hover:text-white xl:hidden"><X size={17}/></button>
           </ProfileBanner>
-          <div className="relative flex-1 px-4 pb-5">
+          <div className="relative z-10 flex-1 px-4 pb-5">
             <div className="-mt-10 mb-3 flex items-end justify-between">
               <FriendAvatar profile={activeFriend} size="profile" isHovered={hoveredDmProfileId === activeFriend.id}/>
               <span className="mb-1 rounded-full bg-discord-bg-primary px-2.5 py-1 text-[10px] font-medium text-discord-text-muted">{activeFriend.status === "idle" ? "Ausente" : activeFriend.status === "dnd" ? "Não perturbe" : activeFriend.status === "online" ? "Online" : "Offline"}</span>

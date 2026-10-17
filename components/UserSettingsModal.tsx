@@ -19,6 +19,9 @@ import { useTheme } from "@/lib/useTheme";
 import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/ProfileImageModals";
 import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
+import { MemberListBannerArt } from "@/components/MemberListBannerArt";
+import { ProfileDecoration, ProfileDecorationPicker } from "@/components/ProfileDecoration";
+import { isMissingProfileDecorationColumn, normalizeProfileDecoration, type ProfileDecorationId } from "@/lib/profileDecorations";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { SpotifyConnections } from "@/components/SpotifyConnections";
 import { VoiceSettingsPanel } from "@/components/VoiceSettingsPanel";
@@ -56,6 +59,7 @@ interface UserSettingsModalProps {
     memberListBannerPositionY?: number | null;
     memberListBannerZoom?: number | null;
     profileCardColor?: string | null;
+    profileDecoration?: string | null;
     showBadgesInMemberList?: boolean | null;
     badges?: CustomBadge[];
     presence?: Presence | null;
@@ -144,6 +148,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [customStatus, setCustomStatus] = useState(initial.customStatus ?? "");
   const [presence, setPresence] = useState<Presence>(initial.presence ?? "online");
   const [showBadgesInMemberList, setShowBadgesInMemberList] = useState(initial.showBadgesInMemberList !== false);
+  const [profileDecoration, setProfileDecoration] = useState<ProfileDecorationId | null>(normalizeProfileDecoration(initial.profileDecoration));
   const [profileBadges, setProfileBadges] = useState<CustomBadge[]>(initial.badges ?? []);
   const [profileCardMode, setProfileCardMode] = useState<"default" | "solid" | "gradient">(() => !initial.profileCardColor || initial.profileCardColor.trim().toLowerCase() === DEFAULT_PROFILE_CARD_COLOR ? "default" : initial.profileCardColor.startsWith("linear-gradient(") ? "gradient" : "solid");
   const [profileCardColors, setProfileCardColors] = useState(() => readProfileCardColors(initial.profileCardColor));
@@ -527,7 +532,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       activityBannerUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
     }
 
-    const { error: updateError } = await supabase.from("profiles").update({
+    const profileUpdate = {
       display_name: displayName.trim(), username: username.trim().toLowerCase(), pronouns: pronouns.trim() || null, bio: bio.trim() || null, custom_status: customStatus.trim() || null,
       avatar_url: avatarUrl,
       avatar_position_x: removeAvatar ? 50 : avatarCrop.x,
@@ -543,7 +548,20 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       member_list_banner_position_y: removeMemberListBanner ? 50 : memberListBannerCrop.y,
       member_list_banner_zoom: removeMemberListBanner ? 100 : memberListBannerCrop.zoom,
       status: presence, profile_card_color: profileCardColor, show_badges_in_member_list: showBadgesInMemberList,
-    }).eq("id", userId);
+      profile_decoration: profileDecoration,
+    };
+    let { error: updateError } = await supabase.from("profiles").update(profileUpdate).eq("id", userId);
+    if (updateError && isMissingProfileDecorationColumn(updateError)) {
+      const { profile_decoration: omittedDecoration, ...withoutDecoration } = profileUpdate;
+      void omittedDecoration;
+      const retry = await supabase.from("profiles").update(withoutDecoration).eq("id", userId);
+      updateError = retry.error;
+      setSaving(false);
+      if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
+      setError("O perfil foi salvo, mas a decoração precisa da coluna nova. Aplique db/profile_decoration_migration.sql no Supabase e salve de novo.");
+      onSaved();
+      return;
+    }
     setSaving(false);
     if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
     rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
@@ -781,7 +799,8 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                 {serverId && <div className="settings-segment mb-6"><button type="button" aria-pressed={profileScope === "user"} onClick={() => setProfileScope("user")}>Perfil global</button><button type="button" aria-pressed={profileScope === "server"} onClick={() => setProfileScope("server")}>Neste servidor</button></div>}
                 <div hidden={profileScope !== "user"}>
                 <div className="mb-6"><p className="text-[11px] font-bold uppercase tracking-[.16em] text-discord-brand">Identidade</p><h1 className="mt-1 text-[25px] font-bold leading-tight tracking-tight text-discord-header-primary">Seu perfil, do seu jeito</h1><p className="mt-2 max-w-xl text-sm leading-6 text-discord-text-muted">PNG, JPG ou GIF animado · até 8 MB · visível para a comunidade Sekai. Este é seu perfil global; você pode substituí-lo em um servidor específico.</p></div>
-                <div className="settings-profile-preview mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardPreviewColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
+                <div className="settings-profile-preview relative mb-6 overflow-hidden rounded-2xl border shadow-lg shadow-black/10" style={{ background: profileCardPreviewColor, borderColor: "#08090b", transition: "background 180ms ease" }}>
+                  <ProfileDecoration id={profileDecoration} />
                   <div className="relative z-0 aspect-[3.125/1] bg-theme-gradient">
                     {bannerPreview && <CroppedProfileImage src={bannerPreview} alt="" positionX={bannerCrop.x} positionY={bannerCrop.y} zoom={bannerCrop.zoom} pauseGif={false} className="pointer-events-none"/>}
                     <div className="absolute right-3 top-3 flex gap-2"><button type="button" onClick={() => openImagePicker("banner")} className="settings-upload-control flex items-center gap-2 rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur"><ImagePlus size={15}/>{bannerPreview ? "Trocar banner" : "Adicionar banner"}</button>{bannerPreview && <><button type="button" onClick={() => openCropEditor("banner", "user")} className="rounded-lg bg-black/50 px-3 py-2 text-xs font-semibold text-white backdrop-blur transition hover:bg-black/70">Ajustar recorte</button><button type="button" onClick={() => { setBannerFile(null); setBannerPreview(""); setBannerCrop(DEFAULT_CROP); setRemoveBanner(true); }} aria-label="Remover banner" className="rounded-lg bg-black/50 p-2 text-white backdrop-blur transition hover:bg-rose-500/80"><Trash2 size={15}/></button></>}</div>
@@ -795,9 +814,9 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                   </div>
                 </div>
                 <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Imagem transparente independente. Ela começa depois do seu nome na lista para manter a leitura limpa.</p></div>
+                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Fica à direita do nome, com um fade diagonal da direita até o canto inferior esquerdo, e ocupa cerca da metade do espaço anterior.</p></div>
                   <div className="relative mb-3 flex h-12 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
-                    {memberListBannerPreview && <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-80" style={{ maskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)" }}><CroppedProfileImage src={memberListBannerPreview} alt="" positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} pauseGif={false}/></div>}
+                    {memberListBannerPreview && <MemberListBannerArt src={memberListBannerPreview} positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} width="32%" playing />}
                     <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/>
                     <span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{displayName || "Seu nome"}</span>
                   </div>
@@ -810,6 +829,10 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                   <Field label="Status personalizado" hint={`${customStatus.length}/128`}><input value={customStatus} maxLength={128} onChange={(e) => setCustomStatus(e.target.value)} placeholder="O que você está fazendo?" className={inputClass}/></Field>
                 </div>
                 <Field label="Sobre você" hint={`${bio.length}/190 caracteres`}><textarea value={bio} maxLength={190} onChange={(e) => setBio(e.target.value)} rows={4} placeholder="Conte um pouco sobre você..." className={`${inputClass} resize-y`}/></Field>
+                <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
+                  <div className="mb-3"><h4 className="text-sm font-semibold text-discord-header-primary">Decoração do perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Escolha uma moldura para o cartão. Ela aparece no mini perfil, no perfil completo e na prévia acima.</p></div>
+                  <ProfileDecorationPicker value={profileDecoration} onChange={setProfileDecoration} />
+                </div>
                 <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
                   <div className="mb-3 flex items-center justify-between gap-3"><div><h4 className="text-sm font-semibold text-discord-header-primary">Cor do cartão de perfil</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Escolha o padrão cinza, uma cor sólida ou um gradiente.</p></div><span className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[11px] text-discord-text-muted"><i className="h-3 w-3 rounded-full border border-white/20" style={{ background: profileCardPreviewColor }}/>{profileCardMode === "default" ? "Padrão" : profileCardMode === "gradient" ? `Gradiente · ${profileCardColors.length} cores` : profileCardBaseColor.toUpperCase()}</span></div>
                   <div className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-discord-bg-secondary p-1">
@@ -860,9 +883,9 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                     </div>
                   </div>
                   <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                    <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Personalização independente para este servidor; começa depois do nome na lista.</p></div>
+                    <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">Personalização independente para este servidor, com o mesmo fade diagonal e a metade do tamanho.</p></div>
                     <div className="relative mb-3 flex h-12 items-center gap-2 overflow-hidden rounded-lg bg-discord-bg-secondary px-2">
-                      {serverMemberListBannerPreview && <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-80" style={{ maskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)", WebkitMaskImage: "linear-gradient(90deg, transparent 0%, transparent 48%, black 72%)" }}><CroppedProfileImage src={serverMemberListBannerPreview} alt="" positionX={serverMemberListBannerCrop.x} positionY={serverMemberListBannerCrop.y} zoom={serverMemberListBannerCrop.zoom} pauseGif={false}/></div>}
+                      {serverMemberListBannerPreview && <MemberListBannerArt src={serverMemberListBannerPreview} positionX={serverMemberListBannerCrop.x} positionY={serverMemberListBannerCrop.y} zoom={serverMemberListBannerCrop.zoom} width="32%" playing />}
                       <div className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand"/><span className="relative z-10 truncate text-[13px] font-semibold text-discord-header-primary">{serverDisplayName || "Seu nome"}</span>
                     </div>
                     <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{serverMemberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{serverMemberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "server")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setServerMemberListBannerFile(null); setServerMemberListBannerPreview(""); setServerMemberListBannerCrop(DEFAULT_CROP); setRemoveServerMemberListBanner(true); }} aria-label="Remover banner da lista deste servidor" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>

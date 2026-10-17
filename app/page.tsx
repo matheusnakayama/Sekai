@@ -35,6 +35,9 @@ import { SpotifyActivityPublisher } from "@/components/SpotifyActivityPublisher"
 import { GameActivityPublisher } from "@/components/GameActivityPublisher";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
+import { playUiSound, setUiSoundOutput, setUiSoundPresence, unlockUiSounds } from "@/lib/uiSounds";
+import { readVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT } from "@/lib/voicePreferences";
+import { isMissingProfileDecorationColumn, withProfileDecorationColumn, withoutProfileDecorationColumn } from "@/lib/profileDecorations";
 import { getServerTemplate } from "@/lib/serverTemplates";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -426,7 +429,7 @@ export default function Home() {
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; profileDecoration?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
@@ -643,6 +646,7 @@ export default function Home() {
         context = new AudioContextClass();
         soundboardAudioContextRef.current = context;
       }
+      unlockUiSounds();
       void context.resume().then(() => {
         if (context?.state === "running") setSoundboardAudioReady(true);
       }).catch((error) => console.warn("Não foi possível liberar a reprodução de áudio:", error));
@@ -797,6 +801,7 @@ export default function Home() {
         const name = profile?.display_name || profile?.username || "Nova mensagem";
         setDmUnreadByUser((previous) => ({ ...previous, [row.sender_id]: (previous[row.sender_id] || 0) + 1 }));
         const isCallInvite = row.content === DIRECT_CALL_INVITE;
+        playUiSound(isCallInvite ? "call-ring" : "message");
         setDmToast({ userId: row.sender_id, name, avatarUrl: profile?.avatar_url ?? null, content: isCallInvite ? "Ligação de voz recebida" : row.content || (row.attachment_url ? "Enviou uma imagem" : "Nova mensagem"), image: !!row.attachment_url });
         window.setTimeout(() => setDmToast((current) => current?.userId === row.sender_id ? null : current), 7000);
       })
@@ -806,11 +811,18 @@ export default function Home() {
 
   async function loadMyProfile() {
     if (!currentUserId) return;
-    const { data } = await supabase
-      .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status")
-      .eq("id", currentUserId)
-      .single();
+    const profileSelect = "display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status";
+    const firstProfile = await supabase.from("profiles").select(withProfileDecorationColumn(profileSelect)).eq("id", currentUserId).maybeSingle();
+    const profileResult = firstProfile.error && isMissingProfileDecorationColumn(firstProfile.error)
+      ? await supabase.from("profiles").select(profileSelect).eq("id", currentUserId).maybeSingle()
+      : firstProfile;
+    const data = profileResult.data as {
+      display_name?: string | null; username?: string | null; pronouns?: string | null; bio?: string | null; custom_status?: string | null;
+      avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null;
+      banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null;
+      activity_banner_url?: string | null; member_list_banner_url?: string | null; member_list_banner_position_x?: number | null; member_list_banner_position_y?: number | null; member_list_banner_zoom?: number | null;
+      profile_card_color?: string | null; profile_decoration?: string | null; show_badges_in_member_list?: boolean | null; status?: "online" | "idle" | "dnd" | "offline" | null;
+    } | null;
     if (data) {
       const { data: badgeRows } = await supabase
         .from("user_badges")
@@ -818,8 +830,8 @@ export default function Home() {
         .eq("user_id", currentUserId);
       const badges = mapUserBadgeRows(badgeRows).get(currentUserId) ?? [];
       setMyProfile({
-        displayName: data.display_name || data.username,
-        username: data.username,
+        displayName: data.display_name || data.username || "Você",
+        username: data.username || undefined,
         pronouns: data.pronouns,
         bio: data.bio,
         customStatus: data.custom_status,
@@ -837,6 +849,7 @@ export default function Home() {
         memberListBannerPositionY: data.member_list_banner_position_y ?? 50,
         memberListBannerZoom: data.member_list_banner_zoom ?? 100,
         profileCardColor: data.profile_card_color,
+        profileDecoration: data.profile_decoration ?? null,
         showBadgesInMemberList: data.show_badges_in_member_list !== false,
         badges,
         presence: data.status,
@@ -859,6 +872,21 @@ export default function Home() {
   useEffect(() => {
     loadMyProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  useEffect(() => {
+    setUiSoundPresence(myProfile?.presence);
+  }, [myProfile?.presence]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const apply = () => {
+      const preferences = readVoicePreferences(currentUserId);
+      setUiSoundOutput(preferences.outputVolume, preferences.outputDeviceId);
+    };
+    apply();
+    window.addEventListener(VOICE_PREFERENCES_UPDATED_EVENT, apply);
+    return () => window.removeEventListener(VOICE_PREFERENCES_UPDATED_EVENT, apply);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -1226,7 +1254,14 @@ export default function Home() {
     const [serverResult, categoryResult, memberResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)").eq("server_id", serverId),
+      (async () => {
+        const memberSelect = withProfileDecorationColumn("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)");
+        const first = await supabase.from("members").select(memberSelect).eq("server_id", serverId);
+        if (first.error && isMissingProfileDecorationColumn(first.error)) {
+          return supabase.from("members").select(withoutProfileDecorationColumn(memberSelect)).eq("server_id", serverId);
+        }
+        return first;
+      })(),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1313,6 +1348,7 @@ export default function Home() {
         memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
         memberListBannerZoom: m.member_list_banner_url ? m.member_list_banner_zoom ?? 100 : m.profiles?.member_list_banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
+        profileDecoration: m.profiles?.profile_decoration ?? null,
         showBadgesInMemberList: m.profiles?.show_badges_in_member_list !== false,
         badges: existingBadgesByUser.get(m.user_id) ?? [],
         profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
@@ -2216,6 +2252,7 @@ export default function Home() {
     bannerZoom: myProfile?.bannerZoom ?? 100,
     activityBannerUrl: myProfile?.activityBannerUrl ?? null,
     profileCardColor: myProfile?.profileCardColor ?? null,
+    profileDecoration: myProfile?.profileDecoration ?? currentMember?.profileDecoration ?? null,
     badges: myProfile?.badges ?? [],
     status: myProfile?.presence ?? currentMember?.status ?? "online",
     profilePresence: myProfile?.presence ?? "online",
@@ -2493,6 +2530,7 @@ export default function Home() {
             custom_status: myProfile?.customStatus ?? null,
             pronouns: myProfile?.pronouns ?? null,
             profile_card_color: myProfile?.profileCardColor ?? null,
+            profile_decoration: myProfile?.profileDecoration ?? null,
             badges: myProfile?.badges ?? [],
             status: myProfile?.presence ?? "offline",
           }}
