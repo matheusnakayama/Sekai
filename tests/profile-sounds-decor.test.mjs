@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { memberListBannerWidth, MEMBER_LIST_BANNER_MASK } from "../lib/memberListBanner.ts";
+import { MEMBER_LIST_BANNER_MASK, MEMBER_LIST_BANNER_OPACITY } from "../lib/memberListBanner.ts";
 import {
   PROFILE_DECORATIONS,
   isMissingProfileDecorationColumn,
@@ -10,12 +10,10 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
-test("member list banner keeps a diagonal fade and half the row width", () => {
+test("member list banner fades diagonally and stays semi-transparent", () => {
   assert.match(MEMBER_LIST_BANNER_MASK, /to bottom left/);
-  assert.equal(memberListBannerWidth(240), 120);
-  assert.equal(memberListBannerWidth(180), 90);
-  assert.equal(memberListBannerWidth(0), 0);
-  assert.equal(memberListBannerWidth(80), 0);
+  assert.match(MEMBER_LIST_BANNER_MASK, /transparent 88%/);
+  assert.equal(MEMBER_LIST_BANNER_OPACITY, 0.8);
 });
 
 test("profile decorations are a fixed catalog of ten original frames", () => {

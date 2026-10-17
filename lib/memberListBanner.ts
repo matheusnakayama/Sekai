@@ -1,13 +1,9 @@
-/** Fade diagonal: sólido na direita e some em direção ao canto inferior esquerdo. */
-export const MEMBER_LIST_BANNER_MASK =
-  "linear-gradient(to bottom left, #000 0%, #000 46%, rgba(0,0,0,.78) 68%, rgba(0,0,0,.28) 84%, transparent 100%)";
-
 /**
- * O banner antigo cobria a linha inteira. A faixa visível fica na metade direita da linha,
- * alta o bastante para a imagem aparecer.
+ * Fade diagonal e suave, como o banner antigo: a direita fica visível
+ * e a imagem some em direção ao canto inferior esquerdo.
+ * A opacidade do elemento deixa o fundo da linha aparecer por trás.
  */
-export function memberListBannerWidth(rowWidth: number) {
-  if (!Number.isFinite(rowWidth) || rowWidth <= 0) return 0;
-  const width = Math.round(rowWidth * 0.5);
-  return width < 56 ? 0 : width;
-}
+export const MEMBER_LIST_BANNER_MASK =
+  "linear-gradient(to bottom left, #000 0%, #000 22%, rgba(0,0,0,.62) 46%, rgba(0,0,0,.22) 68%, transparent 88%)";
+
+export const MEMBER_LIST_BANNER_OPACITY = 0.8;
