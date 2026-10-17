@@ -262,24 +262,16 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
 
   useLayoutEffect(() => {
     const row = rowRef.current;
-    const name = nameRef.current;
-    if (!row || !name || !member.memberListBannerUrl) return;
-    const updateStart = () => {
-      const rowBounds = row.getBoundingClientRect();
-      const nameBounds = name.getBoundingClientRect();
-      const visibleNameWidth = Math.min(name.scrollWidth, name.clientWidth);
-      const contentEnd = Math.max(0, Math.min(rowBounds.width, nameBounds.left - rowBounds.left + visibleNameWidth + 10));
-      setBannerWidth(memberListBannerWidth(rowBounds.width, contentEnd));
-    };
-    updateStart();
-    const observer = new ResizeObserver(updateStart);
+    if (!row || !member.memberListBannerUrl) return;
+    const updateWidth = () => setBannerWidth(memberListBannerWidth(row.getBoundingClientRect().width));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
     observer.observe(row);
-    observer.observe(name);
     return () => observer.disconnect();
-  }, [member.displayName, member.memberListBannerUrl]);
+  }, [member.memberListBannerUrl]);
 
   return (
-    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-[42px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
+    <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors hover:bg-discord-bg-modifier-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", member.memberListBannerUrl ? "min-h-12" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
       {member.memberListBannerUrl && <MemberListBannerArt src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} width={bannerWidth} hovered={hovered} />}
       <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(member, rowRef.current ?? event.currentTarget); }} aria-label={`Abrir cartão de ${member.displayName}`} title={`Abrir cartão de ${member.displayName}`} className="relative z-10 h-8 w-8 shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-discord-brand">
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">

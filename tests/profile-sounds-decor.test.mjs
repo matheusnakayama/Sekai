@@ -10,12 +10,12 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
-test("member list banner keeps a diagonal fade and half the previous width", () => {
+test("member list banner keeps a diagonal fade and half the row width", () => {
   assert.match(MEMBER_LIST_BANNER_MASK, /to bottom left/);
-  assert.equal(memberListBannerWidth(240, 80), 80);
-  assert.equal(memberListBannerWidth(240, 200), 20);
-  assert.equal(memberListBannerWidth(0, 10), 0);
-  assert.equal(memberListBannerWidth(180, -4), 90);
+  assert.equal(memberListBannerWidth(240), 120);
+  assert.equal(memberListBannerWidth(180), 90);
+  assert.equal(memberListBannerWidth(0), 0);
+  assert.equal(memberListBannerWidth(80), 0);
 });
 
 test("profile decorations are a fixed catalog of ten original frames", () => {
