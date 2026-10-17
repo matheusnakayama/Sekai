@@ -22,6 +22,8 @@ import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
 import { MemberList, MemberItem, ServerRoleOption, type MemberVoiceActivity } from "@/components/MemberList";
 import { MemberProfileDialog } from "@/components/MemberProfileDialog";
+import { UserProfileCard } from "@/components/UserProfileCard";
+import { CHAT_PREFERENCES_EVENT } from "@/lib/chatPreferences";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
@@ -444,6 +446,7 @@ export default function Home() {
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [voiceProfileUserId, setVoiceProfileUserId] = useState<string | null>(null);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
@@ -910,14 +913,20 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUserId) return;
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(`sekai-preferences:${currentUserId}`) || "{}");
-      document.documentElement.dataset.density = saved.density === "compact" ? "compact" : "comfortable";
-      document.documentElement.dataset.fontScale = saved.fontScale === "large" ? "large" : "normal";
-      document.documentElement.dataset.reducedMotion = String(saved.reducedMotion === true);
-    } catch {
-      // As preferências locais padrão já estão aplicadas pelo CSS.
-    }
+    const apply = () => {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(`sekai-preferences:${currentUserId}`) || "{}");
+        document.documentElement.dataset.density = saved.density === "compact" ? "compact" : "comfortable";
+        document.documentElement.dataset.fontScale = saved.fontScale === "large" ? "large" : "normal";
+        document.documentElement.dataset.reducedMotion = String(saved.reducedMotion === true);
+        document.documentElement.dataset.layout = saved.layout === "sekai" ? "sekai" : "discord";
+      } catch {
+        // As preferências locais padrão já estão aplicadas pelo CSS.
+      }
+    };
+    apply();
+    window.addEventListener(CHAT_PREFERENCES_EVENT, apply);
+    return () => window.removeEventListener(CHAT_PREFERENCES_EVENT, apply);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -1722,6 +1731,18 @@ export default function Home() {
     await loadChannelsAndMembers();
   }
 
+  function openVoiceMessage(userId: string) {
+    setDirectMessageUserId(userId);
+    setActiveServerId("");
+    setActiveChannelId("");
+    setCallFullscreen(false);
+    setCallExpanded(false);
+  }
+
+  function openVoiceProfile(userId: string) {
+    if (members.some((member) => member.id === userId)) setVoiceProfileUserId(userId);
+  }
+
   function handleToggleSoundEffects(userId: string, muted: boolean) {
     setMutedSoundEffectUserIds((previous) => {
       const next = new Set(previous);
@@ -2287,6 +2308,9 @@ export default function Home() {
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
       {!callFullscreen && mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
       <div className={callFullscreen ? "hidden" : mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
+      <div className="server-rail-hover relative flex h-full min-h-0">
+      <span className="server-rail-hotspot" aria-hidden="true" />
+      <div className="server-rail-shell flex h-full shrink-0">
       <ServerSidebar
         currentUserId={currentUserId ?? ""}
         servers={railServers}
@@ -2298,6 +2322,7 @@ export default function Home() {
         onOpenHome={() => { setActiveChannelId(""); setChannels([]); setMobileNavigationOpen(false); }}
         onServerContext={(serverId) => { handleSelectServer(serverId); setShowServerSettings(true); setMobileNavigationOpen(false); }}
       />
+      </div>
 
       {activeServerId ? <ChannelSidebar
         key={activeServerId}
@@ -2363,7 +2388,12 @@ export default function Home() {
           isSpeaking: voiceControlState.isSpeaking,
         }}
         onPresenceChange={handlePresenceChange}
+        mutedSoundEffectUserIds={mutedSoundEffectUserIds}
+        onToggleSoundEffects={handleToggleSoundEffects}
+        onVoiceMemberMessage={openVoiceMessage}
+        onVoiceMemberProfile={openVoiceProfile}
       /> : null}
+      </div>
       </div>
 
       {showCreateServer && (
@@ -2414,6 +2444,15 @@ export default function Home() {
           }}
         />
       )}
+
+      {voiceProfileUserId && currentUserId && members.some((member) => member.id === voiceProfileUserId) && <UserProfileCard
+        profile={members.find((member) => member.id === voiceProfileUserId)!}
+        position={{ left: 300, top: 96 }}
+        currentUserId={currentUserId}
+        onClose={() => setVoiceProfileUserId(null)}
+        onMessage={() => { const id = voiceProfileUserId; setVoiceProfileUserId(null); openVoiceMessage(id); }}
+        onAddFriend={() => handleAddFriend(voiceProfileUserId)}
+      />}
 
       {showMyProfile && currentUserId && <MemberProfileDialog
         profile={myProfileForDialog}
@@ -2513,6 +2552,9 @@ export default function Home() {
             }}
             callVisible={callOpenHere}
             onOpenVoiceSettings={() => { setSettingsSection("voz"); setShowUserSettings(true); }}
+            onToggleSoundEffects={handleToggleSoundEffects}
+            onMessageUser={openVoiceMessage}
+            onOpenProfile={openVoiceProfile}
           />
         </div>
       )}

@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import type { Participant } from '@/lib/types';
+import { CallUserMenu } from '@/components/CallUserMenu';
+import { useCallUserMix, writeCallUserMix } from '@/lib/callUserMix';
+import { applyRemoteVoiceGain } from '@/lib/remoteCallGain';
 import { MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 
 export default function VideoTile({
@@ -17,6 +20,9 @@ export default function VideoTile({
   onFocusParticipant,
   onToggleFullscreen,
   fullscreenActive = false,
+  onToggleSoundEffects,
+  onMessageUser,
+  onOpenProfile,
 }: {
   participant: Participant;
   muteRemoteAudio?: boolean;
@@ -29,6 +35,9 @@ export default function VideoTile({
   onFocusParticipant?: () => void;
   onToggleFullscreen?: () => void;
   fullscreenActive?: boolean;
+  onToggleSoundEffects?: () => void;
+  onMessageUser?: () => void;
+  onOpenProfile?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const voiceAudioRef = useRef<HTMLAudioElement>(null);
@@ -37,13 +46,15 @@ export default function VideoTile({
   const voiceTrackKey = (participant.stream?.getAudioTracks() ?? []).map((track) => track.id).join(',');
   const videoTrackKey = (participant.stream?.getVideoTracks() ?? []).map((track) => track.id).join(',');
   const [playbackBlocked, setPlaybackBlocked] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const mix = useCallUserMix(participant.id);
+  const volume = mix.muted ? 0 : mix.volume;
   const [showVolume, setShowVolume] = useState(false);
+  const [userMenu, setUserMenu] = useState<{ x: number; y: number } | null>(null);
   const [screenVolume, setScreenVolume] = useState(1);
   const [showScreenVolume, setShowScreenVolume] = useState(false);
   const [videoLive, setVideoLive] = useState(false);
   const [screenShareSnapshot, setScreenShareSnapshot] = useState<{ trackKey: string; dataUrl: string } | null>(null);
-  const showVideo = (participant.camOn || participant.isSharingScreen) && videoLive;
+  const showVideo = !mix.videoHidden && (participant.camOn || participant.isSharingScreen) && videoLive;
   const isScreenSharePreview = participant.isSharingScreen && !participant.isLocal && !screenShareRevealed;
 
   const playAudioElement = useCallback(async (audio: HTMLAudioElement) => {
@@ -178,17 +189,18 @@ export default function VideoTile({
   useEffect(() => {
     const audio = voiceAudioRef.current;
     if (!audio) return;
-    audio.volume = Math.max(0, Math.min(1, volume * masterOutputVolume));
-    if (participant.isLocal || muteRemoteAudio) audio.muted = true;
-    else if (volume === 0) audio.muted = true;
+    const level = Math.max(0, Math.min(2, volume * masterOutputVolume));
+    if (participant.isLocal || muteRemoteAudio || level === 0) audio.muted = true;
     else if (audio.srcObject) audio.muted = false;
-  }, [masterOutputVolume, muteRemoteAudio, participant.isLocal, volume]);
+    void applyRemoteVoiceGain(audio, audio.muted ? 0 : level, outputDeviceId);
+  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, volume]);
 
   useEffect(() => {
     const audio = soundboardAudioRef.current;
     if (!audio) return;
-    audio.volume = Math.max(0, Math.min(1, volume * masterOutputVolume));
-    audio.muted = participant.isLocal || volume === 0 || muteRemoteAudio || soundEffectsMuted;
+    const level = Math.max(0, Math.min(2, volume * masterOutputVolume));
+    audio.muted = participant.isLocal || level === 0 || muteRemoteAudio || soundEffectsMuted;
+    void applyRemoteVoiceGain(audio, audio.muted ? 0 : level, outputDeviceId);
     if (!participant.soundboardTrack) {
       audio.srcObject = null;
       return;
@@ -236,6 +248,12 @@ export default function VideoTile({
 
   return (
     <div
+      onContextMenu={(event) => {
+        if (participant.isLocal) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setUserMenu({ x: event.clientX, y: event.clientY });
+      }}
       className={focused
         ? `relative h-full min-h-0 w-full overflow-hidden rounded-2xl border bg-surface-card transition-shadow ${
             participant.isSpeaking ? 'voice-speaking-tile' : 'border-surface-border'
@@ -264,7 +282,25 @@ export default function VideoTile({
         <audio ref={screenAudioRef} autoPlay playsInline className="pointer-events-none absolute h-px w-px opacity-0" />
         {!showVideo && !isScreenSharePreview && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (participant.isLocal) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                setUserMenu({ x: bounds.left, y: bounds.bottom + 8 });
+              }}
+              onContextMenu={(event) => {
+                if (participant.isLocal) return;
+                event.preventDefault();
+                event.stopPropagation();
+                setUserMenu({ x: event.clientX, y: event.clientY });
+              }}
+              aria-label={`Abrir opções de ${participant.name}`}
+              className="relative z-[6] rounded-full"
+            >
+              <Avatar name={participant.name} avatarUrl={participant.avatarUrl} isSpeaking={participant.isSpeaking} />
+            </button>
           </div>
         )}
       </div>
@@ -372,10 +408,10 @@ export default function VideoTile({
               aria-label={`Volume de ${participant.name}`}
               type="range"
               min="0"
-              max="1"
+              max="2"
               step="0.05"
-              value={volume}
-              onChange={(event) => setVolume(Number(event.target.value))}
+              value={mix.volume}
+              onChange={(event) => writeCallUserMix(participant.id, { volume: Number(event.target.value), muted: Number(event.target.value) === 0 })}
               className="h-1 w-20 accent-blue-400"
             />
           )}
@@ -405,6 +441,19 @@ export default function VideoTile({
         <div className="absolute top-2 left-2 text-[11px] font-medium text-warn bg-black/60 rounded-full px-2 py-0.5">
           Reconectando a chamada…
         </div>
+      )}
+      {userMenu && !participant.isLocal && (
+        <CallUserMenu
+          userId={participant.id}
+          name={participant.name}
+          x={userMenu.x}
+          y={userMenu.y}
+          soundEffectsMuted={soundEffectsMuted}
+          onToggleSoundEffects={onToggleSoundEffects}
+          onMessage={onMessageUser}
+          onOpenProfile={onOpenProfile}
+          onClose={() => setUserMenu(null)}
+        />
       )}
     </div>
   );

@@ -11,22 +11,29 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
+function bannerEdge(nameEnd, width, height) {
+  const mask = decodeURIComponent(memberListBannerMask(nameEnd, width, height));
+  const points = mask.match(/points="(\d+),0 \d+,0 \d+,\d+ (\d+),\d+"/);
+  assert.ok(points, mask);
+  return { top: Number(points[1]), bottom: Number(points[2]), mask };
+}
+
 test("member list banner stays clear over the name and fades diagonally after it", () => {
-  const mask = decodeURIComponent(memberListBannerMask(90, 240, 46));
+  const edge = bannerEdge(90, 240, 46);
   assert.equal(MEMBER_LIST_BANNER_OPACITY < 1 && MEMBER_LIST_BANNER_OPACITY >= 0.7, true);
-  assert.match(mask, /<rect x="90"/);
-  assert.match(mask, /x1="240" y1="0" x2="152" y2="46"/);
-  assert.match(decodeURIComponent(memberListBannerMask(180, 240, 46)), /<polygon /);
-  assert.match(decodeURIComponent(memberListBannerMask(20, 240, 46)), /<rect x="20"/);
-  assert.match(decodeURIComponent(memberListBannerMask(-8, 0, 0)), /<rect x="0"/);
+  assert.equal(edge.bottom, 90);
+  assert.ok(edge.top > edge.bottom);
+  assert.doesNotMatch(edge.mask, /<rect /);
+  assert.ok(bannerEdge(20, 240, 46).top > bannerEdge(20, 240, 46).bottom);
+  assert.doesNotMatch(decodeURIComponent(memberListBannerMask(-8, 0, 0)), /<rect /);
 });
 
 test("a compressed name gets a diagonal wedge instead of a square fade", () => {
-  const mask = decodeURIComponent(memberListBannerMask(210, 240, 46));
-  const left = Number(mask.match(/points="(\d+),0 240,0 240,46"/)?.[1]);
-  assert.ok(left > 0 && left <= 210);
-  assert.doesNotMatch(mask, /<rect /);
-  const ends = mask.match(/x1="(\d+)" y1="0" x2="(\d+)"/);
+  const edge = bannerEdge(210, 240, 46);
+  assert.ok(edge.top > edge.bottom);
+  assert.ok(edge.bottom <= 210);
+  assert.doesNotMatch(edge.mask, /<rect /);
+  const ends = edge.mask.match(/x1="(\d+)" y1="\d+" x2="(\d+)"/);
   assert.ok(ends);
   assert.notEqual(ends[1], ends[2]);
 });

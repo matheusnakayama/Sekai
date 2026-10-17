@@ -6,7 +6,7 @@ import { useAnimatedClose } from "@/lib/useAnimatedClose";
 import { cn } from "@/lib/utils";
 import {
   Accessibility, Award, Bell, Check, ChevronRight, Circle, Eye, ImagePlus, Link2, LogOut, MessageSquare, Pencil, Plus, Trash2,
-  Gamepad2, Mic, Monitor, Palette, Settings2, Shield, UserRound, X,
+  Gamepad2, Mic, Monitor, Palette, PanelsTopLeft, Settings2, Shield, UserRound, X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TurnstileCaptcha } from "@/components/auth/TurnstileCaptcha";
@@ -33,7 +33,8 @@ import { CHAT_PREFERENCES_EVENT, DEFAULT_CHAT_DISPLAY, type ChatDisplayPreferenc
 
 type Section = "perfil" | "aparencia" | "mensagens" | "acessibilidade" | "privacidade" | "conta" | "conexoes" | "insignias" | "voz" | "sobreposicao" | "jogos";
 type Presence = "online" | "idle" | "dnd" | "offline";
-type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean; chat: ChatDisplayPreferences };
+type AppLayout = "discord" | "sekai";
+type Preferences = { density: "comfortable" | "compact"; fontScale: "normal" | "large"; reducedMotion: boolean; layout: AppLayout; chat: ChatDisplayPreferences };
 
 interface UserSettingsModalProps {
   userId: string;
@@ -95,7 +96,7 @@ function readProfileCardColors(value?: string | null) {
   return colors.length ? colors : ["#202127"];
 }
 
-const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false, chat: DEFAULT_CHAT_DISPLAY };
+const DEFAULT_PREFERENCES: Preferences = { density: "comfortable", fontScale: "normal", reducedMotion: false, layout: "discord", chat: DEFAULT_CHAT_DISPLAY };
 type ImageScope = "user" | "server";
 type ImageEditorTarget = { kind: ProfileImageKind; scope: ImageScope; src: string; file: File | null; crop: ImageCrop; pending: boolean };
 type BadgeTargetUser = { id: string; displayName: string; username: string | null };
@@ -111,7 +112,7 @@ function loadPreferences(userId: string): Preferences {
   try {
     const value = JSON.parse(localStorage.getItem(`sekai-preferences:${userId}`) || "null");
     if (!value || typeof value !== "object") return DEFAULT_PREFERENCES;
-    return { ...DEFAULT_PREFERENCES, ...value, chat: { ...DEFAULT_CHAT_DISPLAY, ...(value.chat ?? {}) } };
+    return { ...DEFAULT_PREFERENCES, ...value, layout: value.layout === "sekai" ? "sekai" : "discord", chat: { ...DEFAULT_CHAT_DISPLAY, ...(value.chat ?? {}) } };
   } catch { return DEFAULT_PREFERENCES; }
 }
 
@@ -331,6 +332,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     document.documentElement.dataset.density = preferences.density;
     document.documentElement.dataset.fontScale = preferences.fontScale;
     document.documentElement.dataset.reducedMotion = String(preferences.reducedMotion);
+    document.documentElement.dataset.layout = preferences.layout === "sekai" ? "sekai" : "discord";
     try {
       localStorage.setItem(`sekai-preferences:${userId}`, JSON.stringify(preferences));
       window.dispatchEvent(new Event(CHAT_PREFERENCES_EVENT));
@@ -906,6 +908,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                 <SectionIntro eyebrow="Seu espaço" title="Aparência" text="Escolha cores e uma densidade de interface que combine com você. Temas secretos entram nesta lista quando são desbloqueados."/>
                 <div className="mb-7"><h4 className="mb-3 text-sm font-semibold text-discord-header-primary">Tema de cores <span className="ml-1 font-normal text-discord-text-muted">{themes.find((item) => item.id === theme)?.name}</span></h4><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{themes.map((option) => <button key={option.id} type="button" onClick={() => setTheme(option.id)} className={`overflow-hidden rounded-xl border text-left transition ${theme === option.id ? "border-discord-brand ring-2 ring-discord-brand/30" : "border-white/10 hover:border-white/30"}`}><span className="relative block h-16" style={{ backgroundImage: `${option.overlay ? `url(/bankai/backgrounds/${option.overlay}.svg?v=2), ` : ""}linear-gradient(135deg, ${option.stops.join(", ")})`, backgroundSize: option.overlay ? "180px 180px, cover" : undefined }}>{theme === option.id && <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-black/40"><Check size={14} className="text-white"/></span>}<span className="absolute inset-x-2 bottom-2 flex gap-1">{option.stops.slice(1, 5).map((color) => <i key={color} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: color }}/>)}</span></span><span className="block bg-discord-bg-primary px-3 py-2 text-xs font-semibold text-discord-text-normal">{option.name}{option.secret ? <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-discord-text-muted">Secreto</span> : null}</span></button>)}</div><p className="mt-2 text-xs text-discord-text-muted">O tema é salvo neste navegador. Temas secretos desenham o fundo do chat e aparecem aqui quando você os desbloqueia.</p></div>
                 <PreferenceCard icon={Monitor} title="Densidade da interface" description="Escolha quanto espaço os elementos ocupam."><div className="grid grid-cols-2 gap-2">{([['comfortable', 'Confortável'], ['compact', 'Compacta']] as const).map(([value, label]) => <Choice key={value} active={preferences.density === value} onClick={() => setPreference("density", value)}>{label}</Choice>)}</div></PreferenceCard>
+                <PreferenceCard icon={PanelsTopLeft} title="Layout" description="O padrão Discord deixa os servidores sempre à vista. O Sekai os esconde até o mouse encostar na esquerda."><div className="grid grid-cols-2 gap-2">{([['discord', 'Discord'], ['sekai', 'Sekai']] as const).map(([value, label]) => <Choice key={value} active={preferences.layout === value} onClick={() => setPreference("layout", value)}>{label}</Choice>)}</div></PreferenceCard>
               </section>}
 
               {section === "voz" && <VoiceSettingsPanel userId={userId} />}

@@ -74,6 +74,9 @@ export default function RoomClient({
   autoJoin = false,
   userId,
   onOpenVoiceSettings,
+  onToggleSoundEffects,
+  onMessageUser,
+  onOpenProfile,
 }: {
   userId?: string;
   roomId: string;
@@ -109,6 +112,9 @@ export default function RoomClient({
   onConnectionQualityChange?: (pingMs: number | null) => void;
   mutedSoundEffectUserIds?: string[];
   onOpenVoiceSettings?: () => void;
+  onToggleSoundEffects?: (userId: string, muted: boolean) => void;
+  onMessageUser?: (userId: string) => void;
+  onOpenProfile?: (userId: string) => void;
   /** Entra direto, sem a tela de pré-visualização. A câmera começa desligada e o microfone segue o último estado da call. */
   autoJoin?: boolean;
 }) {
@@ -1806,6 +1812,9 @@ export default function RoomClient({
             onToggleOtherParticipants={() => setHideOtherParticipants((hidden) => !hidden)}
             onToggleFullscreen={toggleCallFullscreen}
             fullscreenActive={callFullscreen}
+            onToggleSoundEffects={onToggleSoundEffects}
+            onMessageUser={onMessageUser}
+            onOpenProfile={onOpenProfile}
           />
         )}
       </section>

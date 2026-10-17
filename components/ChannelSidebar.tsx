@@ -28,6 +28,8 @@ import type { CustomBadge } from "@/lib/badges";
 import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import { voiceProfileLabel } from "@/lib/voicePreferences";
+import { CallUserMenu } from "@/components/CallUserMenu";
+import { useCallUserMix } from "@/lib/callUserMix";
 import { CamIcon, MicIcon, ScreenShareIcon } from "@/components/icons";
 import packageJson from "../package.json";
 
@@ -125,6 +127,10 @@ interface ChannelSidebarProps {
   onPresentScreen?: () => void;
   onPlaySoundEffect?: (effect: SoundboardEffect) => Promise<boolean>;
   soundboardAudioReady?: boolean;
+  mutedSoundEffectUserIds?: string[];
+  onToggleSoundEffects?: (userId: string, muted: boolean) => void;
+  onVoiceMemberMessage?: (userId: string) => void;
+  onVoiceMemberProfile?: (userId: string) => void;
   onCloseMobileNav?: () => void;
   onDisconnectVoice?: () => void;
 }
@@ -169,11 +175,16 @@ export function ChannelSidebar({
   onPresentScreen,
   onPlaySoundEffect,
   soundboardAudioReady = false,
+  mutedSoundEffectUserIds = [],
+  onToggleSoundEffects,
+  onVoiceMemberMessage,
+  onVoiceMemberProfile,
   onCloseMobileNav,
   onDisconnectVoice,
 }: ChannelSidebarProps) {
   const supabase = createClient();
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [voiceUserMenu, setVoiceUserMenu] = useState<{ x: number; y: number; member: VoiceMemberPreview } | null>(null);
   const [voiceAudioMenuOpen, setVoiceAudioMenuOpen] = useState<"input" | "output" | null>(null);
   const [voiceProfileMenuOpen, setVoiceProfileMenuOpen] = useState(false);
   const voiceInputAnchorRef = useRef<HTMLDivElement>(null);
@@ -412,17 +423,11 @@ export function ChannelSidebar({
                         {channel.type === "voice" && voiceMembers.length > 0 && (
                           <div className="ml-5 mt-0.5 min-w-0 space-y-0.5 py-1 pl-2">
                             {voiceMembers.map((member) => (
-                              <div key={member.id} className="flex min-h-8 min-w-0 items-center gap-1.5 md:min-h-7">
-                                <div className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
-                                  {member.avatarUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={member.avatarUrl} alt="" draggable={false} className="h-full w-full object-cover" />
-                                  ) : member.name[0]?.toUpperCase()}
-                                </div>
-                                <span className="min-w-0 flex-1 truncate text-xs text-discord-text-normal md:text-[11px]">{member.name}</span>
-                                {member.isMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Microfone mutado" />}
-                                {member.isDeafened && <Headphones className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Ensurdecido" />}
-                              </div>
+                              <VoiceCallMember
+                                key={member.id}
+                                member={member}
+                                onOpenMenu={(point) => setVoiceUserMenu({ ...point, member })}
+                              />
                             ))}
                           </div>
                         )}
@@ -445,6 +450,21 @@ export function ChannelSidebar({
         )}
       </div>
 
+      {voiceUserMenu && createPortal(
+        <CallUserMenu
+          userId={voiceUserMenu.member.id}
+          name={voiceUserMenu.member.name}
+          isSelf={voiceUserMenu.member.id === currentUser.userId}
+          x={voiceUserMenu.x}
+          y={voiceUserMenu.y}
+          soundEffectsMuted={mutedSoundEffectUserIds.includes(voiceUserMenu.member.id)}
+          onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(voiceUserMenu.member.id, !mutedSoundEffectUserIds.includes(voiceUserMenu.member.id)) : undefined}
+          onMessage={onVoiceMemberMessage ? () => onVoiceMemberMessage(voiceUserMenu.member.id) : undefined}
+          onOpenProfile={onVoiceMemberProfile ? () => onVoiceMemberProfile(voiceUserMenu.member.id) : undefined}
+          onClose={() => setVoiceUserMenu(null)}
+        />,
+        document.body,
+      )}
       {contextMenu && createPortal(
         <>
           <button aria-label="Fechar opções do canal" className="fixed inset-0 z-[299] cursor-default" onClick={() => setContextMenu(null)} />
@@ -617,6 +637,29 @@ export function ChannelSidebar({
           v{packageJson.version}
         </span>
       </div>
+    </div>
+  );
+}
+
+function VoiceCallMember({ member, onOpenMenu }: { member: VoiceMemberPreview; onOpenMenu: (point: { x: number; y: number }) => void }) {
+  const mix = useCallUserMix(member.id);
+  const label = mix.nickname.trim() || member.name;
+  function openAt(event: { preventDefault: () => void; stopPropagation: () => void; clientX: number; clientY: number }) {
+    event.preventDefault();
+    event.stopPropagation();
+    onOpenMenu({ x: event.clientX, y: event.clientY });
+  }
+  return (
+    <div className="flex min-h-8 min-w-0 items-center gap-1.5 md:min-h-7" onContextMenu={openAt}>
+      <button type="button" onClick={openAt} onContextMenu={openAt} aria-label={`Opções de ${label} na chamada`} className={`h-5 w-5 shrink-0 overflow-hidden rounded-full bg-discord-brand text-center text-[10px] leading-5 text-white ${member.isSpeaking ? "voice-speaking-avatar" : ""}`}>
+        {member.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={member.avatarUrl} alt="" draggable={false} className="h-full w-full object-cover" />
+        ) : member.name[0]?.toUpperCase()}
+      </button>
+      <span className="min-w-0 flex-1 truncate text-xs text-discord-text-normal md:text-[11px]">{label}</span>
+      {member.isMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Microfone mutado" />}
+      {member.isDeafened && <Headphones className="h-3.5 w-3.5 shrink-0 text-discord-danger" aria-label="Ensurdecido" />}
     </div>
   );
 }

@@ -18,6 +18,9 @@ export default function ParticipantsGrid({
   onToggleOtherParticipants,
   onToggleFullscreen,
   fullscreenActive = false,
+  onToggleSoundEffects,
+  onMessageUser,
+  onOpenProfile,
 }: {
   participants: Participant[];
   muteRemoteAudio?: boolean;
@@ -32,6 +35,9 @@ export default function ParticipantsGrid({
   onToggleOtherParticipants?: () => void;
   onToggleFullscreen?: () => void;
   fullscreenActive?: boolean;
+  onToggleSoundEffects?: (userId: string, muted: boolean) => void;
+  onMessageUser?: (userId: string) => void;
+  onOpenProfile?: (userId: string) => void;
 }) {
   const focusedParticipant = participants.find((participant) => participant.id === focusedParticipantId);
   if (focusedParticipant) {
@@ -50,6 +56,9 @@ export default function ParticipantsGrid({
             onFocusParticipant={onSelectParticipant ? () => onSelectParticipant(focusedParticipant.id) : undefined}
             onToggleFullscreen={onToggleFullscreen}
             fullscreenActive={fullscreenActive}
+            onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(focusedParticipant.id, !mutedSoundEffectUserIds.includes(focusedParticipant.id)) : undefined}
+            onMessageUser={onMessageUser ? () => onMessageUser(focusedParticipant.id) : undefined}
+            onOpenProfile={onOpenProfile ? () => onOpenProfile(focusedParticipant.id) : undefined}
           />
         </div>
         {participants.length > 1 && onToggleOtherParticipants && (
@@ -79,6 +88,9 @@ export default function ParticipantsGrid({
                     screenShareRevealed={participant.isLocal || revealedScreenShareIds.has(participant.id)}
                     onRevealScreenShare={onRevealScreenShare}
                     onFocusParticipant={() => onSelectParticipant?.(participant.id)}
+                    onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(participant.id, !mutedSoundEffectUserIds.includes(participant.id)) : undefined}
+                    onMessageUser={onMessageUser ? () => onMessageUser(participant.id) : undefined}
+                    onOpenProfile={onOpenProfile ? () => onOpenProfile(participant.id) : undefined}
                   />
                 </div>
               ))}
@@ -105,6 +117,9 @@ export default function ParticipantsGrid({
           screenShareRevealed={p.isLocal || revealedScreenShareIds.has(p.id)}
           onRevealScreenShare={onRevealScreenShare}
           onFocusParticipant={() => onSelectParticipant?.(p.id)}
+          onToggleSoundEffects={onToggleSoundEffects ? () => onToggleSoundEffects(p.id, !mutedSoundEffectUserIds.includes(p.id)) : undefined}
+          onMessageUser={onMessageUser ? () => onMessageUser(p.id) : undefined}
+          onOpenProfile={onOpenProfile ? () => onOpenProfile(p.id) : undefined}
         />
       ))}
     </div>
