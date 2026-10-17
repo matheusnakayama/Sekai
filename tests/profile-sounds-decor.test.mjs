@@ -11,17 +11,14 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
-test("member list banner fades diagonally and a little softer after the name", () => {
-  const mask = memberListBannerMask(90, 240);
-  assert.match(mask, /to bottom left/);
+test("member list banner stays clear over the name and fades diagonally after it", () => {
+  const mask = decodeURIComponent(memberListBannerMask(90, 240, 46));
   assert.equal(MEMBER_LIST_BANNER_OPACITY < 1 && MEMBER_LIST_BANNER_OPACITY >= 0.7, true);
-  const solid = Number(mask.match(/#000 (\d+)%/)?.[1]);
-  const clear = Number(mask.match(/transparent (\d+)%/)?.[1]);
-  assert.ok(solid < clear);
-  const earlyClear = Number(memberListBannerMask(20, 240).match(/transparent (\d+)%/)?.[1]);
-  const lateClear = Number(memberListBannerMask(180, 240).match(/transparent (\d+)%/)?.[1]);
-  assert.ok(lateClear < earlyClear);
-  assert.match(memberListBannerMask(-8, 240), /to bottom left/);
+  assert.match(mask, /<rect x="90"/);
+  assert.match(mask, /x1="240" y1="0" x2="152" y2="46"/);
+  assert.match(decodeURIComponent(memberListBannerMask(180, 240, 46)), /<rect x="180"/);
+  assert.match(decodeURIComponent(memberListBannerMask(20, 240, 46)), /<rect x="20"/);
+  assert.match(decodeURIComponent(memberListBannerMask(-8, 0, 0)), /<rect x="0"/);
 });
 
 test("activity gif uses a shorter diagonal fade and optional crop columns", () => {
