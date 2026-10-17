@@ -27,6 +27,7 @@ import { CurrentUserProfileMenu } from "@/components/CurrentUserProfileMenu";
 import type { CustomBadge } from "@/lib/badges";
 import { createClient } from "@/lib/supabase/client";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
+import { voiceProfileLabel } from "@/lib/voicePreferences";
 import { CamIcon, MicIcon, ScreenShareIcon } from "@/components/icons";
 import packageJson from "../package.json";
 
@@ -520,11 +521,12 @@ export function ChannelSidebar({
                   </div>
                   <div className="my-3 border-t border-white/10" />
                   <button type="button" onClick={() => setVoiceProfileMenuOpen((open) => !open)} aria-expanded={voiceProfileMenuOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left transition hover:bg-white/[0.06]">
-                    <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceAudioSettings?.voiceProfile === "noise-suppression" ? "Supressão neural (RNNoise)" : "Padrão"}</span></span><Settings className="h-4 w-4 text-white/55" />
+                    <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceProfileLabel(voiceAudioSettings?.voiceProfile ?? "standard")}</span></span><Settings className="h-4 w-4 text-white/55" />
                   </button>
                   {voiceProfileMenuOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1">
                     <VoiceAudioOption label="Padrão" selected={voiceAudioSettings?.voiceProfile === "standard"} onClick={() => { onVoiceProfileChange?.("standard"); setVoiceProfileMenuOpen(false); }} />
                     <VoiceAudioOption label="Supressão neural (RNNoise)" selected={voiceAudioSettings?.voiceProfile === "noise-suppression"} onClick={() => { onVoiceProfileChange?.("noise-suppression"); setVoiceProfileMenuOpen(false); }} />
+                    <VoiceAudioOption label="Supressão ElevenLabs" selected={voiceAudioSettings?.voiceProfile === "elevenlabs"} onClick={() => { onVoiceProfileChange?.("elevenlabs"); setVoiceProfileMenuOpen(false); }} />
                   </div>}
                   <label className="mt-3 block border-t border-white/10 pt-3">
                     <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round((voiceAudioSettings?.inputVolume ?? 1) * 100)}%</span></span>

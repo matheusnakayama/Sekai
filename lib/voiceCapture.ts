@@ -140,17 +140,31 @@ async function applyNativeNoiseSuppression(track: MediaStreamTrack) {
   }
 }
 
-export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSuppression = false): Promise<{ track: MediaStreamTrack; stop: () => void; amplified: boolean }> {
+export type VoiceProcessing = "standard" | "noise-suppression" | "elevenlabs";
+
+async function connectLocalSuppressor(context: AudioContext, source: AudioNode, gain: AudioNode): Promise<AudioWorkletNode & { destroy?: () => void }> {
+  if (context.sampleRate !== 48000 || !context.audioWorklet) throw new Error("O navegador não oferece AudioWorklet em 48 kHz.");
+  const { RnnoiseWorkletNode, loadRnnoise } = await import("@sapphi-red/web-noise-suppressor");
+  await context.audioWorklet.addModule("/audio-worklets/rnnoiseWorklet.js");
+  const wasmBinary = await loadRnnoise({ url: "/audio-worklets/rnnoise.wasm", simdUrl: "/audio-worklets/rnnoise_simd.wasm" });
+  const suppressor = new RnnoiseWorkletNode(context, { wasmBinary, maxChannels: 1 }) as AudioWorkletNode & { destroy?: () => void };
+  source.connect(suppressor);
+  suppressor.connect(gain);
+  return suppressor;
+}
+
+export async function amplifyMicrophone(track: MediaStreamTrack, processing: VoiceProcessing = "standard"): Promise<{ track: MediaStreamTrack; stop: () => void; amplified: boolean }> {
   const AudioContextCtor = window.AudioContext;
+  const clean = processing !== "standard";
   if (!AudioContextCtor) {
-    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
+    if (clean) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
   let context: AudioContext;
   try {
-    context = new AudioContextCtor(advancedNoiseSuppression ? { latencyHint: "interactive", sampleRate: 48000 } : { latencyHint: "interactive" });
+    context = new AudioContextCtor(clean ? { latencyHint: "interactive", sampleRate: 48000 } : { latencyHint: "interactive" });
   } catch {
-    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
+    if (clean) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
   try {
@@ -160,23 +174,17 @@ export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSu
   }
   if (context.state !== "running") {
     await context.close().catch(() => undefined);
-    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
+    if (clean) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
 
   let source: MediaStreamAudioSourceNode | null = null;
   let suppressor: (AudioWorkletNode & { destroy?: () => void }) | null = null;
+  let isolation: { stop: () => void } | null = null;
   let gain: GainNode | null = null;
   let amplified: MediaStreamTrack | null = null;
   try {
     source = context.createMediaStreamSource(new MediaStream([track]));
-    if (advancedNoiseSuppression) {
-      if (context.sampleRate !== 48000 || !context.audioWorklet) throw new Error("O navegador não oferece AudioWorklet em 48 kHz.");
-      const { RnnoiseWorkletNode, loadRnnoise } = await import("@sapphi-red/web-noise-suppressor");
-      await context.audioWorklet.addModule("/audio-worklets/rnnoiseWorklet.js");
-      const wasmBinary = await loadRnnoise({ url: "/audio-worklets/rnnoise.wasm", simdUrl: "/audio-worklets/rnnoise_simd.wasm" });
-      suppressor = new RnnoiseWorkletNode(context, { wasmBinary, maxChannels: 1 });
-    }
     gain = context.createGain();
     gain.gain.value = MAKEUP_GAIN;
     const compressor = context.createDynamicsCompressor();
@@ -186,14 +194,25 @@ export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSu
     compressor.attack.value = 0.003;
     compressor.release.value = 0.24;
     const destination = context.createMediaStreamDestination();
-    if (suppressor) {
-      source.connect(suppressor);
-      suppressor.connect(gain);
-    } else {
-      source.connect(gain);
-    }
     gain.connect(compressor);
     compressor.connect(destination);
+    const input = source;
+    const output = gain;
+    const enableLocalSuppressor = async () => {
+      if (suppressor) return;
+      suppressor = await connectLocalSuppressor(context, input, output);
+    };
+    if (processing === "elevenlabs") {
+      const { startElevenLabsIsolation } = await import("@/lib/elevenLabsIsolation");
+      isolation = await startElevenLabsIsolation(context, input, output, () => {
+        isolation = null;
+        void enableLocalSuppressor().catch(() => {
+          try { input.connect(output); } catch { /* O microfone segue pelo caminho que ainda estiver ligado. */ }
+        });
+      });
+    }
+    if (processing === "noise-suppression" || (processing === "elevenlabs" && !isolation)) await enableLocalSuppressor();
+    else if (processing === "standard") input.connect(output);
     amplified = destination.stream.getAudioTracks()[0] ?? null;
     if (!amplified) throw new Error("O processamento de áudio não criou uma faixa de microfone.");
     voiceInputGains.set(amplified, gain);
@@ -204,9 +223,11 @@ export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSu
       if (stopped) return;
       stopped = true;
       window.removeEventListener("pointerdown", resume);
+      isolation?.stop();
       source?.disconnect();
-      suppressor?.disconnect();
-      suppressor?.destroy?.();
+      const activeSuppressor = suppressor as (AudioWorkletNode & { destroy?: () => void }) | null;
+      activeSuppressor?.disconnect();
+      activeSuppressor?.destroy?.();
       if (amplified?.readyState === "live") amplified.stop();
       void context.close().catch(() => undefined);
     };
@@ -218,19 +239,21 @@ export async function amplifyMicrophone(track: MediaStreamTrack, advancedNoiseSu
     return { track: amplified, stop, amplified: true };
   } catch (error) {
     console.warn("Não foi possível iniciar o filtro de ruído avançado:", error);
+    isolation?.stop();
     source?.disconnect();
-    suppressor?.disconnect();
-    suppressor?.destroy?.();
+    const activeSuppressor = suppressor as (AudioWorkletNode & { destroy?: () => void }) | null;
+    activeSuppressor?.disconnect();
+    activeSuppressor?.destroy?.();
     if (amplified?.readyState === "live") amplified.stop();
     await context.close().catch(() => undefined);
-    if (advancedNoiseSuppression) await applyNativeNoiseSuppression(track);
+    if (clean) await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
 }
 
 /** Abre câmera e microfone. Se a câmera falhar, devolve só o microfone. */
-export async function openCallInput(options: { video: boolean; audioDeviceId?: string; noiseSuppression?: boolean } = { video: false }): Promise<MediaStream> {
-  // O modo avançado faz a supressão neural depois da captura; evita aplicar dois filtros em série.
+export async function openCallInput(options: { video: boolean; audioDeviceId?: string; processing?: VoiceProcessing } = { video: false }): Promise<MediaStream> {
+  // A supressão acontece depois da captura, para não empilhar o filtro do navegador com o filtro escolhido.
   const audio = voiceInputConstraints(options.audioDeviceId, false);
   let raw: MediaStream;
   try {
@@ -247,7 +270,7 @@ export async function openCallInput(options: { video: boolean; audioDeviceId?: s
   } catch {
     // O navegador ficou com o melhor ajuste que aceitou na abertura.
   }
-  const boosted = await amplifyMicrophone(microphone, options.noiseSuppression);
+  const boosted = await amplifyMicrophone(microphone, options.processing ?? "standard");
   if (!boosted.amplified) return raw;
   const deviceId = microphone.getSettings().deviceId;
   if (deviceId) sourceDeviceIds.set(boosted.track, deviceId);

@@ -122,7 +122,7 @@ export default function RoomClient({
   const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState('');
   const [inputVolume, setInputVolume] = useState(1);
   const [outputVolume, setOutputVolume] = useState(1);
-  const [voiceProfile, setVoiceProfile] = useState<'standard' | 'noise-suppression'>('standard');
+  const [voiceProfile, setVoiceProfile] = useState<VoiceProfile>('standard');
   const [outputDeviceSelectionSupported, setOutputDeviceSelectionSupported] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [micLockedByHost, setMicLockedByHost] = useState(false);
@@ -1000,7 +1000,7 @@ export default function RoomClient({
       replacement = await openCallInput({
         video: false,
         audioDeviceId: deviceId || undefined,
-        noiseSuppression: profile === 'noise-suppression',
+        processing: profile,
       });
       const nextTrack = replacement.getAudioTracks()[0];
       if (!nextTrack) throw new Error('O dispositivo escolhido não forneceu áudio.');
@@ -1568,7 +1568,7 @@ export default function RoomClient({
       const stream = await openCallInput({
         video: true,
         audioDeviceId: preferences.inputDeviceId || undefined,
-        noiseSuppression: preferences.voiceProfile === 'noise-suppression',
+        processing: preferences.voiceProfile,
       }).catch(() => null);
 
       if (cancelled) {

@@ -1,4 +1,10 @@
-export type SavedVoiceProfile = "standard" | "noise-suppression";
+export type SavedVoiceProfile = "standard" | "noise-suppression" | "elevenlabs";
+
+export function voiceProfileLabel(profile: SavedVoiceProfile): string {
+  if (profile === "elevenlabs") return "Supressão ElevenLabs";
+  if (profile === "noise-suppression") return "Supressão neural (RNNoise)";
+  return "Padrão";
+}
 
 export interface VoicePreferences {
   inputDeviceId: string;
@@ -32,7 +38,7 @@ export function readVoicePreferences(userId: string): VoicePreferences {
       outputDeviceId: typeof saved.outputDeviceId === "string" ? saved.outputDeviceId : "",
       inputVolume: typeof saved.inputVolume === "number" ? Math.max(0, Math.min(2, saved.inputVolume)) : 1,
       outputVolume: typeof saved.outputVolume === "number" ? Math.max(0, Math.min(1, saved.outputVolume)) : 1,
-      voiceProfile: saved.voiceProfile === "noise-suppression" ? "noise-suppression" : "standard",
+      voiceProfile: saved.voiceProfile === "noise-suppression" || saved.voiceProfile === "elevenlabs" ? saved.voiceProfile : "standard",
     };
   } catch {
     return { ...DEFAULT_VOICE_PREFERENCES };
