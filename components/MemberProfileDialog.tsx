@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Activity, Gamepad2, Headphones, MessageCircle, MoreHorizontal, Music2, Pencil, SendHorizontal, Users, UserPlus, ZoomIn, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { ActivityPanelArt } from "@/components/ActivityPanelArt";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
@@ -194,9 +195,7 @@ export function MemberProfileDialog({
         </aside>
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202127]">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[62%] overflow-hidden">
-            {profile.activityBannerUrl && <div className="absolute inset-0" style={{ maskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)" }}><CroppedProfileImage src={profile.activityBannerUrl} pauseGif={false} className="opacity-[.42] saturate-[.85]"/><div className="absolute inset-0 bg-gradient-to-b from-[#202127]/20 via-[#202127]/35 to-[#202127]"/></div>}
-          </div>
+          {profile.activityBannerUrl && <ActivityPanelArt src={profile.activityBannerUrl} positionX={profile.activityBannerPositionX} positionY={profile.activityBannerPositionY} zoom={profile.activityBannerZoom} />}
           <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-white/10 px-5 pr-14 sm:px-7 sm:pr-16" style={{ borderColor: palette.border }}>
             <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-discord-brand">Perfil</p><p className="truncate text-sm font-semibold">{profile.displayName}</p></div>

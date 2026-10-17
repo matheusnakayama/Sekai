@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MEMBER_LIST_BANNER_FADE, memberListBannerMask } from "../lib/memberListBanner.ts";
+import { ACTIVITY_PANEL_HEIGHT, ACTIVITY_PANEL_MASK, isMissingActivityBannerCropColumn, withActivityBannerCrop, withoutActivityBannerCrop } from "../lib/activityBanner.ts";
+import { MEMBER_LIST_BANNER_OPACITY, memberListBannerMask } from "../lib/memberListBanner.ts";
 import {
   PROFILE_DECORATIONS,
   isMissingProfileDecorationColumn,
@@ -10,12 +11,29 @@ import {
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
 
-test("member list banner fades from clear after the name to solid on the right", () => {
-  const mask = memberListBannerMask(90);
-  assert.match(mask, /90deg/);
-  assert.match(mask, /transparent 0px, transparent 90px/);
-  assert.match(mask, new RegExp(`#000 ${90 + MEMBER_LIST_BANNER_FADE}px, #000 100%`));
-  assert.match(memberListBannerMask(-8), /transparent 0px, transparent 0px/);
+test("member list banner fades diagonally and a little softer after the name", () => {
+  const mask = memberListBannerMask(90, 240);
+  assert.match(mask, /to bottom left/);
+  assert.equal(MEMBER_LIST_BANNER_OPACITY < 1 && MEMBER_LIST_BANNER_OPACITY >= 0.7, true);
+  const solid = Number(mask.match(/#000 (\d+)%/)?.[1]);
+  const clear = Number(mask.match(/transparent (\d+)%/)?.[1]);
+  assert.ok(solid < clear);
+  const earlyClear = Number(memberListBannerMask(20, 240).match(/transparent (\d+)%/)?.[1]);
+  const lateClear = Number(memberListBannerMask(180, 240).match(/transparent (\d+)%/)?.[1]);
+  assert.ok(lateClear < earlyClear);
+  assert.match(memberListBannerMask(-8, 240), /to bottom left/);
+});
+
+test("activity gif uses a shorter diagonal fade and optional crop columns", () => {
+  assert.equal(ACTIVITY_PANEL_HEIGHT, "31%");
+  assert.match(ACTIVITY_PANEL_MASK, /to bottom left/);
+  const select = "id,activity_banner_url,status";
+  const withCrop = withActivityBannerCrop(select);
+  assert.match(withCrop, /activity_banner_position_x,activity_banner_position_y,activity_banner_zoom/);
+  assert.equal(withoutActivityBannerCrop(withCrop), select);
+  assert.equal(withActivityBannerCrop(withCrop), withCrop);
+  assert.equal(isMissingActivityBannerCropColumn({ message: "column activity_banner_position_x does not exist" }), true);
+  assert.equal(isMissingActivityBannerCropColumn({ message: "permission denied" }), false);
 });
 
 test("profile decorations are a fixed catalog of ten original frames", () => {

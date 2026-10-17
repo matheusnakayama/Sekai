@@ -19,7 +19,9 @@ import { useTheme } from "@/lib/useTheme";
 import { ProfileImageCropModal, ProfileImagePickerModal } from "@/components/ProfileImageModals";
 import type { ImageCrop, ProfileImageKind, SelectedProfileMedia } from "@/components/ProfileImageModals";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
+import { ActivityPanelArt } from "@/components/ActivityPanelArt";
 import { MemberListBannerPreview } from "@/components/MemberListBannerArt";
+import { isMissingActivityBannerCropColumn } from "@/lib/activityBanner";
 import { ProfileDecoration, ProfileDecorationPicker } from "@/components/ProfileDecoration";
 import { isMissingProfileDecorationColumn, normalizeProfileDecoration, type ProfileDecorationId } from "@/lib/profileDecorations";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
@@ -54,6 +56,9 @@ interface UserSettingsModalProps {
     bannerPositionY?: number | null;
     bannerZoom?: number | null;
     activityBannerUrl?: string | null;
+    activityBannerPositionX?: number | null;
+    activityBannerPositionY?: number | null;
+    activityBannerZoom?: number | null;
     memberListBannerUrl?: string | null;
     memberListBannerPositionX?: number | null;
     memberListBannerPositionY?: number | null;
@@ -162,6 +167,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [activityBannerFile, setActivityBannerFile] = useState<File | null>(null);
   const [removeActivityBanner, setRemoveActivityBanner] = useState(false);
   const [activityBannerPreview, setActivityBannerPreview] = useState(initial.activityBannerUrl ?? "");
+  const [activityBannerCrop, setActivityBannerCrop] = useState<ImageCrop>({ x: initial.activityBannerPositionX ?? 50, y: initial.activityBannerPositionY ?? 50, zoom: initial.activityBannerZoom ?? 100 });
   const [memberListBannerFile, setMemberListBannerFile] = useState<File | null>(null);
   const [removeMemberListBanner, setRemoveMemberListBanner] = useState(false);
   const [memberListBannerPreview, setMemberListBannerPreview] = useState(initial.memberListBannerUrl ?? "");
@@ -180,7 +186,6 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   const [serverMemberListBannerCrop, setServerMemberListBannerCrop] = useState<ImageCrop>(DEFAULT_CROP);
   const [serverProfileLoadError, setServerProfileLoadError] = useState("");
   const [imagePicker, setImagePicker] = useState<{ kind: ProfileImageKind; scope: ImageScope } | null>(null);
-  const activityBannerInput = useRef<HTMLInputElement>(null);
   const [imageEditor, setImageEditor] = useState<ImageEditorTarget | null>(null);
   const [recentImages, setRecentImages] = useState<string[]>([]);
   const temporaryImageUrls = useRef(new Set<string>());
@@ -234,19 +239,6 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     if (mode === "gradient" && profileCardColors.length === 1) {
       setProfileCardColors((current) => [...current, "#5865f2"]);
     }
-  }
-
-  function selectActivityBanner(file?: File) {
-    if (!file) return;
-    const format = profileImageUploadFormat(file);
-    if (!format) { setError("Formato não suportado. Use PNG, JPG, WebP ou GIF."); return; }
-    if (file.size > 8 * 1024 * 1024) { setError("A imagem de fundo deve ter no máximo 8 MB."); return; }
-    const previewUrl = URL.createObjectURL(file);
-    temporaryImageUrls.current.add(previewUrl);
-    setActivityBannerFile(file);
-    setActivityBannerPreview(previewUrl);
-    setRemoveActivityBanner(false);
-    setError("");
   }
 
   useEffect(() => {
@@ -390,17 +382,20 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   }
 
   function getImageCrop(kind: ProfileImageKind, scope: ImageScope) {
+    if (kind === "activityBanner") return activityBannerCrop;
     if (scope === "server") return kind === "avatar" ? serverAvatarCrop : kind === "memberListBanner" ? serverMemberListBannerCrop : serverBannerCrop;
     return kind === "avatar" ? avatarCrop : kind === "memberListBanner" ? memberListBannerCrop : bannerCrop;
   }
 
   function setImageCrop(kind: ProfileImageKind, scope: ImageScope, crop: ImageCrop) {
+    if (kind === "activityBanner") { setActivityBannerCrop(crop); return; }
     if (scope === "server") {
       if (kind === "avatar") setServerAvatarCrop(crop); else if (kind === "memberListBanner") setServerMemberListBannerCrop(crop); else setServerBannerCrop(crop);
     } else if (kind === "avatar") setAvatarCrop(crop); else if (kind === "memberListBanner") setMemberListBannerCrop(crop); else setBannerCrop(crop);
   }
 
   function setImageSelection(kind: ProfileImageKind, scope: ImageScope, file: File | null, url: string) {
+    if (kind === "activityBanner") { setActivityBannerFile(file); setActivityBannerPreview(url); setRemoveActivityBanner(false); return; }
     if (scope === "server") {
       if (kind === "avatar") { setServerAvatarFile(file); setServerAvatarPreview(url); setRemoveServerAvatar(false); }
       else if (kind === "memberListBanner") { setServerMemberListBannerFile(file); setServerMemberListBannerPreview(url); setRemoveServerMemberListBanner(false); }
@@ -412,7 +407,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
 
   function openImagePicker(kind: ProfileImageKind) {
     setError("");
-    setImagePicker({ kind, scope: profileScope });
+    setImagePicker({ kind, scope: kind === "activityBanner" ? "user" : profileScope });
   }
 
   function selectProfileMedia(selection: SelectedProfileMedia) {
@@ -424,7 +419,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     const src = file ? URL.createObjectURL(file) : selection.url;
     if (file) temporaryImageUrls.current.add(src);
     if (!src) return;
-    const previousUrl = target.scope === "server"
+    const previousUrl = target.kind === "activityBanner" ? activityBannerPreview : target.scope === "server"
       ? target.kind === "avatar" ? serverAvatarPreview : target.kind === "memberListBanner" ? serverMemberListBannerPreview : serverBannerPreview
       : target.kind === "avatar" ? avatarPreview : target.kind === "memberListBanner" ? memberListBannerPreview : bannerPreview;
     const crop = src === previousUrl ? getImageCrop(target.kind, target.scope) : DEFAULT_CROP;
@@ -433,11 +428,11 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
   }
 
   function openCropEditor(kind: ProfileImageKind, scope: ImageScope) {
-    const src = scope === "server"
+    const src = kind === "activityBanner" ? activityBannerPreview : scope === "server"
       ? kind === "avatar" ? serverAvatarPreview : kind === "memberListBanner" ? serverMemberListBannerPreview : serverBannerPreview
       : kind === "avatar" ? avatarPreview : kind === "memberListBanner" ? memberListBannerPreview : bannerPreview;
     if (!src) return;
-    const file = scope === "server" ? kind === "avatar" ? serverAvatarFile : kind === "memberListBanner" ? serverMemberListBannerFile : serverBannerFile : kind === "avatar" ? avatarFile : kind === "memberListBanner" ? memberListBannerFile : bannerFile;
+    const file = kind === "activityBanner" ? activityBannerFile : scope === "server" ? kind === "avatar" ? serverAvatarFile : kind === "memberListBanner" ? serverMemberListBannerFile : serverBannerFile : kind === "avatar" ? avatarFile : kind === "memberListBanner" ? memberListBannerFile : bannerFile;
     setImageEditor({ kind, scope, src, file, crop: getImageCrop(kind, scope), pending: false });
   }
 
@@ -512,24 +507,15 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
     let activityBannerUrl = removeActivityBanner ? null : (activityBannerPreview || initial.activityBannerUrl || null);
     let memberListBannerUrl = removeMemberListBanner ? null : (memberListBannerPreview || initial.memberListBannerUrl || null);
 
-    for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }, { file: memberListBannerFile, kind: "memberListBanner" as const }]) {
+    for (const item of [{ file: avatarFile, kind: "avatar" as const }, { file: bannerFile, kind: "banner" as const }, { file: memberListBannerFile, kind: "memberListBanner" as const }, { file: activityBannerFile, kind: "activityBanner" as const }]) {
       if (!item.file) continue;
       const format = profileImageUploadFormat(item.file);
       if (!format) { setSaving(false); setError("Formato de imagem não suportado. Use PNG, JPG, WebP ou GIF."); return; }
       const path = `${userId}/${item.kind}-${crypto.randomUUID()}.${format.extension}`;
       const { error: uploadError } = await supabase.storage.from("avatars").upload(path, item.file, { upsert: false, contentType: format.contentType });
-      if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : "banner"}: ${uploadError.message}`); return; }
+      if (uploadError) { setSaving(false); setError(`Falha ao enviar ${item.kind === "avatar" ? "avatar" : item.kind === "memberListBanner" ? "banner da lista" : item.kind === "activityBanner" ? "GIF da atividade" : "banner"}: ${uploadError.message}`); return; }
       const url = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
-      if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else bannerUrl = url;
-    }
-
-    if (activityBannerFile) {
-      const format = profileImageUploadFormat(activityBannerFile);
-      if (!format) { setSaving(false); setError("Formato não suportado. Use PNG, JPG, WebP ou GIF."); return; }
-      const path = `${userId}/activity-banner-${crypto.randomUUID()}.${format.extension}`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, activityBannerFile, { upsert: false, contentType: format.contentType });
-      if (uploadError) { setSaving(false); setError(`Falha ao enviar imagem de fundo: ${uploadError.message}`); return; }
-      activityBannerUrl = supabase.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+      if (item.kind === "avatar") avatarUrl = url; else if (item.kind === "memberListBanner") memberListBannerUrl = url; else if (item.kind === "activityBanner") activityBannerUrl = url; else bannerUrl = url;
     }
 
     const profileUpdate = {
@@ -543,6 +529,9 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       banner_position_y: removeBanner ? 50 : bannerCrop.y,
       banner_zoom: removeBanner ? 100 : bannerCrop.zoom,
       activity_banner_url: activityBannerUrl,
+      activity_banner_position_x: removeActivityBanner ? 50 : activityBannerCrop.x,
+      activity_banner_position_y: removeActivityBanner ? 50 : activityBannerCrop.y,
+      activity_banner_zoom: removeActivityBanner ? 100 : activityBannerCrop.zoom,
       member_list_banner_url: memberListBannerUrl,
       member_list_banner_position_x: removeMemberListBanner ? 50 : memberListBannerCrop.x,
       member_list_banner_position_y: removeMemberListBanner ? 50 : memberListBannerCrop.y,
@@ -550,21 +539,47 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
       status: presence, profile_card_color: profileCardColor, show_badges_in_member_list: showBadgesInMemberList,
       profile_decoration: profileDecoration,
     };
-    let { error: updateError } = await supabase.from("profiles").update(profileUpdate).eq("id", userId);
-    if (updateError && isMissingProfileDecorationColumn(updateError)) {
-      const { profile_decoration: omittedDecoration, ...withoutDecoration } = profileUpdate;
-      void omittedDecoration;
-      const retry = await supabase.from("profiles").update(withoutDecoration).eq("id", userId);
+    const missingColumns: string[] = [];
+    let payload: Record<string, unknown> = profileUpdate;
+    let { error: updateError } = await supabase.from("profiles").update(payload).eq("id", userId);
+    for (let attempt = 0; attempt < 2 && updateError; attempt += 1) {
+      const next = { ...payload };
+      let changed = false;
+      if (isMissingProfileDecorationColumn(updateError) && "profile_decoration" in next) {
+        delete next.profile_decoration;
+        missingColumns.push("decoration");
+        changed = true;
+      }
+      if (isMissingActivityBannerCropColumn(updateError) && "activity_banner_position_x" in next) {
+        delete next.activity_banner_position_x;
+        delete next.activity_banner_position_y;
+        delete next.activity_banner_zoom;
+        missingColumns.push("crop");
+        changed = true;
+      }
+      if (!changed) break;
+      payload = next;
+      const retry = await supabase.from("profiles").update(payload).eq("id", userId);
       updateError = retry.error;
-      setSaving(false);
-      if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
+    }
+    setSaving(false);
+    if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
+    rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl); rememberRecentImage("activityBanner", activityBannerUrl);
+    if (missingColumns.includes("decoration") && missingColumns.includes("crop")) {
+      setError("O perfil foi salvo, mas faltam colunas no banco. Aplique db/profile_decoration_migration.sql e db/activity_banner_crop_migration.sql no Supabase e salve de novo.");
+      onSaved();
+      return;
+    }
+    if (missingColumns.includes("decoration")) {
       setError("O perfil foi salvo, mas a decoração precisa da coluna nova. Aplique db/profile_decoration_migration.sql no Supabase e salve de novo.");
       onSaved();
       return;
     }
-    setSaving(false);
-    if (updateError) { setError("Falha ao salvar: " + updateError.message); return; }
-    rememberRecentImage("avatar", avatarUrl); rememberRecentImage("banner", bannerUrl); rememberRecentImage("memberListBanner", memberListBannerUrl);
+    if (missingColumns.includes("crop")) {
+      setError("O perfil foi salvo, mas o recorte do GIF da atividade precisa das colunas novas. Aplique db/activity_banner_crop_migration.sql no Supabase e salve de novo.");
+      onSaved();
+      return;
+    }
     onSaved(); requestClose();
   }
 
@@ -814,7 +829,7 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                   </div>
                 </div>
                 <div className="mb-6 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">A imagem começa invisível e fica sólida um pouco depois do nome, até 100% na direita.</p></div>
+                  <div className="mb-3"><h3 className="text-sm font-semibold text-discord-header-primary">Banner da lista de membros</h3><p className="mt-1 text-xs leading-5 text-discord-text-muted">A imagem começa invisível um pouco depois do nome e sobe em diagonal até o canto superior direito, um pouco abaixo de 100%.</p></div>
                   <MemberListBannerPreview src={memberListBannerPreview} name={displayName || "Seu nome"} positionX={memberListBannerCrop.x} positionY={memberListBannerCrop.y} zoom={memberListBannerCrop.zoom} playing />
                   <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("memberListBanner")} className="settings-upload-control rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">{memberListBannerPreview ? "Trocar banner da lista" : "Adicionar banner da lista"}</button>{memberListBannerPreview && <><button type="button" onClick={() => openCropEditor("memberListBanner", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setMemberListBannerFile(null); setMemberListBannerPreview(""); setMemberListBannerCrop(DEFAULT_CROP); setRemoveMemberListBanner(true); }} aria-label="Remover banner da lista de membros" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                 </div>
@@ -847,13 +862,13 @@ export function UserSettingsModal({ userId, serverId, serverName, initial, initi
                   </div>}
                 </div>
                 <div className="mb-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">
-                  <div className="mb-3"><h4 className="text-sm font-semibold text-discord-header-primary">Imagem/GIF do painel de atividade</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">É independente do banner e da cor do cartão. Ela aparece no topo da área de atividade e desaparece em degradê. PNG, JPG, WebP ou GIF · até 8 MB.</p></div>
-                  <div className="relative mb-3 h-24 overflow-hidden rounded-lg bg-discord-bg-secondary">
-                    {activityBannerPreview && <div aria-hidden="true" className="absolute inset-0" style={{ maskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)" }}><CroppedProfileImage src={activityBannerPreview} pauseGif={false} className="opacity-[.42] saturate-[.85]"/><div className="absolute inset-0 bg-gradient-to-b from-[#202127]/20 via-[#202127]/35 to-[#202127]"/></div>}
+                  <div className="mb-3"><h4 className="text-sm font-semibold text-discord-header-primary">Imagem/GIF do painel de atividade</h4><p className="mt-1 text-xs leading-5 text-discord-text-muted">Ocupa cerca de metade da altura de antes, no topo da área de atividade, e some em diagonal para baixo à esquerda. Dá para ajustar o recorte. PNG, JPG, WebP ou GIF · até 8 MB.</p></div>
+                  <div className="relative mb-3 h-52 overflow-hidden rounded-lg bg-[#202127]">
+                    {activityBannerPreview && <ActivityPanelArt src={activityBannerPreview} positionX={activityBannerCrop.x} positionY={activityBannerCrop.y} zoom={activityBannerCrop.zoom} />}
                     {!activityBannerPreview && <span className="absolute inset-0 grid place-items-center text-xs text-discord-text-muted">Prévia do fundo da atividade</span>}
+                    <div className="relative z-10 px-4 pb-4 pt-[34%]"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-white/45">Atividade atual</p></div>
                   </div>
-                  <input ref={activityBannerInput} type="file" accept="image/gif,image/png,image/jpeg,image/webp" onChange={(event) => { selectActivityBanner(event.currentTarget.files?.[0]); event.currentTarget.value = ""; }} className="hidden"/>
-                  <div className="flex flex-wrap gap-2"><button type="button" onClick={() => activityBannerInput.current?.click()} className="settings-upload-control inline-flex items-center gap-2 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal"><ImagePlus size={14}/>{activityBannerPreview ? "Trocar imagem/GIF" : "Adicionar imagem/GIF"}</button>{activityBannerPreview && <button type="button" onClick={() => { setActivityBannerFile(null); setActivityBannerPreview(""); setRemoveActivityBanner(true); }} aria-label="Remover imagem/GIF do painel de atividade" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button>}</div>
+                  <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openImagePicker("activityBanner")} className="settings-upload-control inline-flex items-center gap-2 rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal"><ImagePlus size={14}/>{activityBannerPreview ? "Trocar imagem/GIF" : "Adicionar imagem/GIF"}</button>{activityBannerPreview && <><button type="button" onClick={() => openCropEditor("activityBanner", "user")} className="rounded-lg bg-discord-bg-modifier-hover px-3 py-2 text-xs font-semibold text-discord-text-normal">Ajustar recorte</button><button type="button" onClick={() => { setActivityBannerFile(null); setActivityBannerPreview(""); setActivityBannerCrop(DEFAULT_CROP); setRemoveActivityBanner(true); }} aria-label="Remover imagem/GIF do painel de atividade" className="rounded-lg bg-discord-bg-modifier-hover p-2 text-discord-text-muted transition hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={14}/></button></>}</div>
                 </div>
                 <ToggleRow title="Mostrar insígnias na lista de membros" description="Ative para exibir as insígnias selecionadas abaixo, ao lado do seu nome." checked={showBadgesInMemberList} onChange={setShowBadgesInMemberList} />
                 <div className="mt-5 rounded-xl border border-white/5 bg-discord-bg-primary p-4">

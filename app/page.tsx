@@ -37,6 +37,7 @@ import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
 import { playUiSound, setUiSoundOutput, setUiSoundPresence, unlockUiSounds } from "@/lib/uiSounds";
 import { readVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT } from "@/lib/voicePreferences";
+import { isMissingActivityBannerCropColumn, withActivityBannerCrop, withoutActivityBannerCrop } from "@/lib/activityBanner";
 import { isMissingProfileDecorationColumn, withProfileDecorationColumn, withoutProfileDecorationColumn } from "@/lib/profileDecorations";
 import { getServerTemplate } from "@/lib/serverTemplates";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
@@ -59,6 +60,23 @@ type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; 
 
 function channelCacheKey(userId: string, serverId: string) {
   return `${userId}:${serverId}`;
+}
+
+async function selectOptionalProfileColumns<T>(
+  select: string,
+  run: (columns: string) => PromiseLike<{ data: T; error: { message?: string; code?: string } | null }>,
+) {
+  let columns = withActivityBannerCrop(withProfileDecorationColumn(select));
+  let result = await run(columns);
+  for (let attempt = 0; attempt < 2 && result.error; attempt += 1) {
+    let next = columns;
+    if (isMissingProfileDecorationColumn(result.error)) next = withoutProfileDecorationColumn(next);
+    if (isMissingActivityBannerCropColumn(result.error)) next = withoutActivityBannerCrop(next);
+    if (next === columns) break;
+    columns = next;
+    result = await run(columns);
+  }
+  return result;
 }
 
 function isServerSoundUrl(assetUrl: string, serverId: string) {
@@ -429,7 +447,7 @@ export default function Home() {
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; profileDecoration?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; activityBannerPositionX?: number; activityBannerPositionY?: number; activityBannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; profileDecoration?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
@@ -812,15 +830,13 @@ export default function Home() {
   async function loadMyProfile() {
     if (!currentUserId) return;
     const profileSelect = "display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status";
-    const firstProfile = await supabase.from("profiles").select(withProfileDecorationColumn(profileSelect)).eq("id", currentUserId).maybeSingle();
-    const profileResult = firstProfile.error && isMissingProfileDecorationColumn(firstProfile.error)
-      ? await supabase.from("profiles").select(profileSelect).eq("id", currentUserId).maybeSingle()
-      : firstProfile;
+    const profileResult = await selectOptionalProfileColumns(profileSelect, (columns) => supabase.from("profiles").select(columns).eq("id", currentUserId).maybeSingle());
     const data = profileResult.data as {
       display_name?: string | null; username?: string | null; pronouns?: string | null; bio?: string | null; custom_status?: string | null;
       avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null;
       banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null;
-      activity_banner_url?: string | null; member_list_banner_url?: string | null; member_list_banner_position_x?: number | null; member_list_banner_position_y?: number | null; member_list_banner_zoom?: number | null;
+      activity_banner_url?: string | null; activity_banner_position_x?: number | null; activity_banner_position_y?: number | null; activity_banner_zoom?: number | null;
+      member_list_banner_url?: string | null; member_list_banner_position_x?: number | null; member_list_banner_position_y?: number | null; member_list_banner_zoom?: number | null;
       profile_card_color?: string | null; profile_decoration?: string | null; show_badges_in_member_list?: boolean | null; status?: "online" | "idle" | "dnd" | "offline" | null;
     } | null;
     if (data) {
@@ -844,6 +860,9 @@ export default function Home() {
         bannerPositionY: data.banner_position_y ?? 50,
         bannerZoom: data.banner_zoom ?? 100,
         activityBannerUrl: data.activity_banner_url,
+        activityBannerPositionX: data.activity_banner_position_x ?? 50,
+        activityBannerPositionY: data.activity_banner_position_y ?? 50,
+        activityBannerZoom: data.activity_banner_zoom ?? 100,
         memberListBannerUrl: data.member_list_banner_url,
         memberListBannerPositionX: data.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: data.member_list_banner_position_y ?? 50,
@@ -1254,14 +1273,7 @@ export default function Home() {
     const [serverResult, categoryResult, memberResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      (async () => {
-        const memberSelect = withProfileDecorationColumn("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)");
-        const first = await supabase.from("members").select(memberSelect).eq("server_id", serverId);
-        if (first.error && isMissingProfileDecorationColumn(first.error)) {
-          return supabase.from("members").select(withoutProfileDecorationColumn(memberSelect)).eq("server_id", serverId);
-        }
-        return first;
-      })(),
+      selectOptionalProfileColumns("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)", (columns) => supabase.from("members").select(columns).eq("server_id", serverId)),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1343,6 +1355,9 @@ export default function Home() {
         bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
         bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
         activityBannerUrl: m.profiles?.activity_banner_url,
+        activityBannerPositionX: m.profiles?.activity_banner_position_x ?? 50,
+        activityBannerPositionY: m.profiles?.activity_banner_position_y ?? 50,
+        activityBannerZoom: m.profiles?.activity_banner_zoom ?? 100,
         memberListBannerUrl: m.member_list_banner_url || m.profiles?.member_list_banner_url,
         memberListBannerPositionX: m.member_list_banner_url ? m.member_list_banner_position_x ?? 50 : m.profiles?.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
@@ -2251,6 +2266,9 @@ export default function Home() {
     bannerPositionY: myProfile?.bannerPositionY ?? 50,
     bannerZoom: myProfile?.bannerZoom ?? 100,
     activityBannerUrl: myProfile?.activityBannerUrl ?? null,
+    activityBannerPositionX: myProfile?.activityBannerPositionX ?? 50,
+    activityBannerPositionY: myProfile?.activityBannerPositionY ?? 50,
+    activityBannerZoom: myProfile?.activityBannerZoom ?? 100,
     profileCardColor: myProfile?.profileCardColor ?? null,
     profileDecoration: myProfile?.profileDecoration ?? currentMember?.profileDecoration ?? null,
     badges: myProfile?.badges ?? [],

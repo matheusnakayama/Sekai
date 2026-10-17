@@ -2,11 +2,11 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
-import { MEMBER_LIST_BANNER_GAP, memberListBannerMask } from "@/lib/memberListBanner";
+import { MEMBER_LIST_BANNER_GAP, MEMBER_LIST_BANNER_OPACITY, memberListBannerMask } from "@/lib/memberListBanner";
 import { cn } from "@/lib/utils";
 
 export function useMemberListBannerFade(rowRef: RefObject<HTMLElement | null>, nameRef: RefObject<HTMLElement | null>, enabled: boolean, label = "") {
-  const [nameEnd, setNameEnd] = useState(72);
+  const [measure, setMeasure] = useState({ nameEnd: 72, rowWidth: 240 });
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -17,7 +17,7 @@ export function useMemberListBannerFade(rowRef: RefObject<HTMLElement | null>, n
       const nameBounds = name.getBoundingClientRect();
       const visibleNameWidth = Math.min(name.scrollWidth, name.clientWidth);
       const end = nameBounds.left - rowBounds.left + visibleNameWidth + MEMBER_LIST_BANNER_GAP;
-      setNameEnd(Math.max(0, Math.min(rowBounds.width, end)));
+      setMeasure({ nameEnd: Math.max(0, Math.min(rowBounds.width, end)), rowWidth: rowBounds.width });
     };
     update();
     const observer = new ResizeObserver(update);
@@ -26,7 +26,7 @@ export function useMemberListBannerFade(rowRef: RefObject<HTMLElement | null>, n
     return () => observer.disconnect();
   }, [enabled, label, nameRef, rowRef]);
 
-  return nameEnd;
+  return measure;
 }
 
 export function MemberListBannerArt({
@@ -35,6 +35,7 @@ export function MemberListBannerArt({
   positionY,
   zoom,
   nameEnd,
+  rowWidth,
   hovered = false,
   playing = false,
 }: {
@@ -43,15 +44,16 @@ export function MemberListBannerArt({
   positionY?: number | null;
   zoom?: number | null;
   nameEnd: number;
+  rowWidth: number;
   hovered?: boolean;
   playing?: boolean;
 }) {
-  const mask = memberListBannerMask(nameEnd);
+  const mask = memberListBannerMask(nameEnd, rowWidth);
   return (
     <div
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
-      style={{ maskImage: mask, WebkitMaskImage: mask }}
+      style={{ opacity: MEMBER_LIST_BANNER_OPACITY, maskImage: mask, WebkitMaskImage: mask }}
     >
       <CroppedProfileImage
         src={src}
@@ -83,10 +85,10 @@ export function MemberListBannerPreview({
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
-  const nameEnd = useMemberListBannerFade(rowRef, nameRef, Boolean(src), name);
+  const fade = useMemberListBannerFade(rowRef, nameRef, Boolean(src), name);
   return (
     <div ref={rowRef} className="relative mb-3 flex h-12 w-60 items-center gap-2 overflow-hidden rounded-lg bg-[#1a1b1e] px-2 shadow-[inset_0_0_0_1px_rgba(255,255,255,.04)]">
-      {src && <MemberListBannerArt src={src} positionX={positionX} positionY={positionY} zoom={zoom} nameEnd={nameEnd} playing={playing} />}
+      {src && <MemberListBannerArt src={src} positionX={positionX} positionY={positionY} zoom={zoom} nameEnd={fade.nameEnd} rowWidth={fade.rowWidth} playing={playing} />}
       <span className="relative z-10 h-8 w-8 shrink-0 rounded-full bg-discord-brand shadow-[0_0_0_2px_rgba(0,0,0,.45)]" />
       <span ref={nameRef} className="relative z-10 min-w-0 truncate text-[13px] font-semibold text-white">{name || "Seu nome"}</span>
     </div>

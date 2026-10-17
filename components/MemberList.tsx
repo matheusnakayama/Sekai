@@ -29,6 +29,9 @@ export interface MemberItem {
   bannerPositionY?: number | null;
   bannerZoom?: number | null;
   activityBannerUrl?: string | null;
+  activityBannerPositionX?: number | null;
+  activityBannerPositionY?: number | null;
+  activityBannerZoom?: number | null;
   memberListBannerUrl?: string | null;
   memberListBannerPositionX?: number | null;
   memberListBannerPositionY?: number | null;
@@ -258,11 +261,11 @@ function MemberRow({ member, listening, gameActivity, isSelf, onSelect, onContex
   const rowRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
   const hasBanner = Boolean(member.memberListBannerUrl);
-  const nameEnd = useMemberListBannerFade(rowRef, nameRef, hasBanner, member.displayName);
+  const fade = useMemberListBannerFade(rowRef, nameRef, hasBanner, member.displayName);
 
   return (
     <div ref={rowRef} role="button" tabIndex={0} aria-label={`Abrir cartão de ${member.displayName}`} onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(member, event.currentTarget); } }} onContextMenu={(event) => onContextMenu(member, event)} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} onClick={(event) => onSelect(member, event.currentTarget)} className={cn("group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors duration-200 hover:bg-white/[0.045] focus-visible:outline focus-visible:outline-2 focus-visible:outline-discord-brand", hasBanner ? "min-h-[46px]" : "min-h-[38px]", member.status === "offline" && "opacity-50 hover:opacity-90")}>
-      {member.memberListBannerUrl && <MemberListBannerArt src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} nameEnd={nameEnd} hovered={hovered} />}
+      {member.memberListBannerUrl && <MemberListBannerArt src={member.memberListBannerUrl} positionX={member.memberListBannerPositionX} positionY={member.memberListBannerPositionY} zoom={member.memberListBannerZoom} nameEnd={fade.nameEnd} rowWidth={fade.rowWidth} hovered={hovered} />}
       <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(member, rowRef.current ?? event.currentTarget); }} aria-label={`Abrir cartão de ${member.displayName}`} title={`Abrir cartão de ${member.displayName}`} className={cn("relative z-10 h-8 w-8 shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-discord-brand", hasBanner && "shadow-[0_0_0_2px_rgba(0,0,0,.5),0_2px_8px_rgba(0,0,0,.35)]")}>
        <div className="relative h-full w-full overflow-hidden rounded-full bg-discord-brand">
         {member.avatarUrl ? (
