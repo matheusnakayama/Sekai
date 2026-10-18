@@ -10,6 +10,7 @@ import {
   withoutProfileDecorationColumn,
 } from "../lib/profileDecorations.ts";
 import { shouldPlayUiSound } from "../lib/uiSounds.ts";
+import { SEKAI_BALLOON_WINDOW_MS, groupChatBalloons } from "../lib/messageBalloons.ts";
 
 function bannerEdge(nameEnd, width, height) {
   const mask = decodeURIComponent(memberListBannerMask(nameEnd, width, height));
@@ -62,6 +63,19 @@ test("profile decorations are a fixed catalog of ten original frames", () => {
   assert.equal(withoutProfileDecorationColumn(withProfileDecorationColumn(select)), select);
   assert.equal(isMissingProfileDecorationColumn({ message: "column profiles.profile_decoration does not exist" }), true);
   assert.equal(isMissingProfileDecorationColumn({ message: "permission denied" }), false);
+});
+
+test("sekai balloons merge the same person inside one period", () => {
+  const messages = [
+    { id: "1", authorId: "a", createdAt: "2026-10-17T17:18:00.000Z", systemType: null },
+    { id: "2", authorId: "a", createdAt: "2026-10-17T17:19:10.000Z", systemType: null },
+    { id: "3", authorId: "a", createdAt: "2026-10-17T17:22:00.000Z", systemType: null },
+    { id: "4", authorId: "b", createdAt: "2026-10-17T17:22:20.000Z", systemType: null },
+    { id: "5", authorId: "a", createdAt: "2026-10-17T17:40:00.000Z", systemType: null },
+  ];
+  const groups = groupChatBalloons(messages, SEKAI_BALLOON_WINDOW_MS, (message) => message.id === "3");
+  assert.equal(SEKAI_BALLOON_WINDOW_MS, 5 * 60 * 1000);
+  assert.deepEqual(groups.map((group) => group.map((message) => message.id)), [["1", "2"], ["3"], ["4"], ["5"]]);
 });
 
 test("do not disturb silences received message sounds and leaves call cues on", () => {

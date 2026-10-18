@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
-import { useChatDisplay } from "@/lib/chatPreferences";
+import { CHAT_PREFERENCES_EVENT, useChatDisplay } from "@/lib/chatPreferences";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
@@ -23,6 +23,7 @@ import { readSaved, rememberReport, toggleSaved, type SavedChatMessage } from "@
 import { ChatTopicCard, ChatTopicThreadDialog } from "@/components/ChatTopic";
 import { ChatPollCard } from "@/components/ChatPollCard";
 import { beginSpotifyConnect, ensureSpotifyToken, fetchCurrentlyPlaying } from "@/lib/spotify";
+import { SEKAI_BALLOON_WINDOW_MS, groupChatBalloons } from "@/lib/messageBalloons";
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
 
@@ -625,6 +626,9 @@ export function ChatArea({
     setComposerToolsOpen(false);
   }
 
+  const sekaiLayout = useSekaiLayout();
+  const messageGroups = groupChatBalloons(messages, sekaiLayout ? SEKAI_BALLOON_WINDOW_MS : 60 * 1000, (message) => pinnedIds.has(message.id) || favoriteIds.has(message.id));
+
   async function shareSpotifyTrack() {
     if (!currentUserId) return;
     try {
@@ -684,7 +688,15 @@ export function ChatArea({
           </div>
         ) : !messages.length ? (
           <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
-        ) : messages.map((message, index) => {
+        ) : messageGroups.map((group) => {
+          const first = group[0];
+          const firstTime = new Date(first.createdAt);
+          const firstIndex = messages.indexOf(first);
+          const beforeFirst = firstIndex > 0 ? new Date(messages[firstIndex - 1].createdAt) : null;
+          const showGroupDate = !beforeFirst || firstTime.toDateString() !== beforeFirst.toDateString();
+          const balloon = sekaiLayout && !first.systemType;
+          return <div key={first.id} className="contents">{sekaiLayout && showGroupDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-4"><span className="h-px flex-1 bg-white/10"/><time dateTime={firstTime.toISOString()}>{formatMessageDate(firstTime)}</time><span className="h-px flex-1 bg-white/10"/></div>}<div className={balloon ? "chat-balloon" : "contents"} data-own={first.authorId === currentUserId ? "true" : "false"}>{group.map((message) => {
+          const index = messages.indexOf(message);
           const timestamp = new Date(message.createdAt);
           const previousMessage = index > 0 ? messages[index - 1] : null;
           const previousTimestamp = previousMessage ? new Date(previousMessage.createdAt) : null;
@@ -697,7 +709,7 @@ export function ChatArea({
             !previousMessage.systemType &&
             previousMessage.authorId === message.authorId &&
             elapsedFromPrevious >= 0 &&
-            elapsedFromPrevious <= 60 * 1000 &&
+            elapsedFromPrevious <= (sekaiLayout ? SEKAI_BALLOON_WINDOW_MS : 60 * 1000) &&
             !pinnedIds.has(message.id) &&
             !favoriteIds.has(message.id)
           );
@@ -709,8 +721,8 @@ export function ChatArea({
                 ? "foi expulso do servidor."
                 : "foi banido do servidor.";
           return (
-          <div key={message.id} id={`message-${message.id}`} className={!isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-5" : undefined}>
-          {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
+          <div key={message.id} id={`message-${message.id}`} className={!sekaiLayout && !isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-5" : undefined}>
+          {showDate && !sekaiLayout && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
           {message.systemType ? (
             <div className="my-1 flex items-center gap-2 rounded-xl border border-discord-brand/20 bg-discord-brand/[0.06] px-3 py-2 text-sm text-discord-text-normal">
               <span aria-hidden="true" className="text-base">{message.systemType === "member_joined" ? "👋" : message.systemType === "member_left" ? "↗" : message.systemType === "member_kicked" ? "⤴" : "⛔"}</span>
@@ -809,6 +821,7 @@ export function ChatArea({
           )}
           </div>
           );
+        })}</div></div>;
         })}
       </div>
 
@@ -1045,4 +1058,20 @@ export function ChatArea({
       {lightboxImage && <ImageLightbox src={lightboxImage.src} alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} />}
     </div>
   );
+}
+
+function useSekaiLayout() {
+  const [sekai, setSekai] = useState(false);
+  useEffect(() => {
+    const read = () => setSekai(document.documentElement.dataset.layout === "sekai");
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-layout"] });
+    window.addEventListener(CHAT_PREFERENCES_EVENT, read);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener(CHAT_PREFERENCES_EVENT, read);
+    };
+  }, []);
+  return sekai;
 }
