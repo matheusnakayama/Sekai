@@ -299,7 +299,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
             <option value="noise-suppression">Supressão neural (RNNoise)</option>
             <option value="elevenlabs">Supressão ElevenLabs</option>
           </select>
-          <span className="mt-1 block text-xs font-normal leading-5 text-discord-text-muted">{preferences.voiceProfile === "elevenlabs" ? "A voz sai do seu microfone, passa pela isolação da ElevenLabs e segue para a chamada sem o ruído de fundo. Isso acrescenta um pequeno atraso. Se o serviço não responder, o Sekai usa a supressão local. No servidor, preencha ELEVENLABS_API_KEY." : "Processa a voz no dispositivo. Se o filtro neural não estiver disponível, o Sekai usa a supressão de ruído do navegador."}</span>
+          <span className="mt-1 block text-xs font-normal leading-5 text-discord-text-muted">{preferences.voiceProfile === "elevenlabs" ? "A voz sai do seu microfone, passa pela isolação da ElevenLabs e segue para a chamada sem o ruído de fundo. Isso acrescenta um pequeno atraso. Se o serviço não responder, o Sekai usa a limpeza local. No servidor, preencha ELEVENLABS_API_KEY." : preferences.voiceProfile === "noise-suppression" ? "Limpa a voz neste aparelho com o RNNoise, corta o ronco grave e abaixa o chiado que sobra. Se o filtro neural não carregar, o corte de graves continua." : "Limpa a voz antes de enviar: corta o ronco, remove o ruído com uma rede neural e abaixa o chiado entre as palavras. Quem escuta também limpa a voz que chega na chamada."}</span>
         </label>
 
         <label className="block text-sm font-semibold text-discord-text-normal">Volume de entrada <span className="float-right font-normal text-discord-text-muted">{Math.round(preferences.inputVolume * 100)}%</span>
