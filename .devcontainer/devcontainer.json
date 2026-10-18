@@ -1,0 +1,12 @@
+{
+  "name": "Drop Zone",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "Drop Zone",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postStartCommand": "python3 -m http.server 8080"
+}
