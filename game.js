@@ -187,7 +187,7 @@
   function applyStorm(e, dt) {
     if (!e.alive) return;
     if (Math.hypot(e.x - storm.x, e.y - storm.y) > storm.r) {
-      e.hp -= stormDps() * dt;
+      e.hp = Math.max(0, e.hp - stormDps() * dt);
       if (e.hp <= 0) e.alive = false;
     }
   }
@@ -208,7 +208,7 @@
 
   function shoot(owner) {
     if (!owner.alive || owner.cooldown > 0) return;
-    owner.cooldown = owner === player ? 0.18 : 1.1;
+    owner.cooldown = owner === player ? 0.18 : 1.7;
     const a = owner.angle;
     const spawn = owner.r + 8;
     bullets.push({
@@ -217,7 +217,7 @@
       vx: Math.cos(a) * BULLET_SPEED,
       vy: Math.sin(a) * BULLET_SPEED,
       life: 0.85,
-      dmg: owner === player ? 34 : 10,
+      dmg: owner === player ? 34 : 8,
       ownerId: owner.id,
     });
   }
@@ -229,23 +229,26 @@
   function place(type) {
     if (state !== "play") return;
     const a = player.angle;
-    const px = player.x + Math.cos(a) * 58;
-    const py = player.y + Math.sin(a) * 58;
     const g = 48;
-    const piece = {
-      x: Math.floor(px / g) * g,
-      y: Math.floor(py / g) * g,
-      w: g,
-      h: g,
-      type,
-      dir: Math.round(a / (Math.PI / 2)) * (Math.PI / 2),
-      fixed: false,
-    };
-    if (piece.x < 0 || piece.y < 0 || piece.x + g > WORLD || piece.y + g > WORLD) return;
-    if (builds.some((b) => rectsOverlap(b, piece))) return;
     const actors = [player, ...bots.filter((b) => b.alive)];
-    if (actors.some((e) => circleHitsRect(e, piece))) return;
-    builds.push(piece);
+    for (let step = 1; step <= 4; step++) {
+      const px = player.x + Math.cos(a) * (36 + step * g);
+      const py = player.y + Math.sin(a) * (36 + step * g);
+      const piece = {
+        x: Math.floor(px / g) * g,
+        y: Math.floor(py / g) * g,
+        w: g,
+        h: g,
+        type,
+        dir: Math.round(a / (Math.PI / 2)) * (Math.PI / 2),
+        fixed: false,
+      };
+      if (piece.x < 0 || piece.y < 0 || piece.x + g > WORLD || piece.y + g > WORLD) return;
+      if (builds.some((b) => rectsOverlap(b, piece))) continue;
+      if (actors.some((e) => circleHitsRect(e, piece))) continue;
+      builds.push(piece);
+      return;
+    }
   }
 
   function circleHitsRect(e, r) {
@@ -312,7 +315,7 @@
       for (const e of actors) {
         if (!e.alive || e.id === b.ownerId) continue;
         if (!segHitsCircle(x0, y0, b.x, b.y, e, e.r)) continue;
-        e.hp -= b.dmg;
+        e.hp = Math.max(0, e.hp - b.dmg);
         if (e.hp <= 0) e.alive = false;
         return false;
       }
