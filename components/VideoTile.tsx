@@ -5,7 +5,7 @@ import { Maximize2, Minimize2 } from 'lucide-react';
 import type { Participant } from '@/lib/types';
 import { CallUserMenu } from '@/components/CallUserMenu';
 import { useCallUserMix, writeCallUserMix } from '@/lib/callUserMix';
-import { applyRemoteVoiceGain } from '@/lib/remoteCallGain';
+import { applyRemoteVoiceGain, releaseRemoteVoiceGain } from '@/lib/remoteCallGain';
 import { MicIcon, ScreenShareIcon, VolumeIcon } from './icons';
 
 export default function VideoTile({
@@ -192,8 +192,17 @@ export default function VideoTile({
     const level = Math.max(0, Math.min(2, volume * masterOutputVolume));
     if (participant.isLocal || muteRemoteAudio || level === 0) audio.muted = true;
     else if (audio.srcObject) audio.muted = false;
-    void applyRemoteVoiceGain(audio, audio.muted ? 0 : level, outputDeviceId);
-  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, volume]);
+    void applyRemoteVoiceGain(audio, audio.muted ? 0 : level, outputDeviceId, {
+      clean: !participant.isLocal && Boolean(audio.srcObject),
+    });
+  }, [masterOutputVolume, muteRemoteAudio, outputDeviceId, participant.isLocal, participant.stream, volume]);
+
+  useEffect(() => {
+    const audio = voiceAudioRef.current;
+    return () => {
+      if (audio) releaseRemoteVoiceGain(audio);
+    };
+  }, []);
 
   useEffect(() => {
     const audio = soundboardAudioRef.current;

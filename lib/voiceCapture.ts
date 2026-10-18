@@ -1,3 +1,6 @@
+import { connectSpeechCleaner } from "@/lib/speechCleaner";
+import { CLEAN_MAKEUP_GAIN, SPEECH_SAMPLE_RATE, microphoneMakeup } from "@/lib/speechCleanup";
+
 export type VoiceGate = {
   speaking: boolean;
   aboveSince: number | null;
@@ -7,9 +10,9 @@ export type VoiceGate = {
 
 type VoiceConstraints = MediaTrackConstraints & { voiceIsolation?: boolean };
 
-const MAKEUP_GAIN = 2.6;
 const sourceDeviceIds = new WeakMap<MediaStreamTrack, string>();
 const voiceInputGains = new WeakMap<MediaStreamTrack, GainNode>();
+const voiceMakeupBases = new WeakMap<MediaStreamTrack, number>();
 const voiceInputReleases = new WeakMap<MediaStreamTrack, () => void>();
 
 export function releaseCallInputTrack(track: MediaStreamTrack): void {
@@ -39,7 +42,8 @@ export function setVoiceInputVolume(track: MediaStreamTrack | undefined, volume:
   const gain = voiceInputGains.get(track);
   if (!gain) return false;
   const normalized = Math.max(0, Math.min(2, volume));
-  gain.gain.setTargetAtTime(MAKEUP_GAIN * normalized, gain.context.currentTime, 0.025);
+  const base = voiceMakeupBases.get(track) ?? CLEAN_MAKEUP_GAIN;
+  gain.gain.setTargetAtTime(base * normalized, gain.context.currentTime, 0.025);
   return true;
 }
 
@@ -76,7 +80,7 @@ export function voiceInputConstraints(deviceId?: string, noiseSuppression = fals
   return {
     ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     echoCancellation: true,
-    // O supressor do navegador descartava a fala que não estivesse colada no microfone.
+    // A limpeza roda depois da captura. O supressor do navegador cortava fala distante e não entra junto com a rede neural.
     noiseSuppression,
     autoGainControl: true,
     voiceIsolation: false,
@@ -142,30 +146,22 @@ async function applyNativeNoiseSuppression(track: MediaStreamTrack) {
 
 export type VoiceProcessing = "standard" | "noise-suppression" | "elevenlabs";
 
-async function connectLocalSuppressor(context: AudioContext, source: AudioNode, gain: AudioNode): Promise<AudioWorkletNode & { destroy?: () => void }> {
-  if (context.sampleRate !== 48000 || !context.audioWorklet) throw new Error("O navegador não oferece AudioWorklet em 48 kHz.");
-  const { RnnoiseWorkletNode, loadRnnoise } = await import("@sapphi-red/web-noise-suppressor");
-  await context.audioWorklet.addModule("/audio-worklets/rnnoiseWorklet.js");
-  const wasmBinary = await loadRnnoise({ url: "/audio-worklets/rnnoise.wasm", simdUrl: "/audio-worklets/rnnoise_simd.wasm" });
-  const suppressor = new RnnoiseWorkletNode(context, { wasmBinary, maxChannels: 1 }) as AudioWorkletNode & { destroy?: () => void };
-  source.connect(suppressor);
-  suppressor.connect(gain);
-  return suppressor;
-}
-
 export async function amplifyMicrophone(track: MediaStreamTrack, processing: VoiceProcessing = "standard"): Promise<{ track: MediaStreamTrack; stop: () => void; amplified: boolean }> {
   const AudioContextCtor = window.AudioContext;
-  const clean = processing !== "standard";
   if (!AudioContextCtor) {
-    if (clean) await applyNativeNoiseSuppression(track);
+    await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
   let context: AudioContext;
   try {
-    context = new AudioContextCtor(clean ? { latencyHint: "interactive", sampleRate: 48000 } : { latencyHint: "interactive" });
+    context = new AudioContextCtor({ latencyHint: "interactive", sampleRate: SPEECH_SAMPLE_RATE });
   } catch {
-    if (clean) await applyNativeNoiseSuppression(track);
-    return { track, stop() {}, amplified: false };
+    try {
+      context = new AudioContextCtor({ latencyHint: "interactive" });
+    } catch {
+      await applyNativeNoiseSuppression(track);
+      return { track, stop() {}, amplified: false };
+    }
   }
   try {
     if (context.state === "suspended") await context.resume();
@@ -174,48 +170,56 @@ export async function amplifyMicrophone(track: MediaStreamTrack, processing: Voi
   }
   if (context.state !== "running") {
     await context.close().catch(() => undefined);
-    if (clean) await applyNativeNoiseSuppression(track);
+    await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
 
   let source: MediaStreamAudioSourceNode | null = null;
-  let suppressor: (AudioWorkletNode & { destroy?: () => void }) | null = null;
   let isolation: { stop: () => void } | null = null;
+  let cleanStop: (() => void) | null = null;
   let gain: GainNode | null = null;
   let amplified: MediaStreamTrack | null = null;
   try {
     source = context.createMediaStreamSource(new MediaStream([track]));
     gain = context.createGain();
-    gain.gain.value = MAKEUP_GAIN;
+    gain.gain.value = CLEAN_MAKEUP_GAIN;
     const compressor = context.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 16;
-    compressor.ratio.value = 3.5;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.24;
+    compressor.threshold.value = -20;
+    compressor.knee.value = 20;
+    compressor.ratio.value = 2.4;
+    compressor.attack.value = 0.006;
+    compressor.release.value = 0.25;
     const destination = context.createMediaStreamDestination();
     gain.connect(compressor);
     compressor.connect(destination);
     const input = source;
     const output = gain;
-    const enableLocalSuppressor = async () => {
-      if (suppressor) return;
-      suppressor = await connectLocalSuppressor(context, input, output);
-    };
+    let makeup = CLEAN_MAKEUP_GAIN;
     if (processing === "elevenlabs") {
       const { startElevenLabsIsolation } = await import("@/lib/elevenLabsIsolation");
       isolation = await startElevenLabsIsolation(context, input, output, () => {
         isolation = null;
-        void enableLocalSuppressor().catch(() => {
+        void connectSpeechCleaner(context, input, output, "full").then((cleaner) => {
+          cleanStop = cleaner.stop;
+          const base = microphoneMakeup(cleaner.engine);
+          makeup = base;
+          if (gain) gain.gain.value = base;
+          if (amplified) voiceMakeupBases.set(amplified, base);
+        }).catch(() => {
           try { input.connect(output); } catch { /* O microfone segue pelo caminho que ainda estiver ligado. */ }
         });
       });
     }
-    if (processing === "noise-suppression" || (processing === "elevenlabs" && !isolation)) await enableLocalSuppressor();
-    else if (processing === "standard") input.connect(output);
+    if (!isolation) {
+      const cleaner = await connectSpeechCleaner(context, input, output, processing === "noise-suppression" ? "rnnoise" : "full");
+      cleanStop = cleaner.stop;
+      makeup = microphoneMakeup(cleaner.engine);
+    }
+    gain.gain.value = makeup;
     amplified = destination.stream.getAudioTracks()[0] ?? null;
     if (!amplified) throw new Error("O processamento de áudio não criou uma faixa de microfone.");
     voiceInputGains.set(amplified, gain);
+    voiceMakeupBases.set(amplified, makeup);
     amplified.contentHint = "speech";
 
     let stopped = false;
@@ -223,11 +227,9 @@ export async function amplifyMicrophone(track: MediaStreamTrack, processing: Voi
       if (stopped) return;
       stopped = true;
       window.removeEventListener("pointerdown", resume);
+      cleanStop?.();
       isolation?.stop();
       source?.disconnect();
-      const activeSuppressor = suppressor as (AudioWorkletNode & { destroy?: () => void }) | null;
-      activeSuppressor?.disconnect();
-      activeSuppressor?.destroy?.();
       if (amplified?.readyState === "live") amplified.stop();
       void context.close().catch(() => undefined);
     };
@@ -239,14 +241,12 @@ export async function amplifyMicrophone(track: MediaStreamTrack, processing: Voi
     return { track: amplified, stop, amplified: true };
   } catch (error) {
     console.warn("Não foi possível iniciar o filtro de ruído avançado:", error);
+    cleanStop?.();
     isolation?.stop();
     source?.disconnect();
-    const activeSuppressor = suppressor as (AudioWorkletNode & { destroy?: () => void }) | null;
-    activeSuppressor?.disconnect();
-    activeSuppressor?.destroy?.();
     if (amplified?.readyState === "live") amplified.stop();
     await context.close().catch(() => undefined);
-    if (clean) await applyNativeNoiseSuppression(track);
+    await applyNativeNoiseSuppression(track);
     return { track, stop() {}, amplified: false };
   }
 }
