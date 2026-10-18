@@ -4,7 +4,7 @@
 
   const WORLD = 1600;
   const PLAYER_SPEED = 220;
-  const BOT_SPEED = 145;
+  const BOT_SPEED = 125;
   const BULLET_SPEED = 700;
 
   const keys = {};
@@ -54,12 +54,12 @@
     const colors = ["#e07a5f", "#e09f3e", "#c44536", "#f2cc8f"];
     bots = angles.map((angle, i) => ({
       id: i + 1,
-      x: WORLD / 2 + Math.cos(angle) * 460,
-      y: WORLD / 2 + Math.sin(angle) * 460,
+      x: WORLD / 2 + Math.cos(angle) * 560,
+      y: WORLD / 2 + Math.sin(angle) * 560,
       r: 16,
       hp: 100,
       speed: BOT_SPEED,
-      cooldown: 0.3 + i * 0.15,
+      cooldown: 1.6 + i * 0.25,
       alive: true,
       angle: angle + Math.PI,
       wander: 0,
@@ -208,7 +208,7 @@
 
   function shoot(owner) {
     if (!owner.alive || owner.cooldown > 0) return;
-    owner.cooldown = owner === player ? 0.22 : 0.7;
+    owner.cooldown = owner === player ? 0.18 : 1.1;
     const a = owner.angle;
     const spawn = owner.r + 8;
     bullets.push({
@@ -217,7 +217,7 @@
       vx: Math.cos(a) * BULLET_SPEED,
       vy: Math.sin(a) * BULLET_SPEED,
       life: 0.85,
-      dmg: owner === player ? 20 : 12,
+      dmg: owner === player ? 34 : 10,
       ownerId: owner.id,
     });
   }
@@ -256,7 +256,7 @@
     return dx * dx + dy * dy < e.r * e.r;
   }
 
-  function updateBot(bot, dt) {
+  function updateBot(bot, dt, isShooter) {
     if (!bot.alive) return;
     bot.cooldown -= dt;
     const toStormX = storm.x - bot.x;
@@ -267,16 +267,17 @@
     const distP = Math.hypot(toPX, toPY);
     let mx = 0;
     let my = 0;
+    const canFight = isShooter && player.alive && distP < 360 && !lineBlocked(bot.x, bot.y, player.x, player.y);
     if (distStorm > storm.r - 36) {
       mx = toStormX;
       my = toStormY;
       bot.angle = Math.atan2(my, mx);
-    } else if (player.alive && distP < 420 && !lineBlocked(bot.x, bot.y, player.x, player.y)) {
-      bot.angle = Math.atan2(toPY, toPX) + (Math.random() - 0.5) * 0.12;
-      if (distP > 150) {
+    } else if (canFight) {
+      bot.angle = Math.atan2(toPY, toPX) + (Math.random() - 0.5) * 0.18;
+      if (distP > 180) {
         mx = toPX;
         my = toPY;
-      } else if (distP < 100) {
+      } else if (distP < 130) {
         mx = -toPX;
         my = -toPY;
       }
@@ -285,7 +286,7 @@
       bot.wander -= dt;
       if (bot.wander <= 0) {
         bot.wander = 1 + Math.random() * 1.8;
-        bot.wangle = player.alive && Math.random() < 0.65
+        bot.wangle = player.alive && Math.random() < 0.4
           ? Math.atan2(toPY, toPX)
           : Math.random() * Math.PI * 2;
       }
@@ -336,7 +337,17 @@
     player.angle = Math.atan2(pointer.y + cam.y - player.y, pointer.x + cam.x - player.x);
     if (pointer.down || shotQueued) shoot(player);
     shotQueued = false;
-    for (const bot of bots) updateBot(bot, dt);
+    let shooterId = -1;
+    let best = Infinity;
+    for (const bot of bots) {
+      if (!bot.alive) continue;
+      const d = Math.hypot(bot.x - player.x, bot.y - player.y);
+      if (d < best) {
+        best = d;
+        shooterId = bot.id;
+      }
+    }
+    for (const bot of bots) updateBot(bot, dt, bot.id === shooterId);
     for (const bot of bots) separate(player, bot);
     for (let i = 0; i < bots.length; i++) {
       for (let j = i + 1; j < bots.length; j++) separate(bots[i], bots[j]);
