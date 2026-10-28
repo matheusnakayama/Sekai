@@ -762,8 +762,12 @@ async function smoke() {
 app.setName('Sekai');
 if (process.platform === 'win32') app.setAppUserModelId('br.com.murasakidev.sekai');
 // Perfil dedicado: o antigo estava com cache/storage bloqueado ("Acesso negado"), o que
-// quebrava o localStorage (login e Spotify). Precisa ser definido antes do app ficar pronto.
-app.setPath('userData', path.join(app.getPath('appData'), 'Sekai-perfil'));
+// quebrava o localStorage (login e Spotify). Chromium usa sessionData para DOM storage,
+// cookies e outros dados do navegador; defina os dois caminhos antes do evento ready.
+const SEKAI_PROFILE_PATH = path.join(app.getPath('appData'), 'Sekai-perfil');
+fs.mkdirSync(SEKAI_PROFILE_PATH, { recursive: true });
+app.setPath('userData', SEKAI_PROFILE_PATH);
+app.setPath('sessionData', SEKAI_PROFILE_PATH);
 app.commandLine.appendSwitch('disk-cache-dir', path.join(app.getPath('temp'), 'sekai-cache'));
 
 // Evita duas instâncias disputando o mesmo perfil (corrompe localStorage/cookies e desloga).
