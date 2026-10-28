@@ -773,6 +773,7 @@ drop policy if exists members_insert_self on public.members;
 -- A associação só nasce ao criar o servidor (trigger) ou por redeem_invite().
 drop policy if exists members_update on public.members;
 drop policy if exists members_update_own_nickname on public.members;
+drop policy if exists members_update_own_profile_fields on public.members;
 create policy members_update_own_profile_fields on public.members for update to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 revoke update on public.members from public, anon, authenticated;
