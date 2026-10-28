@@ -6,6 +6,7 @@ import {
   SPEECH_EXPANDER_THRESHOLD,
   SPEECH_HIGHPASS_HZ,
   SPEECH_SAMPLE_RATE,
+  VOICE_LIMITER,
   type SpeechEngine,
 } from "@/lib/speechCleanup";
 
@@ -87,6 +88,31 @@ async function createNeural(context: AudioContext, input: AudioNode, kind: "gtcr
     warnOnce(kind === "gtcrn" ? "A limpeza neural da voz não iniciou; o Sekai tenta o filtro seguinte." : "O RNNoise não iniciou; a voz segue com o corte de graves.");
     return null;
   }
+}
+
+export function configureVoiceLimiter(limiter: DynamicsCompressorNode) {
+  limiter.threshold.value = VOICE_LIMITER.threshold;
+  limiter.knee.value = VOICE_LIMITER.knee;
+  limiter.ratio.value = VOICE_LIMITER.ratio;
+  limiter.attack.value = VOICE_LIMITER.attack;
+  limiter.release.value = VOICE_LIMITER.release;
+}
+
+export async function createSpeechLeveler(context: AudioContext): Promise<AudioWorkletNode | null> {
+  try {
+    if (!context.audioWorklet || context.sampleRate !== SPEECH_SAMPLE_RATE) return null;
+    await addModule(context, "/audio-worklets/speechLevelerWorklet.js");
+    return new AudioWorkletNode(context, "sekai-speech-leveler");
+  } catch {
+    return null;
+  }
+}
+
+export function setSpeechLevelerPreference(node: AudioWorkletNode, preference: number) {
+  const param = node.parameters.get("preference");
+  if (!param) return;
+  const value = Math.max(0, Math.min(2, Number.isFinite(preference) ? preference : 1));
+  param.setTargetAtTime(value, node.context.currentTime, 0.03);
 }
 
 async function createExpander(context: AudioContext, input: AudioNode) {

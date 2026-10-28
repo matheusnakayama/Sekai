@@ -1,5 +1,5 @@
-import { connectSpeechCleaner } from "@/lib/speechCleaner";
-import { CLEAN_MAKEUP_GAIN, SPEECH_SAMPLE_RATE, microphoneMakeup } from "@/lib/speechCleanup";
+import { configureVoiceLimiter, connectSpeechCleaner, createSpeechLeveler, setSpeechLevelerPreference } from "@/lib/speechCleaner";
+import { LEVELER_FALLBACK_GAIN, SPEECH_SAMPLE_RATE, microphoneMakeup } from "@/lib/speechCleanup";
 
 export type VoiceGate = {
   speaking: boolean;
@@ -12,6 +12,7 @@ type VoiceConstraints = MediaTrackConstraints & { voiceIsolation?: boolean };
 
 const sourceDeviceIds = new WeakMap<MediaStreamTrack, string>();
 const voiceInputGains = new WeakMap<MediaStreamTrack, GainNode>();
+const voiceLevelers = new WeakMap<MediaStreamTrack, AudioWorkletNode>();
 const voiceMakeupBases = new WeakMap<MediaStreamTrack, number>();
 const voiceInputReleases = new WeakMap<MediaStreamTrack, () => void>();
 
@@ -39,10 +40,15 @@ export function voiceDeviceId(track: MediaStreamTrack | undefined): string | und
 /** Ajusta o volume enviado pelo microfone sem interromper a chamada. */
 export function setVoiceInputVolume(track: MediaStreamTrack | undefined, volume: number): boolean {
   if (!track) return false;
+  const normalized = Math.max(0, Math.min(2, volume));
+  const leveler = voiceLevelers.get(track);
+  if (leveler) {
+    setSpeechLevelerPreference(leveler, normalized);
+    return true;
+  }
   const gain = voiceInputGains.get(track);
   if (!gain) return false;
-  const normalized = Math.max(0, Math.min(2, volume));
-  const base = voiceMakeupBases.get(track) ?? CLEAN_MAKEUP_GAIN;
+  const base = voiceMakeupBases.get(track) ?? LEVELER_FALLBACK_GAIN;
   gain.gain.setTargetAtTime(base * normalized, gain.context.currentTime, 0.025);
   return true;
 }
@@ -182,19 +188,17 @@ export async function amplifyMicrophone(track: MediaStreamTrack, processing: Voi
   try {
     source = context.createMediaStreamSource(new MediaStream([track]));
     gain = context.createGain();
-    gain.gain.value = CLEAN_MAKEUP_GAIN;
-    const compressor = context.createDynamicsCompressor();
-    compressor.threshold.value = -20;
-    compressor.knee.value = 20;
-    compressor.ratio.value = 2.4;
-    compressor.attack.value = 0.006;
-    compressor.release.value = 0.25;
+    gain.gain.value = 1;
+    const leveler = await createSpeechLeveler(context);
+    const limiter = context.createDynamicsCompressor();
+    configureVoiceLimiter(limiter);
     const destination = context.createMediaStreamDestination();
-    gain.connect(compressor);
-    compressor.connect(destination);
+    const output: AudioNode = leveler ?? gain;
+    if (leveler) leveler.connect(limiter);
+    else gain.connect(limiter);
+    limiter.connect(destination);
     const input = source;
-    const output = gain;
-    let makeup = CLEAN_MAKEUP_GAIN;
+    let makeup = leveler ? 1 : LEVELER_FALLBACK_GAIN;
     if (processing === "elevenlabs") {
       const { startElevenLabsIsolation } = await import("@/lib/elevenLabsIsolation");
       isolation = await startElevenLabsIsolation(context, input, output, () => {
@@ -213,13 +217,14 @@ export async function amplifyMicrophone(track: MediaStreamTrack, processing: Voi
     if (!isolation) {
       const cleaner = await connectSpeechCleaner(context, input, output, processing === "noise-suppression" ? "rnnoise" : "full");
       cleanStop = cleaner.stop;
-      makeup = microphoneMakeup(cleaner.engine);
+      if (!leveler) makeup = cleaner.engine === "gtcrn" || cleaner.engine === "rnnoise" ? LEVELER_FALLBACK_GAIN : microphoneMakeup(cleaner.engine);
     }
-    gain.gain.value = makeup;
+    gain.gain.value = leveler ? 1 : makeup;
     amplified = destination.stream.getAudioTracks()[0] ?? null;
     if (!amplified) throw new Error("O processamento de áudio não criou uma faixa de microfone.");
     voiceInputGains.set(amplified, gain);
-    voiceMakeupBases.set(amplified, makeup);
+    if (leveler) voiceLevelers.set(amplified, leveler);
+    voiceMakeupBases.set(amplified, leveler ? 1 : makeup);
     amplified.contentHint = "speech";
 
     let stopped = false;

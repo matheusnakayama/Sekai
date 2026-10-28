@@ -87,7 +87,7 @@ export function CallUserMenu({
             onChange={(event) => update({ volume: Number(event.target.value) / 100, muted: Number(event.target.value) === 0 })}
             className="h-1.5 w-full cursor-pointer accent-[#5865f2] disabled:opacity-40"
           />
-          <p className="mt-1 text-[10px] text-white/35">Padrão 100%. O máximo é 200%.</p>
+          <p className="mt-1 text-[10px] text-white/35">100% nivela a voz para uma conversa. Quem fala baixo sobe sozinho. 200% deixa ainda mais alto.</p>
         </div>
         <div className="my-1 h-px bg-white/10" />
 

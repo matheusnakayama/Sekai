@@ -1,10 +1,13 @@
-import { connectSpeechCleaner, type SpeechCleanerHandle } from "@/lib/speechCleaner";
-import { SPEECH_SAMPLE_RATE } from "@/lib/speechCleanup";
+import { configureVoiceLimiter, connectSpeechCleaner, createSpeechLeveler, setSpeechLevelerPreference, type SpeechCleanerHandle } from "@/lib/speechCleaner";
+import { LEVELER_FALLBACK_GAIN, SPEECH_SAMPLE_RATE } from "@/lib/speechCleanup";
 
 type VoiceGraph = {
   context: AudioContext;
   source: MediaElementAudioSourceNode;
   gain: GainNode;
+  boost: GainNode | null;
+  limiter: DynamicsCompressorNode | null;
+  leveler: AudioWorkletNode | null;
   stopClean: (() => void) | null;
   mode: "idle" | "direct" | "clean";
   gainLinked: boolean;
@@ -53,7 +56,7 @@ function ensureGraph(audio: HTMLMediaElement) {
   const context = audioContext();
   const source = context.createMediaElementSource(audio);
   const gain = context.createGain();
-  const graph: VoiceGraph = { context, source, gain, stopClean: null, mode: "idle", gainLinked: false, generation: 0 };
+  const graph: VoiceGraph = { context, source, gain, boost: null, limiter: null, leveler: null, stopClean: null, mode: "idle", gainLinked: false, generation: 0 };
   graphs.set(audio, graph);
   return graph;
 }
@@ -71,9 +74,23 @@ function linkGain(graph: VoiceGraph) {
   graph.gainLinked = true;
 }
 
+function applyLevel(graph: VoiceGraph, level: number) {
+  if (graph.leveler) {
+    setSpeechLevelerPreference(graph.leveler, level);
+    graph.gain.gain.value = level === 0 ? 0 : 1;
+    return;
+  }
+  if (graph.boost) {
+    graph.boost.gain.value = level * LEVELER_FALLBACK_GAIN;
+    graph.gain.gain.value = level === 0 ? 0 : 1;
+    return;
+  }
+  graph.gain.gain.value = level;
+}
+
 /**
- * Até 100%, sem limpeza, o elemento segue no caminho normal.
- * A voz remota sempre passa pelo filtro. Acima de 100% o ganho leva até 200%.
+ * A voz remota é nivelada até um volume de conversa. 100% é esse alvo.
+ * 200% deixa a fala mais alta, e quem chega muito baixo sobe além do teto antigo.
  */
 export function applyRemoteVoiceGain(audio: HTMLMediaElement, linear: number, outputDeviceId = "", options: RemoteVoiceOptions = {}) {
   const level = Math.max(0, Math.min(2, Number.isFinite(linear) ? linear : 1));
@@ -92,7 +109,7 @@ export function applyRemoteVoiceGain(audio: HTMLMediaElement, linear: number, ou
     return Promise.resolve();
   }
 
-  graph.gain.gain.value = level;
+  applyLevel(graph, level);
   if (graph.mode !== "idle") audio.volume = 1;
   const wants = clean ? "clean" : graph.mode === "clean" ? "clean" : "direct";
   if (graph.mode === wants) {
@@ -109,11 +126,38 @@ export function applyRemoteVoiceGain(audio: HTMLMediaElement, linear: number, ou
     try { graph.source.disconnect(); } catch { /* A fonte ainda não tinha saída. */ }
     let cleaner: SpeechCleanerHandle | null = null;
     if (clean) {
-      cleaner = await connectSpeechCleaner(graph.context, graph.source, graph.gain, "full");
+      const limiter = graph.context.createDynamicsCompressor();
+      configureVoiceLimiter(limiter);
+      graph.limiter = limiter;
+      const leveler = await createSpeechLeveler(graph.context);
       if (graph.generation !== generation) {
-        cleaner.stop();
+        try { leveler?.disconnect(); } catch { /* O nivelador ainda não entrou na cadeia. */ }
+        try { limiter.disconnect(); } catch { /* O limitador ainda não tinha saída. */ }
+        graph.leveler = null;
+        graph.limiter = null;
         return;
       }
+      if (leveler) {
+        graph.leveler = leveler;
+        cleaner = await connectSpeechCleaner(graph.context, graph.source, leveler, "full");
+        leveler.connect(limiter);
+      } else {
+        const boost = graph.context.createGain();
+        graph.boost = boost;
+        cleaner = await connectSpeechCleaner(graph.context, graph.source, boost, "full");
+        boost.connect(limiter);
+      }
+      if (graph.generation !== generation) {
+        cleaner.stop();
+        try { leveler?.disconnect(); } catch { /* O nivelador já foi solto. */ }
+        try { graph.boost?.disconnect(); } catch { /* O ganho de reserva já foi solto. */ }
+        try { limiter.disconnect(); } catch { /* O limitador já foi solto. */ }
+        graph.leveler = null;
+        graph.boost = null;
+        graph.limiter = null;
+        return;
+      }
+      limiter.connect(graph.gain);
       graph.stopClean = cleaner.stop;
       graph.mode = "clean";
     } else {
@@ -122,7 +166,7 @@ export function applyRemoteVoiceGain(audio: HTMLMediaElement, linear: number, ou
     }
     linkGain(graph);
     audio.volume = 1;
-    graph.gain.gain.value = level;
+    applyLevel(graph, level);
   });
 }
 
@@ -133,6 +177,12 @@ export function releaseRemoteVoiceGain(audio: HTMLMediaElement) {
   graph.generation += 1;
   graph.stopClean?.();
   graph.stopClean = null;
+  try { graph.leveler?.disconnect(); } catch { /* O nivelador já estava solto. */ }
+  try { graph.boost?.disconnect(); } catch { /* O ganho de reserva já estava solto. */ }
+  try { graph.limiter?.disconnect(); } catch { /* O limitador já estava solto. */ }
+  graph.leveler = null;
+  graph.boost = null;
+  graph.limiter = null;
   try { graph.source.disconnect(); } catch { /* A fonte já estava solta. */ }
   if (graph.gainLinked) {
     try { graph.gain.disconnect(); } catch { /* O ganho já estava solto. */ }

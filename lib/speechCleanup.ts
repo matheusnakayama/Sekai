@@ -16,6 +16,65 @@ export function microphoneMakeup(engine: SpeechEngine): number {
   return engine === "gtcrn" || engine === "rnnoise" ? CLEAN_MAKEUP_GAIN : RAW_MAKEUP_GAIN;
 }
 
+/** Nível de fala em 100%. 200% dobra esse alvo. */
+export const LEVELER_TARGET_RMS = 0.11;
+/** Teto em 100%. O caminho antigo parava perto de 10×; aqui a voz baixa pode subir bem mais. */
+export const LEVELER_MAX_GAIN = 32;
+export const LEVELER_MIN_GAIN = 0.4;
+export const LEVELER_SILENCE_RMS = 0.0018;
+/** Quando o nivelador não carrega, 100% vale 8× e 200% vale 16×. */
+export const LEVELER_FALLBACK_GAIN = 8;
+
+export const VOICE_LIMITER = {
+  threshold: -1.5,
+  knee: 1,
+  ratio: 18,
+  attack: 0.003,
+  release: 0.08,
+};
+
+export type SpeechLevelerState = {
+  envelope: number;
+  gain: number;
+};
+
+export function createSpeechLevelerState(): SpeechLevelerState {
+  return { envelope: 0.02, gain: 1 };
+}
+
+function clampPreference(preference: number) {
+  if (!Number.isFinite(preference)) return 1;
+  return Math.max(0, Math.min(2, preference));
+}
+
+/**
+ * Sobe quem fala baixo até o alvo e segura quem já está alto.
+ * O ganho máximo em 200% fica em 48×, cerca de três vezes acima do teto antigo.
+ */
+export function nextSpeechLeveler(state: SpeechLevelerState, rms: number, preference: number): { state: SpeechLevelerState; gain: number } {
+  const pref = clampPreference(preference);
+  if (pref <= 0) return { state: { envelope: state.envelope, gain: 0 }, gain: 0 };
+  const target = LEVELER_TARGET_RMS * pref;
+  const maxGain = LEVELER_MAX_GAIN * (0.5 + pref * 0.5);
+  const level = Number.isFinite(rms) && rms > 0 ? rms : 0;
+  let envelope = state.envelope;
+  if (level >= LEVELER_SILENCE_RMS) {
+    const follow = level > envelope ? 0.42 : 0.035;
+    envelope += (level - envelope) * follow;
+  } else {
+    envelope = envelope * 0.99 + LEVELER_SILENCE_RMS * 0.01;
+  }
+  let desired = state.gain;
+  if (level >= LEVELER_SILENCE_RMS && envelope > LEVELER_SILENCE_RMS) desired = target / envelope;
+  if (desired > maxGain) desired = maxGain;
+  if (desired < LEVELER_MIN_GAIN) desired = LEVELER_MIN_GAIN;
+  const follow = desired < state.gain ? 0.45 : 0.12;
+  let gain = state.gain + (desired - state.gain) * follow;
+  if (gain > maxGain) gain = maxGain;
+  if (gain < 0) gain = 0;
+  return { state: { envelope, gain }, gain };
+}
+
 /**
  * Expansor descendente. No limiar e acima, a fala passa inteira.
  * Abaixo, o resíduo cai, e o piso impede um corte seco no meio da palavra.

@@ -13,6 +13,7 @@ const assets = [
   [path.join(packageDist, "gtcrn.wasm"), path.join(destination, "gtcrn.wasm")],
   [path.join(projectRoot, "audio-worklets", "pcmCaptureWorklet.js"), path.join(destination, "pcmCaptureWorklet.js")],
   [path.join(projectRoot, "audio-worklets", "speechExpanderWorklet.js"), path.join(destination, "speechExpanderWorklet.js")],
+  [path.join(projectRoot, "audio-worklets", "speechLevelerWorklet.js"), path.join(destination, "speechLevelerWorklet.js")],
 ];
 
 await mkdir(destination, { recursive: true });

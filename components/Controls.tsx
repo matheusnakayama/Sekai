@@ -170,7 +170,7 @@ export default function Controls({
   toggleMinimalRef.current = toggleMinimal;
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 px-3">
+    <div className="call-controls flex flex-wrap items-center justify-center gap-2 px-3">
       <div className="ctl-group">
         <div ref={inputAnchorRef} className="relative flex items-center gap-0.5">
           <ControlButton

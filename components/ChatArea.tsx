@@ -694,8 +694,7 @@ export function ChatArea({
           const firstIndex = messages.indexOf(first);
           const beforeFirst = firstIndex > 0 ? new Date(messages[firstIndex - 1].createdAt) : null;
           const showGroupDate = !beforeFirst || firstTime.toDateString() !== beforeFirst.toDateString();
-          const balloon = sekaiLayout && !first.systemType;
-          return <div key={first.id} className="contents">{sekaiLayout && showGroupDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-4"><span className="h-px flex-1 bg-white/10"/><time dateTime={firstTime.toISOString()}>{formatMessageDate(firstTime)}</time><span className="h-px flex-1 bg-white/10"/></div>}<div className={balloon ? "chat-balloon" : "contents"} data-own={first.authorId === currentUserId ? "true" : "false"}>{group.map((message) => {
+          return <div key={first.id} className="contents">{sekaiLayout && showGroupDate && <div className="sekai-dayline my-3 flex items-center gap-3 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-discord-text-muted"><span className="h-px flex-1 bg-white/10"/><time dateTime={firstTime.toISOString()}>{formatMessageDate(firstTime)}</time><span className="h-px flex-1 bg-white/10"/></div>}<div className="contents">{group.map((message) => {
           const index = messages.indexOf(message);
           const timestamp = new Date(message.createdAt);
           const previousMessage = index > 0 ? messages[index - 1] : null;

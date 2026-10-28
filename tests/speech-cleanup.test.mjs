@@ -3,14 +3,18 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   CLEAN_MAKEUP_GAIN,
+  LEVELER_MAX_GAIN,
+  LEVELER_MIN_GAIN,
   RAW_MAKEUP_GAIN,
   SPEECH_EXPANDER_FLOOR,
   SPEECH_EXPANDER_THRESHOLD,
   SPEECH_HIGHPASS_HZ,
   SPEECH_SAMPLE_RATE,
+  createSpeechLevelerState,
   estimateDelaySamples,
   measureVoiceCleanup,
   microphoneMakeup,
+  nextSpeechLeveler,
   regionRms,
   renderNoisySpeech,
   speechExpanderGain,
@@ -42,6 +46,33 @@ test("the expander worklet uses the same gain curve", () => {
   const worklet = readFileSync(new URL("../audio-worklets/speechExpanderWorklet.js", import.meta.url), "utf8");
   assert.match(worklet, /registerProcessor\("sekai-speech-expander"/);
   assert.match(worklet, /Math\.pow\(rms \/ threshold, Math\.max\(0, ratio - 1\)\)/);
+});
+
+test("a quiet voice at 200% climbs past three times the old gain ceiling", () => {
+  let state = createSpeechLevelerState();
+  for (let step = 0; step < 220; step += 1) state = nextSpeechLeveler(state, 0.004, 2).state;
+  const oldCeiling = CLEAN_MAKEUP_GAIN * 2 * 2;
+  assert.ok(state.gain > oldCeiling * 3);
+  assert.ok(state.gain <= LEVELER_MAX_GAIN * 1.5 + 0.001);
+});
+
+test("conversation-level speech stays near unity and a loud voice is turned down", () => {
+  let steady = createSpeechLevelerState();
+  let loud = createSpeechLevelerState();
+  for (let step = 0; step < 180; step += 1) {
+    steady = nextSpeechLeveler(steady, 0.11, 1).state;
+    loud = nextSpeechLeveler(loud, 0.45, 1).state;
+  }
+  assert.ok(Math.abs(steady.gain - 1) < 0.3);
+  assert.ok(loud.gain < 1);
+  assert.ok(loud.gain >= LEVELER_MIN_GAIN - 0.001);
+  assert.equal(nextSpeechLeveler(createSpeechLevelerState(), 0.2, 0).gain, 0);
+});
+
+test("the leveler worklet uses the same target curve", () => {
+  const worklet = readFileSync(new URL("../audio-worklets/speechLevelerWorklet.js", import.meta.url), "utf8");
+  assert.match(worklet, /registerProcessor\("sekai-speech-leveler"/);
+  assert.match(worklet, /desired = target \/ this\.envelope/);
 });
 
 test("the probe vowel is louder than the constant hiss", () => {
