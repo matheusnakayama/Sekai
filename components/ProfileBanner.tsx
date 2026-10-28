@@ -122,10 +122,10 @@ export function ProfileBanner({
   const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <header className={cn("relative isolate overflow-hidden bg-theme-gradient", className)} style={style} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+    <header className={cn("relative overflow-hidden bg-theme-gradient", className)} style={style} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
       {src && <CroppedProfileImage src={src} alt="" positionX={positionX} positionY={positionY} zoom={zoom} pauseGif={pauseGif} isHovered={isHovered} className="pointer-events-none" />}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 via-black/10 to-black/30" />
-      <div className="relative z-10 h-full">{children}</div>
+      <div className="relative z-20 h-full">{children}</div>
     </header>
   );
 }

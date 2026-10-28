@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Maximize2, Minimize2, Music, Music2, Play, Settings, Square, Volume2, VolumeX } from 'lucide-react';
 import { CamIcon, ChatIcon, CheckIcon, HangupIcon, LinkIcon, MicIcon, PeopleIcon, ScreenShareIcon, StopWatchingIcon } from './icons';
 import AnchoredPopover from './AnchoredPopover';
+import { voiceProfileLabel, type SavedVoiceProfile } from '@/lib/voicePreferences';
 
 const MINIMAL_KEY = 'sekai:call-controls-minimal';
 
@@ -25,7 +26,7 @@ export interface AudioDeviceOption {
   label: string;
 }
 
-export type VoiceProfile = 'standard' | 'noise-suppression';
+export type VoiceProfile = SavedVoiceProfile;
 
 export interface VoiceAudioSettings {
   inputDevices: AudioDeviceOption[];
@@ -191,11 +192,12 @@ export default function Controls({
           </div>
           <div className="my-3 border-t border-white/10" />
           <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} aria-expanded={voiceSettingsOpen} className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left hover:bg-white/[0.06]">
-            <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceProfile === 'standard' ? 'Padrão' : 'Supressão de ruído'}</span></span><Settings className="h-4 w-4 text-white/55" />
+            <span><span className="block text-xs font-semibold">Perfil de entrada</span><span className="mt-0.5 block text-[11px] text-white/55">{voiceProfileLabel(voiceProfile)}</span></span><Settings className="h-4 w-4 text-white/55" />
           </button>
           {voiceSettingsOpen && <div className="mt-1 space-y-1 rounded-lg bg-black/15 p-1">
             <AudioOption label="Padrão" selected={voiceProfile === 'standard'} onClick={() => onVoiceProfileChange('standard')} />
-            <AudioOption label="Supressão de ruído" selected={voiceProfile === 'noise-suppression'} onClick={() => onVoiceProfileChange('noise-suppression')} />
+            <AudioOption label="Supressão neural (RNNoise)" selected={voiceProfile === 'noise-suppression'} onClick={() => onVoiceProfileChange('noise-suppression')} />
+            <AudioOption label="Supressão ElevenLabs" selected={voiceProfile === 'elevenlabs'} onClick={() => onVoiceProfileChange('elevenlabs')} />
           </div>}
           <label className="mt-3 block border-t border-white/10 pt-3">
             <span className="flex items-center justify-between text-xs font-semibold"><span>Volume de entrada</span><span className="text-white/55">{Math.round(inputVolume * 100)}%</span></span>

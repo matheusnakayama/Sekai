@@ -22,6 +22,8 @@ import { VoiceRoom } from "@/components/VoiceRoom";
 import RoomClient from "@/components/call/RoomClient";
 import { MemberList, MemberItem, ServerRoleOption, type MemberVoiceActivity } from "@/components/MemberList";
 import { MemberProfileDialog } from "@/components/MemberProfileDialog";
+import { UserProfileCard } from "@/components/UserProfileCard";
+import { CHAT_PREFERENCES_EVENT } from "@/lib/chatPreferences";
 import { mapUserBadgeRows, type CustomBadge } from "@/lib/badges";
 import { useChannelMessages } from "@/lib/chat/useChannelMessages";
 import { useServerAttention, type MentionNotice } from "@/lib/chat/useServerAttention";
@@ -35,6 +37,10 @@ import { SpotifyActivityPublisher } from "@/components/SpotifyActivityPublisher"
 import { GameActivityPublisher } from "@/components/GameActivityPublisher";
 import type { Participant } from "@/lib/types";
 import { DIRECT_CALL_INVITE, directVoiceRoomId } from "@/lib/directCalls";
+import { playUiSound, setUiSoundOutput, setUiSoundPresence, unlockUiSounds } from "@/lib/uiSounds";
+import { readVoicePreferences, VOICE_PREFERENCES_UPDATED_EVENT } from "@/lib/voicePreferences";
+import { isMissingActivityBannerCropColumn, withActivityBannerCrop, withoutActivityBannerCrop } from "@/lib/activityBanner";
+import { isMissingProfileDecorationColumn, withProfileDecorationColumn, withoutProfileDecorationColumn } from "@/lib/profileDecorations";
 import { getServerTemplate } from "@/lib/serverTemplates";
 import type { SoundboardEffect, VoiceAudioSettings, VoiceProfile } from "@/components/Controls";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -56,6 +62,23 @@ type ServerMessageSettings = { autoModEnabled?: boolean; mentionLimit?: number; 
 
 function channelCacheKey(userId: string, serverId: string) {
   return `${userId}:${serverId}`;
+}
+
+async function selectOptionalProfileColumns<T>(
+  select: string,
+  run: (columns: string) => PromiseLike<{ data: T; error: { message?: string; code?: string } | null }>,
+) {
+  let columns = withActivityBannerCrop(withProfileDecorationColumn(select));
+  let result = await run(columns);
+  for (let attempt = 0; attempt < 2 && result.error; attempt += 1) {
+    let next = columns;
+    if (isMissingProfileDecorationColumn(result.error)) next = withoutProfileDecorationColumn(next);
+    if (isMissingActivityBannerCropColumn(result.error)) next = withoutActivityBannerCrop(next);
+    if (next === columns) break;
+    columns = next;
+    result = await run(columns);
+  }
+  return result;
 }
 
 function isServerSoundUrl(assetUrl: string, serverId: string) {
@@ -423,10 +446,12 @@ export default function Home() {
   // undefined = janela fechada; null = criar sem categoria; string = categoria escolhida
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | null | undefined>(undefined);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [voiceProfileUserId, setVoiceProfileUserId] = useState<string | null>(null);
+  const [sekaiPeopleOpen, setSekaiPeopleOpen] = useState(false);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"perfil" | "conexoes" | "voz">("perfil");
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
+  const [myProfile, setMyProfile] = useState<{ displayName: string; username?: string; pronouns?: string | null; bio?: string | null; customStatus?: string | null; avatarUrl?: string | null; avatarPositionX?: number; avatarPositionY?: number; avatarZoom?: number; bannerUrl?: string | null; bannerPositionX?: number; bannerPositionY?: number; bannerZoom?: number; activityBannerUrl?: string | null; activityBannerPositionX?: number; activityBannerPositionY?: number; activityBannerZoom?: number; memberListBannerUrl?: string | null; memberListBannerPositionX?: number; memberListBannerPositionY?: number; memberListBannerZoom?: number; profileCardColor?: string | null; profileDecoration?: string | null; showBadgesInMemberList?: boolean; badges?: CustomBadge[]; presence?: "online" | "idle" | "dnd" | "offline" | null } | null>(null);
   const serverListVersion = servers.map((server) => server.id).join(":");
   const channelListVersion = channels.map((channel) => channel.id).join(":");
 
@@ -643,6 +668,7 @@ export default function Home() {
         context = new AudioContextClass();
         soundboardAudioContextRef.current = context;
       }
+      unlockUiSounds();
       void context.resume().then(() => {
         if (context?.state === "running") setSoundboardAudioReady(true);
       }).catch((error) => console.warn("Não foi possível liberar a reprodução de áudio:", error));
@@ -797,6 +823,7 @@ export default function Home() {
         const name = profile?.display_name || profile?.username || "Nova mensagem";
         setDmUnreadByUser((previous) => ({ ...previous, [row.sender_id]: (previous[row.sender_id] || 0) + 1 }));
         const isCallInvite = row.content === DIRECT_CALL_INVITE;
+        playUiSound(isCallInvite ? "call-ring" : "message");
         setDmToast({ userId: row.sender_id, name, avatarUrl: profile?.avatar_url ?? null, content: isCallInvite ? "Ligação de voz recebida" : row.content || (row.attachment_url ? "Enviou uma imagem" : "Nova mensagem"), image: !!row.attachment_url });
         window.setTimeout(() => setDmToast((current) => current?.userId === row.sender_id ? null : current), 7000);
       })
@@ -806,11 +833,16 @@ export default function Home() {
 
   async function loadMyProfile() {
     if (!currentUserId) return;
-    const { data } = await supabase
-      .from("profiles")
-      .select("display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status")
-      .eq("id", currentUserId)
-      .single();
+    const profileSelect = "display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status";
+    const profileResult = await selectOptionalProfileColumns(profileSelect, (columns) => supabase.from("profiles").select(columns).eq("id", currentUserId).maybeSingle());
+    const data = profileResult.data as {
+      display_name?: string | null; username?: string | null; pronouns?: string | null; bio?: string | null; custom_status?: string | null;
+      avatar_url?: string | null; avatar_position_x?: number | null; avatar_position_y?: number | null; avatar_zoom?: number | null;
+      banner_url?: string | null; banner_position_x?: number | null; banner_position_y?: number | null; banner_zoom?: number | null;
+      activity_banner_url?: string | null; activity_banner_position_x?: number | null; activity_banner_position_y?: number | null; activity_banner_zoom?: number | null;
+      member_list_banner_url?: string | null; member_list_banner_position_x?: number | null; member_list_banner_position_y?: number | null; member_list_banner_zoom?: number | null;
+      profile_card_color?: string | null; profile_decoration?: string | null; show_badges_in_member_list?: boolean | null; status?: "online" | "idle" | "dnd" | "offline" | null;
+    } | null;
     if (data) {
       const { data: badgeRows } = await supabase
         .from("user_badges")
@@ -818,8 +850,8 @@ export default function Home() {
         .eq("user_id", currentUserId);
       const badges = mapUserBadgeRows(badgeRows).get(currentUserId) ?? [];
       setMyProfile({
-        displayName: data.display_name || data.username,
-        username: data.username,
+        displayName: data.display_name || data.username || "Você",
+        username: data.username || undefined,
         pronouns: data.pronouns,
         bio: data.bio,
         customStatus: data.custom_status,
@@ -832,11 +864,15 @@ export default function Home() {
         bannerPositionY: data.banner_position_y ?? 50,
         bannerZoom: data.banner_zoom ?? 100,
         activityBannerUrl: data.activity_banner_url,
+        activityBannerPositionX: data.activity_banner_position_x ?? 50,
+        activityBannerPositionY: data.activity_banner_position_y ?? 50,
+        activityBannerZoom: data.activity_banner_zoom ?? 100,
         memberListBannerUrl: data.member_list_banner_url,
         memberListBannerPositionX: data.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: data.member_list_banner_position_y ?? 50,
         memberListBannerZoom: data.member_list_banner_zoom ?? 100,
         profileCardColor: data.profile_card_color,
+        profileDecoration: data.profile_decoration ?? null,
         showBadgesInMemberList: data.show_badges_in_member_list !== false,
         badges,
         presence: data.status,
@@ -862,15 +898,36 @@ export default function Home() {
   }, [currentUserId]);
 
   useEffect(() => {
+    setUiSoundPresence(myProfile?.presence);
+  }, [myProfile?.presence]);
+
+  useEffect(() => {
     if (!currentUserId) return;
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(`sekai-preferences:${currentUserId}`) || "{}");
-      document.documentElement.dataset.density = saved.density === "compact" ? "compact" : "comfortable";
-      document.documentElement.dataset.fontScale = saved.fontScale === "large" ? "large" : "normal";
-      document.documentElement.dataset.reducedMotion = String(saved.reducedMotion === true);
-    } catch {
-      // As preferências locais padrão já estão aplicadas pelo CSS.
-    }
+    const apply = () => {
+      const preferences = readVoicePreferences(currentUserId);
+      setUiSoundOutput(preferences.outputVolume, preferences.outputDeviceId);
+    };
+    apply();
+    window.addEventListener(VOICE_PREFERENCES_UPDATED_EVENT, apply);
+    return () => window.removeEventListener(VOICE_PREFERENCES_UPDATED_EVENT, apply);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const apply = () => {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(`sekai-preferences:${currentUserId}`) || "{}");
+        document.documentElement.dataset.density = saved.density === "compact" ? "compact" : "comfortable";
+        document.documentElement.dataset.fontScale = saved.fontScale === "large" ? "large" : "normal";
+        document.documentElement.dataset.reducedMotion = String(saved.reducedMotion === true);
+        document.documentElement.dataset.layout = saved.layout === "sekai" ? "sekai" : "discord";
+      } catch {
+        // As preferências locais padrão já estão aplicadas pelo CSS.
+      }
+    };
+    apply();
+    window.addEventListener(CHAT_PREFERENCES_EVENT, apply);
+    return () => window.removeEventListener(CHAT_PREFERENCES_EVENT, apply);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -1226,7 +1283,7 @@ export default function Home() {
     const [serverResult, categoryResult, memberResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      supabase.from("members").select("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)").eq("server_id", serverId),
+      selectOptionalProfileColumns("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)", (columns) => supabase.from("members").select(columns).eq("server_id", serverId)),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1308,11 +1365,15 @@ export default function Home() {
         bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
         bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
         activityBannerUrl: m.profiles?.activity_banner_url,
+        activityBannerPositionX: m.profiles?.activity_banner_position_x ?? 50,
+        activityBannerPositionY: m.profiles?.activity_banner_position_y ?? 50,
+        activityBannerZoom: m.profiles?.activity_banner_zoom ?? 100,
         memberListBannerUrl: m.member_list_banner_url || m.profiles?.member_list_banner_url,
         memberListBannerPositionX: m.member_list_banner_url ? m.member_list_banner_position_x ?? 50 : m.profiles?.member_list_banner_position_x ?? 50,
         memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
         memberListBannerZoom: m.member_list_banner_url ? m.member_list_banner_zoom ?? 100 : m.profiles?.member_list_banner_zoom ?? 100,
         profileCardColor: m.profiles?.profile_card_color,
+        profileDecoration: m.profiles?.profile_decoration ?? null,
         showBadgesInMemberList: m.profiles?.show_badges_in_member_list !== false,
         badges: existingBadgesByUser.get(m.user_id) ?? [],
         profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
@@ -1669,6 +1730,18 @@ export default function Home() {
       return;
     }
     await loadChannelsAndMembers();
+  }
+
+  function openVoiceMessage(userId: string) {
+    setDirectMessageUserId(userId);
+    setActiveServerId("");
+    setActiveChannelId("");
+    setCallFullscreen(false);
+    setCallExpanded(false);
+  }
+
+  function openVoiceProfile(userId: string) {
+    if (members.some((member) => member.id === userId)) setVoiceProfileUserId(userId);
   }
 
   function handleToggleSoundEffects(userId: string, muted: boolean) {
@@ -2215,7 +2288,11 @@ export default function Home() {
     bannerPositionY: myProfile?.bannerPositionY ?? 50,
     bannerZoom: myProfile?.bannerZoom ?? 100,
     activityBannerUrl: myProfile?.activityBannerUrl ?? null,
+    activityBannerPositionX: myProfile?.activityBannerPositionX ?? 50,
+    activityBannerPositionY: myProfile?.activityBannerPositionY ?? 50,
+    activityBannerZoom: myProfile?.activityBannerZoom ?? 100,
     profileCardColor: myProfile?.profileCardColor ?? null,
+    profileDecoration: myProfile?.profileDecoration ?? currentMember?.profileDecoration ?? null,
     badges: myProfile?.badges ?? [],
     status: myProfile?.presence ?? currentMember?.status ?? "online",
     profilePresence: myProfile?.presence ?? "online",
@@ -2224,14 +2301,17 @@ export default function Home() {
   };
 
   return (
-    <div id="sekai-app-root" className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
+    <div id="sekai-app-root" data-people={sekaiPeopleOpen ? "open" : "closed"} className={callFullscreen ? "fixed inset-0 z-[300] flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#111214]" : "flex h-[100dvh] w-full flex-col overflow-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"}>
       <SpotifyActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       <GameActivityPublisher userId={currentUserId} presence={myProfile?.presence} />
       {!callFullscreen && <div className="h-[3px] w-full shrink-0 bg-theme-gradient" />}
       {soundboardNotice && <div role="status" className="fixed left-1/2 top-[calc(env(safe-area-inset-top)+12px)] z-[500] w-[min(420px,calc(100vw-24px))] -translate-x-1/2 rounded-xl border border-white/10 bg-discord-bg-floating px-4 py-3 text-sm text-discord-header-primary shadow-2xl">{soundboardNotice}</div>}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      <div className="app-columns relative flex min-h-0 flex-1 overflow-hidden">
       {!callFullscreen && mobileNavigationOpen && <button type="button" aria-label="Fechar navegação" onClick={() => setMobileNavigationOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      <div className={callFullscreen ? "hidden" : mobileNavigationOpen ? "fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "hidden md:flex md:h-full"}>
+      <div className={callFullscreen ? "sekai-nav hidden" : mobileNavigationOpen ? "sekai-nav fixed bottom-[env(safe-area-inset-bottom)] left-0 top-[calc(env(safe-area-inset-top)+3px)] z-[160] flex w-[min(336px,100vw)] shadow-2xl md:static md:z-auto md:h-full md:w-auto md:shadow-none" : "sekai-nav hidden md:flex md:h-full"}>
+      <div className="server-rail-hover relative flex h-full min-h-0">
+      <span className="server-rail-hotspot" aria-hidden="true" />
+      <div className="server-rail-shell flex h-full shrink-0">
       <ServerSidebar
         currentUserId={currentUserId ?? ""}
         servers={railServers}
@@ -2243,6 +2323,7 @@ export default function Home() {
         onOpenHome={() => { setActiveChannelId(""); setChannels([]); setMobileNavigationOpen(false); }}
         onServerContext={(serverId) => { handleSelectServer(serverId); setShowServerSettings(true); setMobileNavigationOpen(false); }}
       />
+      </div>
 
       {activeServerId ? <ChannelSidebar
         key={activeServerId}
@@ -2308,7 +2389,12 @@ export default function Home() {
           isSpeaking: voiceControlState.isSpeaking,
         }}
         onPresenceChange={handlePresenceChange}
+        mutedSoundEffectUserIds={mutedSoundEffectUserIds}
+        onToggleSoundEffects={handleToggleSoundEffects}
+        onVoiceMemberMessage={openVoiceMessage}
+        onVoiceMemberProfile={openVoiceProfile}
       /> : null}
+      </div>
       </div>
 
       {showCreateServer && (
@@ -2359,6 +2445,15 @@ export default function Home() {
           }}
         />
       )}
+
+      {voiceProfileUserId && currentUserId && members.some((member) => member.id === voiceProfileUserId) && <UserProfileCard
+        profile={members.find((member) => member.id === voiceProfileUserId)!}
+        position={{ left: 300, top: 96 }}
+        currentUserId={currentUserId}
+        onClose={() => setVoiceProfileUserId(null)}
+        onMessage={() => { const id = voiceProfileUserId; setVoiceProfileUserId(null); openVoiceMessage(id); }}
+        onAddFriend={() => handleAddFriend(voiceProfileUserId)}
+      />}
 
       {showMyProfile && currentUserId && <MemberProfileDialog
         profile={myProfileForDialog}
@@ -2416,7 +2511,8 @@ export default function Home() {
       )}
 
       {/* A chamada fica montada enquanto você está conectado; só aparece quando a tela dela está aberta. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="sekai-stage relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {activeServerId && !callOpenHere && <button type="button" className="sekai-people-toggle" aria-pressed={sekaiPeopleOpen} onClick={() => setSekaiPeopleOpen((open) => !open)}><Users className="h-4 w-4" />Pessoas</button>}
       {!callOpenHere && !!activeServerId && <header className="flex h-14 shrink-0 items-center gap-3 border-b border-black/20 bg-discord-bg-secondary/80 px-3 shadow-sm md:hidden">
         <button type="button" onClick={() => { setMobileMembersOpen(false); setMobileNavigationOpen(true); }} aria-label="Abrir servidores e canais" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-discord-bg-modifier-hover text-discord-header-primary active:scale-95"><Menu className="h-5 w-5"/></button>
         <div className="min-w-0 flex-1">
@@ -2458,6 +2554,9 @@ export default function Home() {
             }}
             callVisible={callOpenHere}
             onOpenVoiceSettings={() => { setSettingsSection("voz"); setShowUserSettings(true); }}
+            onToggleSoundEffects={handleToggleSoundEffects}
+            onMessageUser={openVoiceMessage}
+            onOpenProfile={openVoiceProfile}
           />
         </div>
       )}
@@ -2493,6 +2592,7 @@ export default function Home() {
             custom_status: myProfile?.customStatus ?? null,
             pronouns: myProfile?.pronouns ?? null,
             profile_card_color: myProfile?.profileCardColor ?? null,
+            profile_decoration: myProfile?.profileDecoration ?? null,
             badges: myProfile?.badges ?? [],
             status: myProfile?.presence ?? "offline",
           }}
@@ -2593,7 +2693,8 @@ export default function Home() {
       </div>
 
       {mobileMembersOpen && !callOpenHere && <button type="button" aria-label="Fechar lista de membros" onClick={() => setMobileMembersOpen(false)} className="fixed inset-0 z-[150] bg-black/60 md:hidden" />}
-      {!callOpenHere && !!activeServerId && <div className={mobileMembersOpen ? "fixed bottom-[env(safe-area-inset-bottom)] right-0 top-[env(safe-area-inset-top)] z-[160] flex w-60 shadow-2xl md:static md:z-auto md:h-full md:shadow-none" : "hidden md:flex md:h-full"}><button type="button" onClick={() => setMobileMembersOpen(false)} aria-label="Fechar lista de membros" className="absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg bg-discord-bg-primary text-discord-text-normal shadow-md md:hidden"><X className="h-5 w-5"/></button><MemberList
+      {sekaiPeopleOpen && !callOpenHere && !!activeServerId && <button type="button" className="sekai-people-backdrop" aria-label="Fechar pessoas" onClick={() => setSekaiPeopleOpen(false)} />}
+      {!callOpenHere && !!activeServerId && <div className={mobileMembersOpen ? "sekai-people fixed bottom-[env(safe-area-inset-bottom)] right-0 top-[env(safe-area-inset-top)] z-[160] flex w-60 shadow-2xl md:static md:z-auto md:h-full md:shadow-none" : "sekai-people hidden md:flex md:h-full"}><button type="button" onClick={() => setMobileMembersOpen(false)} aria-label="Fechar lista de membros" className="absolute right-2 top-2 z-10 grid h-10 w-10 place-items-center rounded-lg bg-discord-bg-primary text-discord-text-normal shadow-md md:hidden"><X className="h-5 w-5"/></button><MemberList
         members={members}
         currentUserId={currentUserId}
         onAddFriend={handleAddFriend}

@@ -9,6 +9,7 @@ const assets = [
   [path.join(packageDist, "rnnoise", "workletProcessor.js"), path.join(destination, "rnnoiseWorklet.js")],
   [path.join(packageDist, "rnnoise.wasm"), path.join(destination, "rnnoise.wasm")],
   [path.join(packageDist, "rnnoise_simd.wasm"), path.join(destination, "rnnoise_simd.wasm")],
+  [path.join(projectRoot, "audio-worklets", "pcmCaptureWorklet.js"), path.join(destination, "pcmCaptureWorklet.js")],
 ];
 
 await mkdir(destination, { recursive: true });

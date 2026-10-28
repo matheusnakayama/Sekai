@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Activity, Gamepad2, Headphones, MessageCircle, MoreHorizontal, Music2, Pencil, SendHorizontal, Users, UserPlus, ZoomIn, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { ActivityPanelArt } from "@/components/ActivityPanelArt";
 import { CroppedProfileImage, ProfileBanner } from "@/components/ProfileBanner";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { CustomBadgeList } from "@/components/CustomBadgeList";
@@ -12,6 +13,7 @@ import { GameActivityCard, ProfileConnections, SpotifyMark, useConnections, useG
 import { safeSpotifyArtUrl } from "@/lib/spotify";
 import { getProfilePalette } from "@/lib/utils";
 import type { MemberItem, MemberVoiceActivity, ServerRoleOption } from "@/components/MemberList";
+import { ProfileDecoration } from "@/components/ProfileDecoration";
 import type { MutualServer } from "@/components/UserProfileCard";
 
 type MutualFriend = { id: string; name: string; avatarUrl?: string | null };
@@ -147,13 +149,14 @@ export function MemberProfileDialog({
       <section role="dialog" aria-modal="true" aria-label={`Perfil de ${profile.displayName}`} className="relative flex h-[min(720px,calc(100dvh-32px))] w-[min(940px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#202127] text-[#f2f3f5] shadow-[0_28px_100px_rgba(0,0,0,.72)] md:flex-row">
         <button type="button" onClick={onClose} aria-label="Fechar perfil" className="absolute right-3 top-3 z-30 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/50 text-white/80 backdrop-blur transition hover:bg-black/75 hover:text-white"><X size={18}/></button>
 
-        <aside className="flex max-h-[40dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-white/10 md:max-h-full md:w-[340px] md:border-b-0 md:border-r" style={{ background: palette.background, color: palette.text, borderColor: palette.border }}>
+        <aside className="relative flex max-h-[40dvh] w-full shrink-0 flex-col overflow-y-auto border-b border-white/10 md:max-h-full md:w-[340px] md:border-b-0 md:border-r" style={{ background: palette.background, color: palette.text, borderColor: palette.border }}>
+          <ProfileDecoration id={profile.profileDecoration} />
           <ProfileBanner src={profile.bannerUrl} positionX={profile.bannerPositionX} positionY={profile.bannerPositionY} zoom={profile.bannerZoom} className="h-28 shrink-0" style={{ background: palette.background }}>
             <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.13em] text-white/80 backdrop-blur"><Activity size={12}/>{profile.status === "offline" ? "Offline" : profile.status === "dnd" ? "Não perturbe" : profile.status === "idle" ? "Ausente" : "Online"}</div>
             {onKick && <><button type="button" onClick={() => setActionsOpen((open) => !open)} aria-label="Mais ações do perfil" aria-expanded={actionsOpen} className="absolute right-14 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/45 text-white/85 transition hover:bg-black/70"><MoreHorizontal size={19}/></button>{actionsOpen && <div role="menu" className="absolute right-14 top-14 z-20 min-w-40 rounded-lg border border-white/10 bg-[#18191c] p-1.5 shadow-xl"><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); onClose(); onKick(); }} className="w-full rounded-md px-3 py-2 text-left text-xs font-semibold text-red-300 transition hover:bg-red-500/10">Expulsar do servidor</button></div>}</>}
           </ProfileBanner>
 
-          <div className="px-5 pb-5">
+          <div className="relative z-10 px-5 pb-5">
             <div className="relative -mt-10 mb-3 h-20 w-20">
               <button type="button" onClick={() => { if (isSelf && onOpenSettings) { onClose(); onOpenSettings(); } else setAvatarPreview(true); }} aria-label={isSelf && onOpenSettings ? "Editar avatar" : `Ampliar avatar de ${profile.displayName}`} title={isSelf && onOpenSettings ? "Editar avatar" : "Ampliar avatar"} className="group relative h-20 w-20 overflow-hidden rounded-full border-[5px] shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-discord-brand" style={{ borderColor: palette.surface, backgroundColor: palette.inset }}>
                 {profile.avatarUrl ? <CroppedProfileImage src={profile.avatarUrl} alt={profile.displayName} positionX={profile.avatarPositionX} positionY={profile.avatarPositionY} zoom={profile.avatarZoom} pauseGif={false} className="rounded-full"/> : <span className="grid h-full place-items-center text-3xl font-bold">{profile.displayName[0]?.toUpperCase()}</span>}
@@ -192,9 +195,7 @@ export function MemberProfileDialog({
         </aside>
 
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202127]">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-[62%] overflow-hidden">
-            {profile.activityBannerUrl && <div className="absolute inset-0" style={{ maskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 28%, transparent 100%)" }}><CroppedProfileImage src={profile.activityBannerUrl} pauseGif={false} className="opacity-[.42] saturate-[.85]"/><div className="absolute inset-0 bg-gradient-to-b from-[#202127]/20 via-[#202127]/35 to-[#202127]"/></div>}
-          </div>
+          {profile.activityBannerUrl && <ActivityPanelArt src={profile.activityBannerUrl} positionX={profile.activityBannerPositionX} positionY={profile.activityBannerPositionY} zoom={profile.activityBannerZoom} />}
           <div className="relative z-10 flex min-h-0 flex-1 flex-col">
           <header className="flex min-h-16 shrink-0 items-center justify-between border-b border-white/10 px-5 pr-14 sm:px-7 sm:pr-16" style={{ borderColor: palette.border }}>
             <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-discord-brand">Perfil</p><p className="truncate text-sm font-semibold">{profile.displayName}</p></div>

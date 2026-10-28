@@ -10,11 +10,9 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: [
-          "gg sans",
-          "Whitney",
-          "Helvetica Neue",
-          "Helvetica",
-          "Arial",
+          "Noto Sans Display",
+          "Inter",
+          "Segoe UI",
           "sans-serif",
         ],
       },

@@ -1,0 +1,90 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { ACTIVITY_PANEL_HEIGHT, ACTIVITY_PANEL_MASK, isMissingActivityBannerCropColumn, withActivityBannerCrop, withoutActivityBannerCrop } from "../lib/activityBanner.ts";
+import { MEMBER_LIST_BANNER_OPACITY, memberListBannerMask } from "../lib/memberListBanner.ts";
+import {
+  PROFILE_DECORATIONS,
+  isMissingProfileDecorationColumn,
+  normalizeProfileDecoration,
+  withProfileDecorationColumn,
+  withoutProfileDecorationColumn,
+} from "../lib/profileDecorations.ts";
+import { shouldPlayUiSound } from "../lib/uiSounds.ts";
+import { SEKAI_BALLOON_WINDOW_MS, groupChatBalloons } from "../lib/messageBalloons.ts";
+
+function bannerEdge(nameEnd, width, height) {
+  const mask = decodeURIComponent(memberListBannerMask(nameEnd, width, height));
+  const points = mask.match(/points="(\d+),0 \d+,0 \d+,\d+ (\d+),\d+"/);
+  assert.ok(points, mask);
+  return { top: Number(points[1]), bottom: Number(points[2]), mask };
+}
+
+test("member list banner stays clear over the name and fades diagonally after it", () => {
+  const edge = bannerEdge(90, 240, 46);
+  assert.equal(MEMBER_LIST_BANNER_OPACITY < 1 && MEMBER_LIST_BANNER_OPACITY >= 0.7, true);
+  assert.equal(edge.bottom, 90);
+  assert.ok(edge.top > edge.bottom);
+  assert.doesNotMatch(edge.mask, /<rect /);
+  assert.ok(bannerEdge(20, 240, 46).top > bannerEdge(20, 240, 46).bottom);
+  assert.doesNotMatch(decodeURIComponent(memberListBannerMask(-8, 0, 0)), /<rect /);
+});
+
+test("a compressed name gets a diagonal wedge instead of a square fade", () => {
+  const edge = bannerEdge(210, 240, 46);
+  assert.ok(edge.top > edge.bottom);
+  assert.ok(edge.bottom <= 210);
+  assert.doesNotMatch(edge.mask, /<rect /);
+  const ends = edge.mask.match(/x1="(\d+)" y1="\d+" x2="(\d+)"/);
+  assert.ok(ends);
+  assert.notEqual(ends[1], ends[2]);
+});
+
+test("activity gif uses a shorter diagonal fade and optional crop columns", () => {
+  assert.equal(ACTIVITY_PANEL_HEIGHT, "31%");
+  assert.match(ACTIVITY_PANEL_MASK, /to bottom left/);
+  const select = "id,activity_banner_url,status";
+  const withCrop = withActivityBannerCrop(select);
+  assert.match(withCrop, /activity_banner_position_x,activity_banner_position_y,activity_banner_zoom/);
+  assert.equal(withoutActivityBannerCrop(withCrop), select);
+  assert.equal(withActivityBannerCrop(withCrop), withCrop);
+  assert.equal(isMissingActivityBannerCropColumn({ message: "column activity_banner_position_x does not exist" }), true);
+  assert.equal(isMissingActivityBannerCropColumn({ message: "permission denied" }), false);
+});
+
+test("profile decorations are a fixed catalog of ten original frames", () => {
+  assert.equal(PROFILE_DECORATIONS.length, 10);
+  assert.equal(new Set(PROFILE_DECORATIONS.map((item) => item.id)).size, 10);
+  assert.equal(normalizeProfileDecoration("solara"), "solara");
+  assert.equal(normalizeProfileDecoration("vigilia"), "vigilia");
+  assert.equal(normalizeProfileDecoration("discord-eyes"), null);
+  assert.equal(normalizeProfileDecoration(""), null);
+  const select = "id,profile_card_color,status";
+  assert.equal(withProfileDecorationColumn(select), "id,profile_card_color,profile_decoration,status");
+  assert.equal(withoutProfileDecorationColumn(withProfileDecorationColumn(select)), select);
+  assert.equal(isMissingProfileDecorationColumn({ message: "column profiles.profile_decoration does not exist" }), true);
+  assert.equal(isMissingProfileDecorationColumn({ message: "permission denied" }), false);
+});
+
+test("sekai balloons merge the same person inside one period", () => {
+  const messages = [
+    { id: "1", authorId: "a", createdAt: "2026-10-17T17:18:00.000Z", systemType: null },
+    { id: "2", authorId: "a", createdAt: "2026-10-17T17:19:10.000Z", systemType: null },
+    { id: "3", authorId: "a", createdAt: "2026-10-17T17:22:00.000Z", systemType: null },
+    { id: "4", authorId: "b", createdAt: "2026-10-17T17:22:20.000Z", systemType: null },
+    { id: "5", authorId: "a", createdAt: "2026-10-17T17:40:00.000Z", systemType: null },
+  ];
+  const groups = groupChatBalloons(messages, SEKAI_BALLOON_WINDOW_MS, (message) => message.id === "3");
+  assert.equal(SEKAI_BALLOON_WINDOW_MS, 5 * 60 * 1000);
+  assert.deepEqual(groups.map((group) => group.map((message) => message.id)), [["1", "2"], ["3"], ["4"], ["5"]]);
+});
+
+test("do not disturb silences received message sounds and leaves call cues on", () => {
+  assert.equal(shouldPlayUiSound("message", "dnd", 1), false);
+  assert.equal(shouldPlayUiSound("mention", "dnd", 1), false);
+  assert.equal(shouldPlayUiSound("message", "online", 1), true);
+  assert.equal(shouldPlayUiSound("mention", "idle", 1), true);
+  assert.equal(shouldPlayUiSound("call-join", "dnd", 1), true);
+  assert.equal(shouldPlayUiSound("call-leave", "dnd", 1), true);
+  assert.equal(shouldPlayUiSound("call-ring", "dnd", 0.4), true);
+  assert.equal(shouldPlayUiSound("message", "online", 0), false);
+});

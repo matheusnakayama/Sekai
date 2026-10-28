@@ -63,7 +63,7 @@ export default function PreJoin({
       setLoadingDevices(true);
       setDeviceError(null);
       try {
-        localStream = await openCallInput({ video: true, audioDeviceId: inputDeviceId || undefined, noiseSuppression: voiceProfile === 'noise-suppression' });
+        localStream = await openCallInput({ video: true, audioDeviceId: inputDeviceId || undefined, processing: voiceProfile });
         if (cancelled) {
           releaseCallInput(localStream);
           return;
@@ -150,7 +150,7 @@ export default function PreJoin({
     if (!deviceId || deviceId === selectedAudioInput) return;
 
     try {
-      const replacement = await openCallInput({ audioDeviceId: deviceId, video: false, noiseSuppression: voiceProfile === 'noise-suppression' });
+      const replacement = await openCallInput({ audioDeviceId: deviceId, video: false, processing: voiceProfile });
       const replacementTrack = replacement.getAudioTracks()[0];
       if (!replacementTrack) throw new Error('O navegador não retornou uma faixa de áudio.');
 

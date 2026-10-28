@@ -154,7 +154,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
       stream = await openCallInput({
         video: false,
         audioDeviceId: preferences.inputDeviceId || undefined,
-        noiseSuppression: preferences.voiceProfile === "noise-suppression",
+        processing: preferences.voiceProfile,
       });
       if (!mountedRef.current) {
         releaseCallInput(stream);
@@ -297,8 +297,9 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
           <select aria-label="Perfil de entrada do microfone" value={preferences.voiceProfile} onChange={(event) => updatePreferences({ voiceProfile: event.target.value as VoicePreferences["voiceProfile"] })} className={selectClass}>
             <option value="standard">Padrão</option>
             <option value="noise-suppression">Supressão neural (RNNoise)</option>
+            <option value="elevenlabs">Supressão ElevenLabs</option>
           </select>
-          <span className="mt-1 block text-xs font-normal leading-5 text-discord-text-muted">Processa a voz no dispositivo. Se o filtro neural não estiver disponível, o Sekai usa a supressão de ruído do navegador.</span>
+          <span className="mt-1 block text-xs font-normal leading-5 text-discord-text-muted">{preferences.voiceProfile === "elevenlabs" ? "A voz sai do seu microfone, passa pela isolação da ElevenLabs e segue para a chamada sem o ruído de fundo. Isso acrescenta um pequeno atraso. Se o serviço não responder, o Sekai usa a supressão local. No servidor, preencha ELEVENLABS_API_KEY." : "Processa a voz no dispositivo. Se o filtro neural não estiver disponível, o Sekai usa a supressão de ruído do navegador."}</span>
         </label>
 
         <label className="block text-sm font-semibold text-discord-text-normal">Volume de entrada <span className="float-right font-normal text-discord-text-muted">{Math.round(preferences.inputVolume * 100)}%</span>
@@ -323,7 +324,7 @@ export function VoiceSettingsPanel({ userId }: { userId: string }) {
         </div>
         {error && <p role="alert" className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs leading-5 text-rose-200">{error}</p>}
         {!error && notice && <p role="status" className="mt-3 flex items-center gap-2 text-xs text-discord-text-muted"><Volume2 size={14}/>{notice}</p>}
-        <p className="mt-3 text-[11px] text-discord-text-muted">Use fones de ouvido durante o teste para evitar microfonia. A gravação fica apenas neste navegador e não é enviada ao Sekai.</p>
+        <p className="mt-3 text-[11px] text-discord-text-muted">{preferences.voiceProfile === "elevenlabs" ? "Use fones de ouvido durante o teste para evitar microfonia. Com a ElevenLabs, trechos curtos do teste são enviados para limpar o ruído e não ficam armazenados no Sekai." : "Use fones de ouvido durante o teste para evitar microfonia. A gravação fica apenas neste navegador e não é enviada ao Sekai."}</p>
       </div>
     </div>
   );

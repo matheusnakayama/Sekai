@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { HoverGifImage } from "@/components/HoverGifImage";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { ChatMessageBody } from "@/components/ChatMessageBody";
-import { useChatDisplay } from "@/lib/chatPreferences";
+import { CHAT_PREFERENCES_EVENT, useChatDisplay } from "@/lib/chatPreferences";
 import { getProfileCardPosition, UserProfileCard } from "@/components/UserProfileCard";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import type { ProfileCardPosition } from "@/components/UserProfileCard";
@@ -23,6 +23,7 @@ import { readSaved, rememberReport, toggleSaved, type SavedChatMessage } from "@
 import { ChatTopicCard, ChatTopicThreadDialog } from "@/components/ChatTopic";
 import { ChatPollCard } from "@/components/ChatPollCard";
 import { beginSpotifyConnect, ensureSpotifyToken, fetchCurrentlyPlaying } from "@/lib/spotify";
+import { SEKAI_BALLOON_WINDOW_MS, groupChatBalloons } from "@/lib/messageBalloons";
 
 type ServerEmoji = { id: string; name: string; asset_url: string };
 
@@ -625,6 +626,9 @@ export function ChatArea({
     setComposerToolsOpen(false);
   }
 
+  const sekaiLayout = useSekaiLayout();
+  const messageGroups = groupChatBalloons(messages, sekaiLayout ? SEKAI_BALLOON_WINDOW_MS : 60 * 1000, (message) => pinnedIds.has(message.id) || favoriteIds.has(message.id));
+
   async function shareSpotifyTrack() {
     if (!currentUserId) return;
     try {
@@ -684,7 +688,15 @@ export function ChatArea({
           </div>
         ) : !messages.length ? (
           <p className="py-3 text-sm text-discord-text-muted">Ainda não há mensagens neste canal.</p>
-        ) : messages.map((message, index) => {
+        ) : messageGroups.map((group) => {
+          const first = group[0];
+          const firstTime = new Date(first.createdAt);
+          const firstIndex = messages.indexOf(first);
+          const beforeFirst = firstIndex > 0 ? new Date(messages[firstIndex - 1].createdAt) : null;
+          const showGroupDate = !beforeFirst || firstTime.toDateString() !== beforeFirst.toDateString();
+          const balloon = sekaiLayout && !first.systemType;
+          return <div key={first.id} className="contents">{sekaiLayout && showGroupDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-4"><span className="h-px flex-1 bg-white/10"/><time dateTime={firstTime.toISOString()}>{formatMessageDate(firstTime)}</time><span className="h-px flex-1 bg-white/10"/></div>}<div className={balloon ? "chat-balloon" : "contents"} data-own={first.authorId === currentUserId ? "true" : "false"}>{group.map((message) => {
+          const index = messages.indexOf(message);
           const timestamp = new Date(message.createdAt);
           const previousMessage = index > 0 ? messages[index - 1] : null;
           const previousTimestamp = previousMessage ? new Date(previousMessage.createdAt) : null;
@@ -697,7 +709,7 @@ export function ChatArea({
             !previousMessage.systemType &&
             previousMessage.authorId === message.authorId &&
             elapsedFromPrevious >= 0 &&
-            elapsedFromPrevious <= 60 * 1000 &&
+            elapsedFromPrevious <= (sekaiLayout ? SEKAI_BALLOON_WINDOW_MS : 60 * 1000) &&
             !pinnedIds.has(message.id) &&
             !favoriteIds.has(message.id)
           );
@@ -709,8 +721,8 @@ export function ChatArea({
                 ? "foi expulso do servidor."
                 : "foi banido do servidor.";
           return (
-          <div key={message.id} id={`message-${message.id}`} className={!isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-5" : undefined}>
-          {showDate && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
+          <div key={message.id} id={`message-${message.id}`} className={!sekaiLayout && !isGroupedMessage && index > 0 && !showDate && !message.systemType ? "mt-5" : undefined}>
+          {showDate && !sekaiLayout && <div className="my-3 flex items-center gap-3 px-2 text-[11px] font-semibold text-discord-text-muted sm:my-5"><span className="h-px flex-1 bg-white/10"/><time dateTime={timestamp.toISOString()}>{formatMessageDate(timestamp)}</time><span className="h-px flex-1 bg-white/10"/></div>}
           {message.systemType ? (
             <div className="my-1 flex items-center gap-2 rounded-xl border border-discord-brand/20 bg-discord-brand/[0.06] px-3 py-2 text-sm text-discord-text-normal">
               <span aria-hidden="true" className="text-base">{message.systemType === "member_joined" ? "👋" : message.systemType === "member_left" ? "↗" : message.systemType === "member_kicked" ? "⤴" : "⛔"}</span>
@@ -721,11 +733,7 @@ export function ChatArea({
           <div onContextMenu={(event) => {
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, message });
-          }} className={`group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
-            {editing?.id !== message.id && <div className="pointer-events-none absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-full border border-white/[0.06] bg-[#18191c]/95 p-0.5 shadow-md backdrop-blur group-hover:pointer-events-auto group-hover:flex">
-              {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-75 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
-              <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="chat-inline-control grid h-6 w-6 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
-            </div>}
+          }} data-own={message.authorId === currentUserId ? "true" : "false"} className={`chat-entry group relative flex rounded-xl px-1 py-[2px] transition-colors hover:bg-white/[0.035] ${chatDisplay.showAvatars ? "gap-2 sm:gap-3" : ""} sm:px-2 ${highlightedId === message.id ? "ring-2 ring-discord-brand/70" : ""} ${message.authorId !== currentUserId && contentMentionsUser(message.content, selfMentionNames) ? "mention-message" : ""}`}>
             {chatDisplay.showAvatars && isGroupedMessage && <div aria-hidden="true" className="h-0 w-10 shrink-0" />}
             {chatDisplay.showAvatars && !isGroupedMessage && <button type="button" disabled={!memberById.has(message.authorId)} onClick={(event) => openAuthorProfile(message.authorId, event.currentTarget)} aria-label={`Abrir perfil de ${message.authorName}`} className="relative mt-0.5 h-10 w-10 shrink-0 cursor-pointer overflow-visible rounded-full bg-discord-brand transition-transform hover:scale-[1.04] disabled:cursor-default disabled:hover:scale-100">
               <span className="relative block h-full w-full overflow-hidden rounded-full">
@@ -784,6 +792,11 @@ export function ChatArea({
                 </a>
               )}
 
+              {editing?.id !== message.id && <div className="pointer-events-none mt-1.5 hidden w-fit items-center gap-0.5 rounded-lg border border-white/[0.06] bg-discord-bg-floating/95 px-1 py-0.5 shadow-md group-hover:pointer-events-auto group-hover:flex">
+                {QUICK_REACTIONS.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`} onClick={() => onToggleReaction?.(message.id, emoji)} className="chat-inline-control grid h-7 w-7 place-items-center rounded-md text-[13px] opacity-80 transition hover:bg-white/10 hover:opacity-100">{emoji}</button>)}
+                <button type="button" aria-label="Mais ações da mensagem" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setMenu({ x: rect.left, y: rect.bottom + 6, message }); }} className="chat-inline-control grid h-7 w-7 place-items-center rounded-md text-discord-text-muted transition hover:bg-white/10 hover:text-white"><MoreHorizontal size={14} /></button>
+              </div>}
+
               {chatDisplay.showReactions && message.reactions && message.reactions.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {message.reactions.map((r) => (
@@ -808,6 +821,7 @@ export function ChatArea({
           )}
           </div>
           );
+        })}</div></div>;
         })}
       </div>
 
@@ -893,7 +907,7 @@ export function ChatArea({
       {/* Campo de mensagem */}
       <div className="relative mx-2 mb-2 mt-1 border-t border-white/[0.07] bg-discord-bg-dark/20 pt-2 sm:mx-4 sm:mb-5 sm:mt-2 sm:pt-3">
         {mentionSearch && mentionSuggestions.length > 0 && (
-          <div className="absolute bottom-[calc(100%+10px)] z-30 w-full overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl">
+          <div className="sekai-command-menu absolute bottom-[calc(100%+10px)] z-30 w-full p-1.5">
             <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[.12em] text-discord-text-muted">Membros correspondentes</p>
             {mentionSuggestions.map((member, index) => (
               <button
@@ -912,10 +926,10 @@ export function ChatArea({
         )}
 
         {showAutocomplete && filteredCommands.length > 0 && (
-          <div className="absolute bottom-[calc(100%+10px)] w-full overflow-hidden rounded-2xl border border-white/10 bg-discord-bg-floating shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
-              <p className="text-[11px] font-bold uppercase tracking-[.14em] text-discord-text-muted">{commandPrefix === "!" ? "Comandos" : "Comandos com barra"}</p>
-              <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-discord-text-muted">{filteredCommands.length}</span>
+          <div className="sekai-command-menu absolute bottom-[calc(100%+10px)] w-full">
+            <div className="sekai-command-head">
+              <p className="text-discord-header-primary">{commandPrefix === "!" ? "Selos" : "Ações"}</p>
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-discord-text-muted">{filteredCommands.length}</span>
             </div>
             {filteredCommands.map((cmd) => {
               const prefix = cmd.usage?.startsWith("!") ? "!" : "/";
@@ -923,14 +937,14 @@ export function ChatArea({
                 <button
                   key={cmd.name}
                   onClick={() => pickCommand(cmd.name, prefix)}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-white/[0.05]"
+                  className="sekai-command-row"
                 >
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] font-mono text-xs font-bold text-white">{prefix}</span>
+                  <span className="sekai-seal">{prefix}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-discord-header-primary">{prefix}{cmd.name}</span>
                     <span className="block truncate text-xs text-discord-text-muted">{cmd.description}</span>
                   </span>
-                  {cmd.usage && <span className="hidden shrink-0 font-mono text-[11px] text-discord-text-muted sm:block">{cmd.usage}</span>}
+                  {cmd.usage && <span className="sekai-usage">{cmd.usage}</span>}
                 </button>
               );
             })}
@@ -946,35 +960,13 @@ export function ChatArea({
           </button>
           <div className="min-w-0 flex-1"><p className="text-sm font-medium text-discord-header-primary">Imagem pronta para enviar</p><p className="truncate text-xs text-discord-text-muted">{pendingPastedImage.file.name || "Imagem colada"}</p></div>
           <button type="button" disabled={uploading} onClick={() => setPendingPastedImage(null)} className="rounded-lg px-3 py-2 text-xs font-semibold text-discord-text-muted transition hover:bg-white/10 hover:text-white disabled:opacity-50">Cancelar</button>
-          <button type="button" disabled={uploading || !onUploadFile} onClick={() => void sendPendingPastedImage()} className="rounded-lg bg-discord-brand px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50">{uploading ? "Enviando…" : "Enviar"}</button>
+          <button type="button" disabled={uploading || !onUploadFile} onClick={() => void sendPendingPastedImage()} className="bg-discord-brand px-3 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-50">{uploading ? "Enviando…" : "Enviar"}</button>
         </div>}
 
         <form
           onSubmit={handleSubmit}
-          className="flex min-h-12 items-center gap-1.5 rounded-xl bg-discord-bg-secondary px-2 py-1.5 sm:gap-2 sm:rounded-lg sm:px-4 sm:py-2.5"
+          className="sekai-composer flex flex-col gap-1 px-2 py-2 sm:px-3 sm:py-2.5"
         >
-          <div ref={composerToolsRef} className="relative shrink-0">
-            <button type="button" onClick={() => { setComposerToolsOpen((open) => !open); setAppsOpen(false); }} aria-label="Abrir opções do chat" aria-haspopup="menu" aria-expanded={composerToolsOpen} className="grid h-9 w-9 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-discord-header-primary">
-              <Plus className="h-5 w-5" />
-            </button>
-            {composerToolsOpen && <div role="menu" aria-label="Opções do chat" className="absolute bottom-[calc(100%+12px)] left-0 z-[100] w-[min(300px,calc(100vw-28px))] overflow-hidden rounded-xl border border-white/10 bg-discord-bg-floating p-1.5 shadow-2xl">
-              {appsOpen ? <>
-                <button type="button" role="menuitem" onClick={() => setAppsOpen(false)} className="mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-discord-text-muted hover:bg-white/5 hover:text-white"><span aria-hidden="true">←</span> Todos os apps</button>
-                <div className="border-t border-white/[0.08] pt-1">
-                  <button type="button" role="menuitem" onClick={() => { setEmojiPickerOpen(true); setAppsOpen(false); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-discord-brand/15 text-discord-brand"><Smile size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Emojis do servidor</span><span className="block text-[11px] text-discord-text-muted">Emojis personalizados disponíveis</span></span></button>
-                  <button type="button" role="menuitem" onClick={() => { setComposerToolsOpen(false); setAppsOpen(false); onSendMessage("!bankai"); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-fuchsia-400/15 text-fuchsia-200"><Sparkles size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Bankai</span><span className="block text-[11px] text-discord-text-muted">Ative o sorteio de Bankai</span></span></button>
-                  <button type="button" role="menuitem" onClick={() => void shareSpotifyTrack()} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1DB954]/15 text-[#1DB954]"><Music2 size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Compartilhar Spotify</span><span className="block text-[11px] text-discord-text-muted">Inserir a faixa que está tocando</span></span></button>
-                </div>
-              </> : <>
-                <button type="button" role="menuitem" disabled={uploading || !onUploadFile} onClick={() => { attachmentInput.current?.click(); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06] disabled:opacity-40"><FileText size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Enviar um arquivo</span></button>
-                <button type="button" role="menuitem" onClick={() => { setTopicDraft({ title: "", content: "" }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><MessageSquarePlus size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar tópico</span></button>
-                <button type="button" role="menuitem" onClick={() => { setPollDraft({ question: "", options: ["", ""] }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><BarChart3 size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar enquete</span></button>
-                <button type="button" role="menuitem" onClick={() => setAppsOpen(true)} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><Sparkles size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Use apps</span><span className="ml-auto text-xs text-discord-text-muted">›</span></button>
-              </>}
-            </div>}
-          </div>
-          <input ref={attachmentInput} type="file" accept="*/*" className="hidden" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-
           <textarea
             ref={composerRef}
             rows={1}
@@ -986,12 +978,35 @@ export function ChatArea({
             onClick={(e) => refreshMentionSearch(e.currentTarget.value, e.currentTarget.selectionStart)}
             onPaste={handlePaste}
             onBlur={() => setMentionSearch(null)}
-            placeholder={`Conversar em #${channelName}`}
-            className="max-h-40 min-h-6 min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
+            placeholder={`Mensagem para ${channelName}`}
+            className="max-h-40 min-h-8 w-full resize-none bg-transparent px-1 py-1 text-base text-discord-text-normal placeholder:text-discord-text-muted focus:outline-none sm:text-sm"
           />
+          <div className="flex items-center justify-between gap-2 border-t border-white/[0.06] pt-1.5">
+          <div className="flex min-w-0 items-center gap-0.5">
+          <div ref={composerToolsRef} className="relative shrink-0">
+            <button type="button" onClick={() => { setComposerToolsOpen((open) => !open); setAppsOpen(false); }} aria-label="Abrir opções do chat" aria-haspopup="menu" aria-expanded={composerToolsOpen} className="grid h-9 w-9 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white">
+              <Plus className="h-5 w-5" />
+            </button>
+            {composerToolsOpen && <div role="menu" aria-label="Opções do chat" className="sekai-command-menu absolute bottom-[calc(100%+12px)] left-0 z-[100] w-[min(300px,calc(100vw-28px))] p-1.5">
+              {appsOpen ? <>
+                <button type="button" role="menuitem" onClick={() => setAppsOpen(false)} className="mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-discord-text-muted hover:bg-white/5 hover:text-white"><span aria-hidden="true">←</span> Voltar</button>
+                <div className="border-t border-white/[0.08] pt-1">
+                  <button type="button" role="menuitem" onClick={() => { setEmojiPickerOpen(true); setAppsOpen(false); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-discord-brand/15 text-discord-brand"><Smile size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Emojis do servidor</span><span className="block text-[11px] text-discord-text-muted">Emojis personalizados disponíveis</span></span></button>
+                  <button type="button" role="menuitem" onClick={() => { setComposerToolsOpen(false); setAppsOpen(false); onSendMessage("!bankai"); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-fuchsia-400/15 text-fuchsia-200"><Sparkles size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Bankai</span><span className="block text-[11px] text-discord-text-muted">Ative o sorteio de Bankai</span></span></button>
+                  <button type="button" role="menuitem" onClick={() => void shareSpotifyTrack()} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.06]"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#1DB954]/15 text-[#1DB954]"><Music2 size={17}/></span><span><span className="block text-sm font-medium text-discord-header-primary">Compartilhar Spotify</span><span className="block text-[11px] text-discord-text-muted">Inserir a faixa que está tocando</span></span></button>
+                </div>
+              </> : <>
+                <button type="button" role="menuitem" disabled={uploading || !onUploadFile} onClick={() => { attachmentInput.current?.click(); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06] disabled:opacity-40"><FileText size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Enviar um arquivo</span></button>
+                <button type="button" role="menuitem" onClick={() => { setTopicDraft({ title: "", content: "" }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><MessageSquarePlus size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar tópico</span></button>
+                <button type="button" role="menuitem" onClick={() => { setPollDraft({ question: "", options: ["", ""] }); setComposerActionError(""); setComposerToolsOpen(false); }} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><BarChart3 size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Criar enquete</span></button>
+                <button type="button" role="menuitem" onClick={() => setAppsOpen(true)} className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition hover:bg-white/[0.06]"><Sparkles size={17} className="text-discord-text-muted"/><span className="text-sm text-discord-text-normal">Selos</span><span className="ml-auto text-xs text-discord-text-muted">›</span></button>
+              </>}
+            </div>}
+          </div>
+          <input ref={attachmentInput} type="file" accept="*/*" className="hidden" onChange={(event) => { void uploadAttachment(event.target.files?.[0]); event.currentTarget.value = ""; }} />
 
           <div ref={emojiPickerRef} className="relative">
-            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] right-0 z-[90] w-[min(360px,calc(100vw-16px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
+            {emojiPickerOpen && <div role="dialog" aria-label="Escolher emoji" className="absolute bottom-[calc(100%+12px)] left-0 z-[90] w-[min(360px,calc(100vw-16px))] rounded-2xl border border-white/10 bg-discord-bg-floating p-3 shadow-2xl">
               <div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-wide text-discord-text-muted">Emojis</p><span className="text-[10px] text-discord-text-muted">Clique para inserir</span></div>
               <div className="grid max-h-[min(45dvh,360px)] grid-cols-6 gap-1 overflow-y-auto rounded-xl bg-black/10 p-1 sm:max-h-48 sm:grid-cols-8">
                 {STANDARD_EMOJIS.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={`Inserir ${emoji}`} className="grid h-10 w-10 place-self-center place-items-center rounded-lg text-2xl transition hover:bg-white/10">{emoji}</button>)}
@@ -1006,14 +1021,17 @@ export function ChatArea({
                 </div>
               </>}
             </div>}
-            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-discord-text-muted transition hover:bg-white/5 hover:text-discord-text-normal sm:h-auto sm:w-auto sm:rounded-none">
+            <button type="button" onClick={() => setEmojiPickerOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={emojiPickerOpen} title="Escolher emoji" aria-label="Escolher emoji" className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-discord-text-muted transition hover:bg-white/10 hover:text-white">
               <Smile className="h-5 w-5" />
             </button>
           </div>
+          </div>
 
-          <button type="submit" disabled={uploading} aria-label={pendingPastedImage ? "Enviar imagem" : "Enviar mensagem"} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-discord-brand text-white transition hover:brightness-110 disabled:cursor-wait disabled:opacity-50 sm:h-auto sm:w-auto sm:bg-transparent sm:text-discord-text-muted sm:hover:bg-transparent sm:hover:text-discord-brand">
-            <SendHorizontal className="h-5 w-5" />
+          <button type="submit" disabled={uploading} aria-label={pendingPastedImage ? "Enviar imagem" : "Enviar mensagem"} className="sekai-send inline-flex h-9 shrink-0 items-center gap-1.5 px-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-50">
+            Enviar
+            <SendHorizontal className="h-4 w-4" />
           </button>
+          </div>
         </form>
       </div>
       {topicDraft && <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !topicBusy) setTopicDraft(null); }}>
@@ -1022,7 +1040,7 @@ export function ChatArea({
           <label className="mb-3 block"><span className="mb-1.5 block text-xs font-semibold text-discord-text-normal">Nome do tópico</span><input autoFocus maxLength={100} value={topicDraft.title} onChange={(event) => setTopicDraft({ ...topicDraft, title: event.target.value })} placeholder="Ex.: Planejar a próxima partida" className="w-full rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/></label>
           <label className="block"><span className="mb-1.5 block text-xs font-semibold text-discord-text-normal">Mensagem inicial <span className="font-normal text-discord-text-muted">(opcional)</span></span><textarea maxLength={4000} rows={3} value={topicDraft.content} onChange={(event) => setTopicDraft({ ...topicDraft, content: event.target.value })} placeholder="Dê contexto para a conversa…" className="w-full resize-y rounded-xl border border-white/10 bg-discord-bg-secondary px-3 py-2.5 text-base text-discord-text-normal outline-none focus:border-discord-brand sm:text-sm"/></label>
           {composerActionError && <p role="alert" className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{composerActionError}</p>}
-          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={topicBusy} onClick={() => setTopicDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={topicBusy || !topicDraft.title.trim()} className="rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{topicBusy ? "Criando…" : "Criar tópico"}</button></div>
+          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={topicBusy} onClick={() => setTopicDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={topicBusy || !topicDraft.title.trim()} className="bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{topicBusy ? "Criando…" : "Criar tópico"}</button></div>
         </form>
       </div>}
       {pollDraft && <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !pollBusy) setPollDraft(null); }}>
@@ -1033,11 +1051,27 @@ export function ChatArea({
             {pollDraft.options.length < 10 && <button type="button" onClick={() => setPollDraft({ ...pollDraft, options: [...pollDraft.options, ""] })} className="rounded-lg px-2 py-1.5 text-xs font-semibold text-discord-brand hover:bg-discord-brand/10">+ Adicionar opção</button>}
           </div>
           {composerActionError && <p role="alert" className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{composerActionError}</p>}
-          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={pollBusy} onClick={() => setPollDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={pollBusy || !pollDraft.question.trim() || pollDraft.options.filter((item) => item.trim()).length < 2} className="rounded-lg bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{pollBusy ? "Publicando…" : "Publicar enquete"}</button></div>
+          <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={pollBusy} onClick={() => setPollDraft(null)} className="rounded-lg px-3 py-2 text-sm text-discord-text-muted hover:bg-white/5">Cancelar</button><button type="submit" disabled={pollBusy || !pollDraft.question.trim() || pollDraft.options.filter((item) => item.trim()).length < 2} className="bg-discord-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{pollBusy ? "Publicando…" : "Publicar enquete"}</button></div>
         </form>
       </div>}
       {activeTopic && <ChatTopicThreadDialog topicId={activeTopic.id} initialTitle={activeTopic.title} currentUserId={currentUserId} onClose={() => setActiveTopic(null)}/>}
       {lightboxImage && <ImageLightbox src={lightboxImage.src} alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} />}
     </div>
   );
+}
+
+function useSekaiLayout() {
+  const [sekai, setSekai] = useState(false);
+  useEffect(() => {
+    const read = () => setSekai(document.documentElement.dataset.layout === "sekai");
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-layout"] });
+    window.addEventListener(CHAT_PREFERENCES_EVENT, read);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener(CHAT_PREFERENCES_EVENT, read);
+    };
+  }, []);
+  return sekai;
 }

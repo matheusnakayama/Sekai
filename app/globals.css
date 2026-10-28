@@ -31,44 +31,44 @@ html.sekai-desktop.sekai-call-fullscreen #sekai-app-root {
 
 /* ===== Temas (gerado) ===== */
 :root, html[data-theme="azul"] {
-  --brand-50: 241 244 255;
-  --brand-100: 227 232 254;
-  --brand-200: 204 213 253;
-  --brand-300: 176 190 252;
-  --brand-400: 142 162 251;
-  --brand-500: 122 139 248;
-  --brand-600: 106 118 245;
-  --brand-700: 70 80 223;
-  --brand-800: 56 64 184;
-  --brand-900: 42 49 111;
-  --surface: 16 18 24;
-  --surface-soft: 24 27 35;
-  --surface-card: 28 32 42;
-  --surface-border: 50 55 70;
-  --d-darkest: 30 31 34;
-  --d-dark: 43 45 49;
-  --d-primary: 49 51 56;
-  --d-secondary: 56 58 64;
-  --d-hover: 53 55 60;
-  --d-floating: 17 18 20;
-  --d-brand: 88 101 242;
-  --d-brand-hover: 70 80 223;
-  --g1: #8ea2fb;
-  --g2: #7a8bf8;
-  --g3: #6a76f5;
-  --g4: #5865f2;
-  --g5: #4650df;
-  --g6: #3840b8;
-  --g7: #2a316f;
-  --bg-gradient-start: #5865f2;
-  --bg-gradient-end: #20254a;
-  --gw1: rgb(142 162 251 / 0.30);
-  --gw2: rgb(122 139 248 / 0.30);
-  --gw3: rgb(106 118 245 / 0.30);
-  --gw4: rgb(88 101 242 / 0.30);
-  --gw5: rgb(70 80 223 / 0.30);
-  --gw6: rgb(56 64 184 / 0.30);
-  --gw7: rgb(42 49 111 / 0.30);
+  --brand-50: 236 247 255;
+  --brand-100: 214 238 255;
+  --brand-200: 176 220 255;
+  --brand-300: 125 198 255;
+  --brand-400: 78 176 255;
+  --brand-500: 46 168 255;
+  --brand-600: 27 134 224;
+  --brand-700: 20 100 176;
+  --brand-800: 14 68 120;
+  --brand-900: 10 39 72;
+  --surface: 14 18 32;
+  --surface-soft: 22 28 48;
+  --surface-card: 32 42 68;
+  --surface-border: 58 74 112;
+  --d-darkest: 14 18 32;
+  --d-dark: 22 28 48;
+  --d-primary: 30 38 64;
+  --d-secondary: 40 50 82;
+  --d-hover: 48 60 96;
+  --d-floating: 10 14 26;
+  --d-brand: 46 168 255;
+  --d-brand-hover: 20 140 230;
+  --g1: #9ad7ff;
+  --g2: #5eb6ff;
+  --g3: #2ea8ff;
+  --g4: #1b86e0;
+  --g5: #1464b0;
+  --g6: #0e4478;
+  --g7: #0a2748;
+  --bg-gradient-start: #2ea8ff;
+  --bg-gradient-end: #10182c;
+  --gw1: rgb(154 215 255 / 0.30);
+  --gw2: rgb(94 182 255 / 0.30);
+  --gw3: rgb(46 168 255 / 0.30);
+  --gw4: rgb(27 134 224 / 0.30);
+  --gw5: rgb(20 100 176 / 0.30);
+  --gw6: rgb(14 68 120 / 0.30);
+  --gw7: rgb(10 39 72 / 0.30);
   --sekai-link: #f2e455;
   --sekai-logo-accent: #f2e455;
   --sekai-detail-accent: #f2e455;
@@ -594,8 +594,9 @@ button.bg-theme-gradient {
 
 /* Fundo da tela de chamada: duas cores do tema sobre a superfície escura. */
 .call-bg {
-  /* Fundo neutro e escuro, sem degradê do tema (referência: chamada do Discord). */
-  background-color: #111214;
+  background:
+    radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--g4) 18%, transparent), transparent 46%),
+    #10131c;
 }
 
 /* A chamada agora vive dentro do Sekai: ocupa a área principal, não a janela inteira */
@@ -629,13 +630,12 @@ button.bg-theme-gradient {
 @layer base {
   body {
     @apply bg-discord-bg-primary text-discord-text-normal antialiased;
-    font-family: "gg sans", "Whitney", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Noto Sans Display", Inter, "Segoe UI", sans-serif;
   }
 
-  /* Scrollbar fina e escura, igual ao Discord */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #1a1b1e transparent;
+    scrollbar-color: color-mix(in srgb, var(--g4) 55%, #10131c) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -648,8 +648,8 @@ button.bg-theme-gradient {
   }
 
   *::-webkit-scrollbar-thumb {
-    background-color: #1a1b1e;
-    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--g4) 55%, #10131c);
+    border-radius: 999px;
   }
 }
 
@@ -754,6 +754,369 @@ button:not(:disabled):active {
 button.inset-0:hover,
 button.inset-0:active {
   transform: none;
+}
+
+button.rounded-full {
+  min-height: 0;
+  min-width: 0;
+}
+
+button.bg-discord-brand:not(.rounded-full),
+.sekai-send {
+  border-radius: 0.7rem;
+  background-color: transparent;
+  background-image: linear-gradient(128deg, color-mix(in srgb, var(--g1) 70%, white), var(--g3) 42%, var(--g6));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.42), 0 8px 18px rgb(0 0 0 / 0.24);
+}
+
+.sekai-composer {
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--g2) 38%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--g4) 18%, rgb(var(--d-secondary))), rgb(var(--d-secondary)) 62%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+}
+
+.sekai-command-menu {
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--g2) 42%, transparent);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--g4) 24%, rgb(var(--d-floating))), rgb(var(--d-floating)) 46%);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.sekai-command-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--g3) 48%, transparent), transparent 72%);
+}
+
+.sekai-command-head p {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sekai-command-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  border-left: 3px solid transparent;
+}
+
+.sekai-command-row:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--g3) 24%, transparent), transparent 78%);
+  border-left-color: var(--sekai-link, var(--g2));
+}
+
+button.sekai-command-row:hover,
+button.sekai-command-row:active {
+  transform: none;
+}
+
+.sekai-seal {
+  display: grid;
+  height: 1.75rem;
+  width: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(160deg, var(--g1), var(--g5));
+  color: white;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sekai-usage {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .sekai-usage {
+    display: block;
+    flex-shrink: 0;
+    border-radius: 999px;
+    padding: 0.15rem 0.5rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--sekai-link, var(--g1));
+    background: color-mix(in srgb, var(--sekai-link, var(--g1)) 14%, transparent);
+  }
+}
+
+.server-rail-hotspot { display: none; }
+
+html[data-layout="sekai"] .server-rail-hover {
+  min-width: 14px;
+}
+
+html[data-layout="sekai"] .server-rail-hotspot {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: 14px;
+  cursor: pointer;
+}
+
+html[data-layout="sekai"] .server-rail-hotspot::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(180deg, transparent, var(--g2), transparent);
+  opacity: 0.85;
+}
+
+html[data-layout="sekai"] .server-rail-shell {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  transform: translateX(-105%);
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms ease;
+  box-shadow: none;
+}
+
+html[data-layout="sekai"] .server-rail-hover:has(.server-rail-hotspot:hover) .server-rail-shell,
+html[data-layout="sekai"] .server-rail-hover:has(.server-rail-shell:hover) .server-rail-shell,
+html[data-layout="sekai"] .server-rail-shell:focus-within {
+  transform: translateX(0);
+  box-shadow: 16px 0 40px rgb(0 0 0 / 0.38);
+}
+
+@media (max-width: 767px) {
+  html[data-layout="sekai"] .server-rail-hotspot { display: none; }
+  html[data-layout="sekai"] .server-rail-shell {
+    position: static;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.sekai-people-toggle,
+.sekai-people-backdrop { display: none; }
+
+@media (min-width: 768px) {
+  html[data-layout="sekai"] #sekai-app-root:not(.fixed) {
+    padding: 8px;
+    background:
+      radial-gradient(880px 420px at 0% 0%, color-mix(in srgb, var(--g2) 28%, transparent), transparent 58%),
+      radial-gradient(720px 420px at 100% 100%, color-mix(in srgb, var(--g4) 20%, transparent), transparent 52%),
+      #0b0d12;
+  }
+
+  html[data-layout="sekai"] #sekai-app-root:not(.fixed) > .h-\[3px\] { display: none; }
+
+  html[data-layout="sekai"] .app-columns { gap: 8px; }
+
+  html[data-layout="sekai"] .sekai-nav {
+    position: relative;
+    z-index: 40;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  html[data-layout="sekai"] .sekai-stage {
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  }
+
+  html[data-layout="sekai"] .sekai-nav .server-view-enter {
+    width: 17.5rem;
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--g4) 16%, rgb(var(--d-dark))), rgb(var(--d-dark)) 140px);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  }
+
+  html[data-layout="sekai"] .server-rail-shell {
+    border-radius: 24px 0 0 24px;
+    overflow: hidden;
+  }
+
+  html[data-layout="sekai"] .channel-row { margin-inline: 6px; }
+
+  html[data-layout="sekai"] .channel-row > div > button {
+    border-radius: 12px;
+    min-height: 36px;
+  }
+
+  html[data-layout="sekai"] .conversation-rail {
+    margin: 8px 0 8px 8px;
+    height: auto;
+    align-self: stretch;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--g2) 12%, transparent), transparent 120px),
+      rgba(255, 255, 255, 0.03);
+  }
+
+  html[data-layout="sekai"] .sekai-people {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 35;
+    height: auto;
+    width: 17.5rem;
+    transform: translateX(calc(100% + 28px));
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(var(--d-dark));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+  }
+
+  html[data-layout="sekai"] #sekai-app-root[data-people="open"] .sekai-people {
+    transform: translateX(0);
+  }
+
+  html[data-layout="sekai"] .sekai-people .member-roster {
+    width: 100%;
+    background: transparent;
+  }
+}
+
+html[data-layout="sekai"] .sekai-people-toggle {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 14, 18, 0.72);
+  color: white;
+  font-size: 12px;
+  font-weight: 650;
+  backdrop-filter: blur(10px);
+}
+
+html[data-layout="sekai"] .sekai-people-toggle[aria-pressed="true"] {
+  background: rgb(var(--d-brand));
+  border-color: transparent;
+}
+
+html[data-layout="sekai"] .sekai-people-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: block;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+html[data-layout="sekai"] .chat-theme-canvas {
+  background:
+    radial-gradient(520px 240px at 8% 0%, color-mix(in srgb, var(--g2) 18%, transparent), transparent 70%),
+    radial-gradient(460px 260px at 100% 100%, color-mix(in srgb, var(--g4) 16%, transparent), transparent 72%),
+    rgb(var(--d-primary));
+}
+
+html[data-layout="sekai"] .chat-theme-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  background-image:
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--g1) 18%, transparent) 0 1px, transparent 1.6px),
+    linear-gradient(115deg, transparent 0 46%, color-mix(in srgb, var(--g3) 10%, transparent) 46% 47%, transparent 47%);
+  background-size: 22px 22px, 100% 100%;
+  mask-image: radial-gradient(circle at 50% 45%, black, transparent 78%);
+}
+
+html[data-layout="sekai"] .chat-theme-canvas > .flex.h-14 {
+  height: 52px;
+  margin: 8px 8px 0;
+  padding-right: 7.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--g2) 28%, transparent), rgba(255, 255, 255, 0.04) 42%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+html[data-layout="sekai"] .chat-message-feed {
+  width: min(100%, 640px);
+  margin-inline: auto;
+}
+
+.contents { display: contents; }
+
+html[data-layout="sekai"] .sekai-composer {
+  margin: 0 10px 10px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--g3) 35%, rgba(255, 255, 255, 0.08));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+html[data-layout="sekai"] .chat-balloon {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: min(86%, 420px);
+  margin: 8px 12px 0;
+  padding: 6px 10px 6px 8px;
+  border-radius: 16px 16px 16px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.035));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+}
+
+html[data-layout="sekai"] .chat-balloon[data-own="true"] {
+  margin-left: auto;
+  border-radius: 16px 16px 6px 16px;
+  border-color: color-mix(in srgb, var(--g1) 42%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--g2) 78%, #2a1020), color-mix(in srgb, var(--g5) 46%, #160814));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--g4) 22%, transparent);
+}
+
+html[data-layout="sekai"] .chat-balloon .chat-entry,
+html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"] {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 1px 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  flex-direction: row;
+}
+
+html[data-layout="sekai"] .chat-balloon .chat-entry:hover,
+html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
+  background: transparent;
 }
 
 .server-icon-button:not(:disabled):hover {
@@ -868,7 +1231,7 @@ button.inset-0:active {
 .profile-footer-actions button:active { transform: scale(0.96); }
 .profile-footer-actions button:focus-visible,
 .profile-footer-name:focus-visible,
-.profile-footer > button:first-of-type:focus-visible {
+.profile-footer-avatar:focus-visible {
   outline: 2px solid rgb(var(--d-brand) / 0.75);
   outline-offset: 2px;
 }
@@ -1028,6 +1391,8 @@ button.inset-0:active {
   .profile-action-menu-enter,
   .server-name-tooltip-enter,
   .server-rail-pill-active,
+  .server-rail-shell,
+  .sekai-people,
   .server-view-enter,
   .custom-profile-badge,
   .settings-backdrop-enter,

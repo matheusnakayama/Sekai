@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { laterTimestamp, summarizeAttention, type AttentionMessage, type ChannelAttention } from "@/lib/attention";
 import { contentMentionsUser } from "@/lib/mentions";
+import { playUiSound } from "@/lib/uiSounds";
 import { loadReadCursors, saveReadCursors } from "@/lib/readState";
 
 export type MentionNotice = {
@@ -198,13 +199,15 @@ export function useServerAttention({
           };
           const state = stateRef.current;
           state.live = [...state.live.filter((item) => item.id !== message.id), message].slice(-200);
+          const mentioned = contentMentionsUser(message.content, state.selfNames);
+          if (!/^\s*\.BANKAI\s*$/i.test(message.content)) playUiSound(mentioned ? "mention" : "message");
           const viewing = document.visibilityState === "visible" && state.activeChannelId === textChannel.id;
           if (viewing && !heldRef.current.has(textChannel.id)) {
             markRead(textChannel.id, message.createdAt);
             return;
           }
           publish();
-          if (contentMentionsUser(message.content, state.selfNames)) {
+          if (mentioned) {
             onMentionRef.current?.({
               serverId: textChannel.serverId,
               channelId: textChannel.id,

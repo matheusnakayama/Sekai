@@ -14,6 +14,7 @@ import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { getProfilePalette } from "@/lib/utils";
 import { GameActivityCard, NowPlayingCard, SpotifyMark, useGameActivity, useNowPlaying } from "@/components/NowPlayingCard";
 import { safeSpotifyArtUrl } from "@/lib/spotify";
+import { ProfileDecoration } from "@/components/ProfileDecoration";
 
 export interface ProfileCardUser {
   id: string;
@@ -31,6 +32,7 @@ export interface ProfileCardUser {
   avatarPositionY?: number | null;
   avatarZoom?: number | null;
   profileCardColor?: string | null;
+  profileDecoration?: string | null;
   badges?: CustomBadge[];
   assignedRoles?: RoleBadge[];
   status: "online" | "idle" | "dnd" | "offline";
@@ -427,6 +429,7 @@ export function UserProfileCard({
       style={{ left: resolvedPosition.left, top: resolvedPosition.top, background: profilePalette.background, color: profilePalette.text, borderColor: profilePalette.border }}
       className="user-profile-card-scroll profile-card-enter fixed z-[150] max-h-[min(680px,calc(100dvh-24px))] w-[min(292px,calc(100vw-24px))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[18px] border shadow-[0_20px_64px_rgba(0,0,0,.58)]"
     >
+      <ProfileDecoration id={profile.profileDecoration} />
       <ProfileBanner
         src={profile.bannerUrl}
         positionX={profile.bannerPositionX}
@@ -481,7 +484,7 @@ export function UserProfileCard({
         document.body,
       )}
 
-      <div className="px-4 pb-4">
+      <div className="relative z-10 px-4 pb-4">
         <div className="relative -mt-8 h-16 w-16">
           <button type="button" onClick={() => {
             if (isOtherUser && onOpenFullProfile) { onClose(); onOpenFullProfile(); }

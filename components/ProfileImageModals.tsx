@@ -6,7 +6,7 @@ import { Check, Film, ImagePlus, RotateCcw, X } from "lucide-react";
 import { CroppedProfileImage } from "@/components/ProfileBanner";
 import { HoverGifImage } from "@/components/HoverGifImage";
 
-export type ProfileImageKind = "avatar" | "banner" | "memberListBanner";
+export type ProfileImageKind = "avatar" | "banner" | "memberListBanner" | "activityBanner";
 export type ImageCrop = { x: number; y: number; zoom: number };
 export type SelectedProfileMedia = { file: File | null; url: string };
 
@@ -24,8 +24,8 @@ export function ProfileImagePickerModal({
   const [mounted, setMounted] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const gifInput = useRef<HTMLInputElement>(null);
-  const heading = kind === "avatar" ? "Selecionar avatar" : kind === "memberListBanner" ? "Selecionar banner da lista" : "Selecionar banner do perfil";
-  const recentHeading = kind === "avatar" ? "Avatares recentes" : kind === "memberListBanner" ? "Banners da lista recentes" : "Banners do perfil recentes";
+  const heading = kind === "avatar" ? "Selecionar avatar" : kind === "memberListBanner" ? "Selecionar banner da lista" : kind === "activityBanner" ? "Selecionar GIF da atividade" : "Selecionar banner do perfil";
+  const recentHeading = kind === "avatar" ? "Avatares recentes" : kind === "memberListBanner" ? "Banners da lista recentes" : kind === "activityBanner" ? "GIFs da atividade recentes" : "Banners do perfil recentes";
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -66,7 +66,7 @@ export function ProfileImagePickerModal({
           {recentImages.length ? (
             <div className="flex flex-wrap gap-2.5">
               {recentImages.slice(0, 6).map((url, index) => (
-                <button key={`${url}-${index}`} type="button" onClick={() => onSelect({ file: null, url })} title={`Usar ${recentHeading.toLowerCase().replace(/s$/, "") } recente`} className={`group relative overflow-hidden border-2 border-transparent bg-[#17171a] transition hover:border-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${kind === "avatar" ? "h-14 w-14 rounded-full" : kind === "memberListBanner" ? "h-14 w-28 rounded-lg" : "h-14 w-24 rounded-lg"}`}>
+                <button key={`${url}-${index}`} type="button" onClick={() => onSelect({ file: null, url })} title={`Usar ${recentHeading.toLowerCase().replace(/s$/, "") } recente`} className={`group relative overflow-hidden border-2 border-transparent bg-[#17171a] transition hover:border-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${kind === "avatar" ? "h-14 w-14 rounded-full" : kind === "memberListBanner" || kind === "activityBanner" ? "h-14 w-28 rounded-lg" : "h-14 w-24 rounded-lg"}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <HoverGifImage src={url} alt="" className="h-full w-full object-cover"/>
                   <span className="absolute inset-0 grid place-items-center bg-black/0 text-white opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100"><Check size={18}/></span>
@@ -101,7 +101,8 @@ export function ProfileImageCropModal({
   const dragStart = useRef<{ pointerX: number; pointerY: number; x: number; y: number } | null>(null);
   const isAvatar = kind === "avatar";
   const isMemberListBanner = kind === "memberListBanner";
-  const imageLabel = isAvatar ? "avatar" : isMemberListBanner ? "banner da lista de membros" : "banner do perfil";
+  const isActivityBanner = kind === "activityBanner";
+  const imageLabel = isAvatar ? "avatar" : isMemberListBanner ? "banner da lista de membros" : isActivityBanner ? "GIF da atividade" : "banner do perfil";
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -147,7 +148,7 @@ export function ProfileImageCropModal({
             onPointerMove={moveImage}
             onPointerUp={() => { dragStart.current = null; }}
             onPointerCancel={() => { dragStart.current = null; }}
-            className={`relative mx-auto overflow-hidden touch-none bg-[#34343a] cursor-grab active:cursor-grabbing ${isAvatar ? "aspect-square w-56 rounded-xl" : isMemberListBanner ? "aspect-[4.5/1] w-full rounded-lg" : "aspect-[3.125/1] w-full rounded-lg"}`}
+            className={`relative mx-auto overflow-hidden touch-none bg-[#34343a] cursor-grab active:cursor-grabbing ${isAvatar ? "aspect-square w-56 rounded-xl" : isMemberListBanner ? "aspect-[4.5/1] w-full rounded-lg" : isActivityBanner ? "aspect-[8/3] w-full rounded-lg" : "aspect-[3.125/1] w-full rounded-lg"}`}
           >
             <CroppedProfileImage
               src={src}
