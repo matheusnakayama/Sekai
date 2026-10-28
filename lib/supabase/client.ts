@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { desktopAuthStorage } from "@/lib/desktopAuthStorage";
 
 // Instância única, reaproveitada em todo o app — evita recriar o cliente
 // (e recarregar a sessão do zero) a cada renderização de componente.
@@ -14,6 +15,7 @@ export function createClient() {
   const nextKey = configured ? `${url}\n${key}` : "unconfigured";
   if (!client || clientKey !== nextKey) {
     clientKey = nextKey;
+    const storage = desktopAuthStorage();
     client = createSupabaseClient(
       configured ? url : "http://127.0.0.1:54321",
       configured ? key : "public-anon-key",
@@ -22,6 +24,7 @@ export function createClient() {
           persistSession: configured,
           autoRefreshToken: configured,
           detectSessionInUrl: configured,
+          ...(storage ? { storage } : {}),
         },
       }
     );

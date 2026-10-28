@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { catalogGameName, isCatalogGame } = require('../lib/gameCatalog.cjs');
 const { readExeIconPng } = require('../lib/exeIcon.cjs');
+const { createAuthSessionFile } = require('./authSessionFile.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
@@ -539,6 +540,18 @@ function attachIpc() {
     if (event.sender !== mainWindow?.webContents || !mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.close();
   });
+  ipcMain.handle('sekai:auth-store:get', (event, key) => {
+    if (event.sender !== mainWindow?.webContents) return null;
+    return authSessionFile.get(key);
+  });
+  ipcMain.handle('sekai:auth-store:set', (event, key, value) => {
+    if (event.sender !== mainWindow?.webContents) return false;
+    return authSessionFile.set(key, value);
+  });
+  ipcMain.handle('sekai:auth-store:remove', (event, key) => {
+    if (event.sender !== mainWindow?.webContents) return false;
+    return authSessionFile.remove(key);
+  });
   ipcMain.handle('sekai:list-sources', (_event, kind) => listSources(kind));
   ipcMain.on('sekai:prepare-capture', (event, sourceId, shareAudio) => {
     rememberCapture(String(sourceId || ''), Boolean(shareAudio));
@@ -633,7 +646,20 @@ function createWindow(targetUrl) {
     }
   });
 
-  mainWindow.on('close', () => { void flushSessionData(); });
+  let windowClosing = false;
+  mainWindow.on('close', (event) => {
+    if (windowClosing) return;
+    event.preventDefault();
+    windowClosing = true;
+    const finish = () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    };
+    const timer = setTimeout(finish, 1500);
+    flushSessionData().finally(() => {
+      clearTimeout(timer);
+      finish();
+    });
+  });
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.executeJavaScript('navigator.storage?.persist?.()').catch(() => {});
   });
@@ -779,11 +805,28 @@ fs.mkdirSync(SEKAI_PROFILE_PATH, { recursive: true });
 app.setPath('userData', SEKAI_PROFILE_PATH);
 app.setPath('sessionData', SEKAI_PROFILE_PATH);
 app.commandLine.appendSwitch('disk-cache-dir', path.join(app.getPath('temp'), 'sekai-cache'));
+const authSessionFile = createAuthSessionFile(path.join(SEKAI_PROFILE_PATH, 'auth-session.json'));
+
+function removeStaleLevelDbLocks(root) {
+  const directories = [root];
+  const partitions = path.join(root, 'Partitions');
+  try {
+    for (const name of fs.readdirSync(partitions)) directories.push(path.join(partitions, name));
+  } catch {
+    // Ainda não existe uma partição extra.
+  }
+  for (const directory of directories) {
+    for (const relative of [['Local Storage', 'leveldb', 'LOCK'], ['Session Storage', 'LOCK']]) {
+      try { fs.rmSync(path.join(directory, ...relative), { force: true }); } catch { /* O banco segue com o arquivo se ele ainda estiver preso. */ }
+    }
+  }
+}
 
 // Evita duas instâncias disputando o mesmo perfil (corrompe localStorage/cookies e desloga).
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
+  removeStaleLevelDbLocks(SEKAI_PROFILE_PATH);
   app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isMinimized()) mainWindow.restore();

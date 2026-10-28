@@ -62,8 +62,15 @@ interface SekaiGameActivitySnapshot {
   currentGame: SekaiGameActivity | null;
 }
 
+interface SekaiDesktopAuthStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<boolean>;
+  remove(key: string): Promise<boolean>;
+}
+
 interface SekaiDesktop {
   platform?: string;
+  authStore?: SekaiDesktopAuthStore;
   getWindowState?(): Promise<{ maximized: boolean }>;
   minimizeWindow?(): Promise<void>;
   toggleMaximizeWindow?(): Promise<boolean>;

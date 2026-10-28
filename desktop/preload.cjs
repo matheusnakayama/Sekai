@@ -2,6 +2,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('sekaiDesktop', {
   platform: process.platform,
+  authStore: {
+    get(key) {
+      return ipcRenderer.invoke('sekai:auth-store:get', String(key));
+    },
+    set(key, value) {
+      return ipcRenderer.invoke('sekai:auth-store:set', String(key), String(value));
+    },
+    remove(key) {
+      return ipcRenderer.invoke('sekai:auth-store:remove', String(key));
+    },
+  },
   getWindowState() {
     return ipcRenderer.invoke('sekai:window:get-state');
   },
