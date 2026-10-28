@@ -368,6 +368,7 @@ export default function Home() {
   const serversRef = useRef<ServerItem[]>([]);
   const serverListRequestSequence = useRef(0);
   const serverChannelsCache = useRef(new Map<string, Channel[]>());
+  const serverMembersCache = useRef(new Map<string, MemberItem[]>());
   const serverMessageSettingsCache = useRef(new Map<string, ServerMessageSettings>());
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelCategories, setChannelCategories] = useState<ChannelCategory[]>([]);
@@ -1220,6 +1221,7 @@ export default function Home() {
     serverListRequestSequence.current += 1;
     serversRef.current = [];
     serverChannelsCache.current.clear();
+    serverMembersCache.current.clear();
     serverMessageSettingsCache.current.clear();
     setServers([]);
     setActiveServerId("");
@@ -1233,9 +1235,135 @@ export default function Home() {
     const serverId = activeServerId;
     if (!serverId || !currentUserId) return;
     const sequence = ++serverLoadSequence.current;
+    const memberRowsRequest = selectOptionalProfileColumns(
+      "user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)",
+      (columns) => supabase.from("members").select(columns).eq("server_id", serverId),
+    );
+    const memberRolesRequest = Promise.resolve(
+      supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, insignia_url, position, permissions, is_default)").eq("server_id", serverId),
+    );
+    const rolesRequest = Promise.resolve(
+      supabase.from("roles").select("id,name,color,icon_url,insignia_url,position,is_default").eq("server_id", serverId).order("position", { ascending: false }),
+    );
+    const cachedKey = channelCacheKey(currentUserId, serverId);
+
+    // A lista de membros não espera pela consulta de canais. Ela é atualizada
+    // assim que os perfis chegam, enquanto canais e categorias seguem em paralelo.
+    void (async () => {
+      const memberResult = await memberRowsRequest;
+      if (sequence !== serverLoadSequence.current) return;
+      if (memberResult.error) {
+        console.error("Não foi possível carregar os membros do servidor:", memberResult.error.message);
+        return;
+      }
+      const memberRows = memberResult.data ?? [];
+      const memberUserIds = [...new Set(memberRows.map((member: any) => member.user_id).filter(Boolean))];
+      const badgeRequest = memberUserIds.length
+        ? Promise.resolve(supabase.from("user_badges").select("user_id, visible_in_member_list, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds))
+        : Promise.resolve({ data: [], error: null });
+      const existingMembers = serverMembersCache.current.get(cachedKey) ?? [];
+      const existingBadgesByUser = new Map<string, CustomBadge[]>(existingMembers.map((member): [string, CustomBadge[]] => [member.id, member.badges ?? []]));
+      const onlineIds = new Set(onlineUserIds);
+      const mapMemberRows = (rolesByUser: Map<string, any[]>): MemberItem[] => memberRows.map((m: any) => {
+        const roles = rolesByUser.get(m.user_id) ?? [];
+        const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
+        const visibleRoles = sortedRoles.filter((role) => !role.is_default);
+        const topRole = visibleRoles[0] ?? sortedRoles[0];
+        return {
+          id: m.user_id,
+          displayName: m.nickname || m.profiles?.display_name || m.profiles?.username || "Usuário",
+          username: m.profiles?.username,
+          pronouns: m.profiles?.pronouns,
+          bio: m.profiles?.bio,
+          customStatus: m.profiles?.custom_status,
+          avatarUrl: m.avatar_url || m.profiles?.avatar_url,
+          avatarPositionX: m.avatar_url ? m.avatar_position_x ?? 50 : m.profiles?.avatar_position_x ?? 50,
+          avatarPositionY: m.avatar_url ? m.avatar_position_y ?? 50 : m.profiles?.avatar_position_y ?? 50,
+          avatarZoom: m.avatar_url ? m.avatar_zoom ?? 100 : m.profiles?.avatar_zoom ?? 100,
+          bannerUrl: m.banner_url || m.profiles?.banner_url,
+          bannerPositionX: m.banner_url ? m.banner_position_x ?? 50 : m.profiles?.banner_position_x ?? 50,
+          bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
+          bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
+          activityBannerUrl: m.profiles?.activity_banner_url,
+          activityBannerPositionX: m.profiles?.activity_banner_position_x ?? 50,
+          activityBannerPositionY: m.profiles?.activity_banner_position_y ?? 50,
+          activityBannerZoom: m.profiles?.activity_banner_zoom ?? 100,
+          memberListBannerUrl: m.member_list_banner_url || m.profiles?.member_list_banner_url,
+          memberListBannerPositionX: m.member_list_banner_url ? m.member_list_banner_position_x ?? 50 : m.profiles?.member_list_banner_position_x ?? 50,
+          memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
+          memberListBannerZoom: m.member_list_banner_url ? m.member_list_banner_zoom ?? 100 : m.profiles?.member_list_banner_zoom ?? 100,
+          profileCardColor: m.profiles?.profile_card_color,
+          profileDecoration: m.profiles?.profile_decoration ?? null,
+          showBadgesInMemberList: m.profiles?.show_badges_in_member_list !== false,
+          badges: existingBadgesByUser.get(m.user_id) ?? [],
+          profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
+            ? m.profiles.status
+            : "offline",
+          status: onlineIds.has(m.user_id)
+            ? (m.profiles?.status === "idle" || m.profiles?.status === "dnd" ? m.profiles.status : "online")
+            : "offline",
+          roleId: topRole?.id,
+          roleName: topRole?.name ?? "Membro",
+          roleColor: topRole?.color,
+          roleIconUrl: topRole?.icon_url,
+          roleInsigniaUrl: topRole?.insignia_url,
+          rolePosition: topRole?.position ?? 0,
+          roleIds: visibleRoles.map((role) => role.id),
+          assignedRoles: visibleRoles.map((role) => ({
+            id: role.id,
+            name: role.name,
+            color: role.color,
+            iconUrl: role.icon_url,
+            insigniaUrl: role.insignia_url,
+          })),
+        };
+      });
+      const initialList = mapMemberRows(new Map());
+      serverMembersCache.current.set(cachedKey, initialList);
+      setMembers(initialList);
+
+      const [memberRoleResult, allRoleResult] = await Promise.all([memberRolesRequest, rolesRequest]);
+      if (sequence !== serverLoadSequence.current) return;
+      const memberRoleRows = memberRoleResult.data;
+      const allServerRoles = allRoleResult.data;
+      setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default).map((role: any) => ({
+        id: role.id,
+        name: role.name,
+        color: role.color,
+        iconUrl: role.icon_url,
+        insigniaUrl: role.insignia_url,
+        position: role.position,
+      })));
+
+      const rolesByUser = new Map<string, any[]>();
+      (memberRoleRows ?? []).forEach((row: any) => {
+        const list = rolesByUser.get(row.user_id) ?? [];
+        const role = Array.isArray(row.roles) ? row.roles[0] : row.roles;
+        if (role) list.push(role);
+        rolesByUser.set(row.user_id, list);
+      });
+      const list = mapMemberRows(rolesByUser);
+      serverMembersCache.current.set(cachedKey, list);
+      setMembers(list);
+
+      const myRoles = rolesByUser.get(currentUserId ?? "") ?? [];
+      setMyPermissions(aggregateRolePermissions(myRoles.map((role) => role.permissions)));
+
+      const badgeResult = await badgeRequest;
+      if (sequence !== serverLoadSequence.current || badgeResult.error) return;
+      const badgesByUser = mapUserBadgeRows(badgeResult.data);
+      setMembers((current) => {
+        if (sequence !== serverLoadSequence.current) return current;
+        const enriched = current.map((member) => ({ ...member, badges: badgesByUser.get(member.id) ?? [] }));
+        serverMembersCache.current.set(cachedKey, enriched);
+        return enriched;
+      });
+    })().catch((error) => {
+      console.error("Não foi possível carregar a lista de membros:", error);
+    });
 
     // Libera os canais assim que sua própria consulta termina. Categoria,
-    // proprietário e membros não seguram mais a navegação.
+    // proprietário, cargos e membros carregam em paralelo e não seguram a navegação.
     const channelResult = await supabase
       .from("channels")
       .select("id, name, type, category_id, position")
@@ -1248,7 +1376,6 @@ export default function Home() {
       return;
     }
 
-    const cachedKey = channelCacheKey(currentUserId, serverId);
     const cachedChannels = serverChannelsCache.current.get(cachedKey) ?? readCachedChannels(currentUserId, serverId) ?? [];
     const cachedCategoryNames = new Map<string | null, string>(cachedChannels.map((channel): [string | null, string] => [channel.categoryId, channel.categoryName]));
     const cachedCategoryPositions = new Map<string | null, number>(cachedChannels.map((channel): [string | null, number] => [channel.categoryId, channel.categoryPosition ?? 0]));
@@ -1280,10 +1407,9 @@ export default function Home() {
     }
     setIsServerLoading(false);
 
-    const [serverResult, categoryResult, memberResult] = await Promise.all([
+    const [serverResult, categoryResult] = await Promise.all([
       supabase.from("servers").select("owner_id").eq("id", serverId).single(),
       supabase.from("channel_categories").select("id, name, position").eq("server_id", serverId).order("position"),
-      selectOptionalProfileColumns("user_id, nickname, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profiles(display_name, username, pronouns, bio, custom_status, avatar_url, avatar_position_x, avatar_position_y, avatar_zoom, banner_url, banner_position_x, banner_position_y, banner_zoom, activity_banner_url, member_list_banner_url, member_list_banner_position_x, member_list_banner_position_y, member_list_banner_zoom, profile_card_color, show_badges_in_member_list, status)", (columns) => supabase.from("members").select(columns).eq("server_id", serverId)),
     ]);
     if (sequence !== serverLoadSequence.current) return;
     setIsOwner(serverResult.data?.owner_id === currentUserId);
@@ -1309,110 +1435,15 @@ export default function Home() {
       }));
     }
 
-    if (memberResult.error) {
-      console.error("Não foi possível carregar os membros do servidor:", memberResult.error.message);
-      return;
-    }
-    const memberRows = memberResult.data ?? [];
-    const memberUserIds = [...new Set(memberRows.map((member: any) => member.user_id).filter(Boolean))];
-    const badgeRequest = memberUserIds.length
-        ? supabase.from("user_badges").select("user_id, visible_in_member_list, custom_badges(id, name, icon, background_color, foreground_color, image_url)").in("user_id", memberUserIds)
-        : Promise.resolve({ data: [], error: null });
-    const [memberRoleResult, allRoleResult] = await Promise.all([
-      supabase.from("member_roles").select("user_id, roles(id, name, color, icon_url, insignia_url, position, permissions, is_default)").eq("server_id", serverId),
-      supabase.from("roles").select("id,name,color,icon_url,insignia_url,position,is_default").eq("server_id", serverId).order("position", { ascending: false }),
-    ]);
-    if (sequence !== serverLoadSequence.current) return;
-
-    const memberRoleRows = memberRoleResult.data;
-    const allServerRoles = allRoleResult.data;
-    setServerRoles((allServerRoles ?? []).filter((role: any) => !role.is_default).map((role: any) => ({
-      id: role.id,
-      name: role.name,
-      color: role.color,
-      iconUrl: role.icon_url,
-      insigniaUrl: role.insignia_url,
-      position: role.position,
-    })));
-
-    const rolesByUser = new Map<string, any[]>();
-    (memberRoleRows ?? []).forEach((row: any) => {
-      const list = rolesByUser.get(row.user_id) ?? [];
-      const role = Array.isArray(row.roles) ? row.roles[0] : row.roles;
-      if (role) list.push(role);
-      rolesByUser.set(row.user_id, list);
-    });
-
-    const existingBadgesByUser = new Map<string, CustomBadge[]>(members.map((member): [string, CustomBadge[]] => [member.id, member.badges ?? []]));
-    const list: MemberItem[] = memberRows.map((m: any) => {
-      const roles = rolesByUser.get(m.user_id) ?? [];
-      const sortedRoles = [...roles].sort((a, b) => b.position - a.position);
-      const visibleRoles = sortedRoles.filter((role) => !role.is_default);
-      const topRole = visibleRoles[0] ?? sortedRoles[0];
-      return {
-        id: m.user_id,
-        displayName: m.nickname || m.profiles?.display_name || m.profiles?.username || "Usuário",
-        username: m.profiles?.username,
-        pronouns: m.profiles?.pronouns,
-        bio: m.profiles?.bio,
-        customStatus: m.profiles?.custom_status,
-        avatarUrl: m.avatar_url || m.profiles?.avatar_url,
-        avatarPositionX: m.avatar_url ? m.avatar_position_x ?? 50 : m.profiles?.avatar_position_x ?? 50,
-        avatarPositionY: m.avatar_url ? m.avatar_position_y ?? 50 : m.profiles?.avatar_position_y ?? 50,
-        avatarZoom: m.avatar_url ? m.avatar_zoom ?? 100 : m.profiles?.avatar_zoom ?? 100,
-        bannerUrl: m.banner_url || m.profiles?.banner_url,
-        bannerPositionX: m.banner_url ? m.banner_position_x ?? 50 : m.profiles?.banner_position_x ?? 50,
-        bannerPositionY: m.banner_url ? m.banner_position_y ?? 50 : m.profiles?.banner_position_y ?? 50,
-        bannerZoom: m.banner_url ? m.banner_zoom ?? 100 : m.profiles?.banner_zoom ?? 100,
-        activityBannerUrl: m.profiles?.activity_banner_url,
-        activityBannerPositionX: m.profiles?.activity_banner_position_x ?? 50,
-        activityBannerPositionY: m.profiles?.activity_banner_position_y ?? 50,
-        activityBannerZoom: m.profiles?.activity_banner_zoom ?? 100,
-        memberListBannerUrl: m.member_list_banner_url || m.profiles?.member_list_banner_url,
-        memberListBannerPositionX: m.member_list_banner_url ? m.member_list_banner_position_x ?? 50 : m.profiles?.member_list_banner_position_x ?? 50,
-        memberListBannerPositionY: m.member_list_banner_url ? m.member_list_banner_position_y ?? 50 : m.profiles?.member_list_banner_position_y ?? 50,
-        memberListBannerZoom: m.member_list_banner_url ? m.member_list_banner_zoom ?? 100 : m.profiles?.member_list_banner_zoom ?? 100,
-        profileCardColor: m.profiles?.profile_card_color,
-        profileDecoration: m.profiles?.profile_decoration ?? null,
-        showBadgesInMemberList: m.profiles?.show_badges_in_member_list !== false,
-        badges: existingBadgesByUser.get(m.user_id) ?? [],
-        profilePresence: m.profiles?.status === "online" || m.profiles?.status === "idle" || m.profiles?.status === "dnd" || m.profiles?.status === "offline"
-          ? m.profiles.status
-          : "offline",
-        status: onlineUserIds.includes(m.user_id)
-          ? (m.profiles?.status === "idle" || m.profiles?.status === "dnd" ? m.profiles.status : "online")
-          : "offline",
-        roleId: topRole?.id,
-        roleName: topRole?.name ?? "Membro",
-        roleColor: topRole?.color,
-        roleIconUrl: topRole?.icon_url,
-        roleInsigniaUrl: topRole?.insignia_url,
-        rolePosition: topRole?.position ?? 0,
-        roleIds: visibleRoles.map((role) => role.id),
-        assignedRoles: visibleRoles.map((role) => ({
-          id: role.id,
-          name: role.name,
-          color: role.color,
-          iconUrl: role.icon_url,
-          insigniaUrl: role.insignia_url,
-        })),
-      };
-    });
-    setMembers(list);
-
-    const myRoles = rolesByUser.get(currentUserId ?? "") ?? [];
-    setMyPermissions(aggregateRolePermissions(myRoles.map((r) => r.permissions)));
-
-    const badgeResult = await badgeRequest;
-    if (sequence !== serverLoadSequence.current || badgeResult.error) return;
-    const badgesByUser = mapUserBadgeRows(badgeResult.data);
-    setMembers((current) => current.map((member) => ({ ...member, badges: badgesByUser.get(member.id) ?? [] })));
   }
 
   function handleSelectServer(serverId: string) {
     if (serverId === activeServerId) return;
     const cachedChannels = serverId && currentUserId
       ? serverChannelsCache.current.get(channelCacheKey(currentUserId, serverId)) ?? readCachedChannels(currentUserId, serverId) ?? undefined
+      : undefined;
+    const cachedMembers = serverId && currentUserId
+      ? serverMembersCache.current.get(channelCacheKey(currentUserId, serverId))
       : undefined;
     if (serverId && currentUserId && cachedChannels) serverChannelsCache.current.set(channelCacheKey(currentUserId, serverId), cachedChannels);
     serverLoadSequence.current += 1;
@@ -1423,7 +1454,7 @@ export default function Home() {
     setActiveChannelType(firstCachedChannel?.type ?? "text");
     setChannels(cachedChannels ?? []);
     setChannelCategories([]);
-    setMembers([]);
+    setMembers(cachedMembers ?? []);
     setServerRoles([]);
     setIsOwner(false);
     setMyPermissions(0n);

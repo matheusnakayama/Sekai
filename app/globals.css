@@ -732,18 +732,18 @@ html[data-reduced-motion="true"] *::after {
 /* O controle cresce só um pouco e a curva desacelera no fim, para o hover não dar pulo. */
 button:not(:disabled) {
   transition:
-    transform 380ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 200ms ease,
-    border-color 200ms ease,
-    color 200ms ease,
-    border-radius 240ms ease,
-    box-shadow 220ms ease,
-    opacity 200ms ease,
-    filter 200ms ease;
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    border-radius 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease,
+    filter 140ms ease;
 }
 
 button:not(:disabled):hover {
-  transform: scale(1.045);
+  transform: scale(1.025);
 }
 
 button:not(:disabled):active {
@@ -886,7 +886,7 @@ html[data-layout="sekai"] .server-rail-shell {
   left: 0;
   z-index: 40;
   transform: translateX(-105%);
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms ease;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 160ms ease;
   box-shadow: none;
 }
 
@@ -981,7 +981,7 @@ html[data-layout="sekai"] .server-rail-shell:focus-within {
     height: auto;
     width: 17.5rem;
     transform: translateX(calc(100% + 28px));
-    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
     border-radius: 24px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1183,18 +1183,8 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
 }
 
 .server-rail-pill-active {
-  animation: server-rail-shine 2.4s ease-in-out infinite;
-}
-
-@keyframes server-rail-shine {
-  0%, 100% {
-    background-position: 0% 0%;
-    box-shadow: 4px 0 8px color-mix(in srgb, var(--g1) 50%, transparent), 6px 0 16px color-mix(in srgb, var(--g3) 35%, transparent);
-  }
-  50% {
-    background-position: 0% 100%;
-    box-shadow: 5px 0 12px color-mix(in srgb, var(--g1) 90%, transparent), 8px 0 22px color-mix(in srgb, var(--g2) 65%, transparent);
-  }
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--g1) 45%, transparent), 0 3px 10px color-mix(in srgb, var(--g3) 24%, transparent);
+  transition: box-shadow 140ms ease;
 }
 
 .server-view-enter {
@@ -1225,7 +1215,7 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
 .profile-footer:hover .profile-footer-name p:first-child,
 .profile-footer:focus-within .profile-footer-name p:first-child { color: var(--discord-header-primary, #f2f3f5); }
 .profile-footer-actions button {
-  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease, background-color 200ms ease;
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), color 140ms ease, background-color 140ms ease;
 }
 .profile-footer-actions button:hover { transform: scale(1.06); }
 .profile-footer-actions button:active { transform: scale(0.96); }
@@ -1236,17 +1226,17 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
   outline-offset: 2px;
 }
 
-.settings-backdrop-enter { animation: settings-fade-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.settings-backdrop-enter { animation: settings-fade-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .settings-window-enter,
 .settings-pane-enter {
-  animation: settings-window-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: settings-window-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   transform-origin: 50% 45%;
   will-change: transform, opacity;
 }
 .settings-backdrop-exit { animation: settings-fade-out 190ms cubic-bezier(0.4, 0, 1, 1) both !important; pointer-events: none; }
 .settings-window-exit,
 .settings-pane-exit { animation: settings-window-out 190ms cubic-bezier(0.4, 0, 1, 1) both !important; }
-.settings-section-enter { animation: settings-section-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.settings-section-enter { animation: settings-section-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .settings-segment {
   display: flex;
   gap: 4px;
@@ -1308,10 +1298,10 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
 
 .settings-window-enter button:not(:disabled) {
   transition-property: color, background-color, border-color, box-shadow, transform, opacity, border-radius;
-  transition-duration: 380ms;
-  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.settings-window-enter button:not(:disabled):hover { transform: scale(1.035); }
+.settings-window-enter button:not(:disabled):hover { transform: scale(1.025); }
 .settings-window-enter button:not(:disabled):active { transform: scale(0.975); }
 .settings-window-enter button:focus-visible,
 .settings-window-enter .settings-upload-control:focus-within {
@@ -1319,10 +1309,10 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
   outline-offset: 2px;
 }
 .settings-window-enter .settings-upload-control {
-  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease, box-shadow 220ms ease;
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 140ms ease, box-shadow 140ms ease;
 }
 .settings-window-enter .settings-upload-control:hover {
-  transform: scale(1.03);
+  transform: scale(1.02);
   box-shadow: 0 7px 20px rgb(0 0 0 / 18%);
 }
 .settings-window-enter .settings-upload-control:active { transform: scale(0.975); }
@@ -1366,11 +1356,11 @@ html[data-layout="sekai"] .chat-balloon .chat-entry[data-own="true"]:hover {
 
 /* ── Channel sidebar transitions ── */
 .group\/channel {
-  transition: background-color 150ms ease, opacity 150ms ease;
+  transition: background-color 130ms ease, opacity 130ms ease;
 }
 
 .group\/channel > div > button {
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 130ms ease, color 130ms ease;
 }
 
 /* Smooth category collapse chevron */
@@ -1445,7 +1435,7 @@ button.chat-inline-control { min-height: 0; }
   from { opacity: 0; transform: scale(0.97) translateY(-2px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
-.channel-list-enter { animation: channel-list-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.channel-list-enter { animation: channel-list-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 
 .sidebar-press {
   transition: background-color 150ms ease, color 150ms ease, transform 120ms ease, opacity 150ms ease;
@@ -1520,11 +1510,11 @@ body.list-reordering * { cursor: grabbing !important; }
 }
 
 /* ── Cabeçalho do servidor com banner (GIF) ── */
-.server-header { transition: height 360ms cubic-bezier(0.22, 1, 0.36, 1); }
+.server-header { transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .server-banner-image {
-  animation: server-banner-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: server-banner-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   transform-origin: center;
-  transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1), filter 300ms ease;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 160ms ease;
   filter: saturate(1.02);
 }
 .server-header:hover .server-banner-image,
@@ -1536,7 +1526,7 @@ body.list-reordering * { cursor: grabbing !important; }
 .server-header-banner .server-header-button:hover { background: rgba(255, 255, 255, 0.12); }
 .server-header-button:active { transform: scale(0.985); }
 .server-header-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.server-header-chevron { transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.server-header-chevron { transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .server-header-button[aria-expanded="true"] .server-header-chevron,
 .server-header-button:hover .server-header-chevron { transform: translateY(1px); }
 @keyframes server-banner-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: scale(1); } }
@@ -1551,7 +1541,7 @@ body.list-reordering * { cursor: grabbing !important; }
 /* ===== Controles da chamada (completos e minimalistas) ===== */
 .ctl-group { display: flex; align-items: center; gap: 0.25rem; border-radius: 1rem; border: 1px solid rgb(255 255 255 / 0.06); background: rgb(15 16 19 / 0.92); padding: 0.375rem; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); backdrop-filter: blur(16px); }
 .ctl-group-leave { padding: 0; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
-.ctl-btn { position: relative; display: grid; height: 2.75rem; width: 2.75rem; flex-shrink: 0; place-items: center; border-radius: 0.75rem; color: rgb(255 255 255 / 0.85); transition: background-color 220ms ease, color 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.ctl-btn { position: relative; display: grid; height: 2.75rem; width: 2.75rem; flex-shrink: 0; place-items: center; border-radius: 0.75rem; color: rgb(255 255 255 / 0.85); transition: background-color 130ms ease, color 130ms ease, transform 130ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .ctl-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); color: #fff; }
 .ctl-btn:active:not(:disabled) { transform: scale(0.94); }
 .ctl-btn:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -1562,11 +1552,11 @@ body.list-reordering * { cursor: grabbing !important; }
 .ctl-btn-danger:hover:not(:disabled) { background: rgb(237 52 75 / 0.24); color: #ff8494; }
 .ctl-arrow { display: grid; height: 2.75rem; width: 1.5rem; place-items: center; border-radius: 0.625rem; color: rgb(255 255 255 / 0.55); transition: background-color 220ms ease, color 220ms ease; }
 .ctl-arrow:hover { background: rgb(255 255 255 / 0.08); color: #fff; }
-.ctl-leave { display: grid; height: 3.5rem; width: 4.25rem; place-items: center; border-radius: 1rem; background: #d9363e; color: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); transition: background-color 220ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+.ctl-leave { display: grid; height: 3.5rem; width: 4.25rem; place-items: center; border-radius: 1rem; background: #d9363e; color: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); transition: background-color 130ms ease, transform 130ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .ctl-leave:hover { background: #e8434b; }
 .ctl-leave:active { transform: scale(0.95); }
-.ctl-collapse { display: grid; grid-template-columns: 1fr; opacity: 1; visibility: visible; transition: grid-template-columns 440ms cubic-bezier(0.22, 1, 0.36, 1), opacity 300ms ease 60ms, visibility 0s; }
-.ctl-collapse[data-show="false"] { grid-template-columns: 0fr; opacity: 0; visibility: hidden; pointer-events: none; transition: grid-template-columns 440ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease, visibility 0s linear 440ms; }
+.ctl-collapse { display: grid; grid-template-columns: 1fr; opacity: 1; visibility: visible; transition: grid-template-columns 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 130ms ease, visibility 0s; }
+.ctl-collapse[data-show="false"] { grid-template-columns: 0fr; opacity: 0; visibility: hidden; pointer-events: none; transition: grid-template-columns 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 110ms ease, visibility 0s linear 160ms; }
 .ctl-collapse-inner { min-width: 0; }
 .ctl-collapse[data-clip="true"] > .ctl-collapse-inner, .ctl-collapse[data-show="false"] > .ctl-collapse-inner { overflow: hidden; }
 .ctl-collapse-row { display: flex; width: max-content; align-items: center; gap: 0.25rem; padding-left: 0.25rem; }

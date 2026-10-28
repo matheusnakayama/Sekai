@@ -164,7 +164,7 @@ export default function Controls({
     setMinimalMode(next);
     try { localStorage.setItem(MINIMAL_KEY, next ? '1' : '0'); } catch {}
     if (clipTimer.current) window.clearTimeout(clipTimer.current);
-    if (!next) clipTimer.current = window.setTimeout(() => setClip(false), 460);
+    if (!next) clipTimer.current = window.setTimeout(() => setClip(false), 180);
   };
 
   toggleMinimalRef.current = toggleMinimal;
@@ -206,6 +206,18 @@ export default function Controls({
           <button type="button" onClick={() => setVoiceSettingsOpen((open) => !open)} className="mt-3 flex w-full items-center gap-2 border-t border-white/10 px-2 pt-3 text-left text-xs font-semibold text-white/80 hover:text-white"><Settings className="h-4 w-4" /> Configurações de voz</button>
         </AnchoredPopover>
         </div>
+        {minimalMode && (
+          <ControlButton
+            active={!deafened}
+            activeLabel="Ensurdecer"
+            inactiveLabel="Reativar áudio"
+            onClick={onToggleDeafen}
+            danger={deafened}
+            title={deafened ? 'Reativar áudio' : 'Ensurdecer'}
+          >
+            {deafened ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+          </ControlButton>
+        )}
         <Collapse show={!minimalMode} clip={clip}>
           <div ref={outputAnchorRef} className="relative flex items-center gap-0.5">
             <ControlButton
