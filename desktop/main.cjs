@@ -8,10 +8,17 @@ const { readExeIconPng } = require('../lib/exeIcon.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const SEKAI_LOGO_RED = path.join(ROOT, 'public', 'sekai-logo-red.png');
+const SEKAI_ICON_PATH = path.join(ROOT, 'public', 'sekai.ico');
 let SEKAI_WINDOW_ICON = null;
 try {
-  SEKAI_WINDOW_ICON = nativeImage.createFromBuffer(fs.readFileSync(SEKAI_LOGO_RED));
-} catch { /* O botão da barra customizada ainda exibe o logo servido pelo app. */ }
+  SEKAI_WINDOW_ICON = nativeImage.createFromPath(SEKAI_ICON_PATH);
+  if (SEKAI_WINDOW_ICON.isEmpty()) {
+    SEKAI_WINDOW_ICON = nativeImage.createFromBuffer(fs.readFileSync(SEKAI_LOGO_RED));
+  }
+} catch {
+  try { SEKAI_WINDOW_ICON = nativeImage.createFromBuffer(fs.readFileSync(SEKAI_LOGO_RED)); }
+  catch { /* O botão da barra customizada ainda exibe o logo servido pelo app. */ }
+}
 const LOCAL_PORT = Number(process.env.SEKAI_PORT || 4791);
 const HOSTED_URL = 'https://murasakidev.com.br';
 
@@ -606,6 +613,9 @@ function createWindow(targetUrl) {
       sandbox: true,
     },
   });
+  if (process.platform === 'win32' && SEKAI_WINDOW_ICON && !SEKAI_WINDOW_ICON.isEmpty()) {
+    mainWindow.setIcon(SEKAI_WINDOW_ICON);
+  }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (allowedUrl(url)) {
